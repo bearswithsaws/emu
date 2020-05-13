@@ -22,7 +22,7 @@ main(int argc, char *argv[] )
 {
 	( void ) argc;
 	( void ) argv;
-	uint32_t INST_CNT = 0xffff;
+	uint32_t INST_CNT = -1;
 
 	struct nes_cartridge *cartridge;
 
@@ -51,7 +51,7 @@ main(int argc, char *argv[] )
 
 	do
 	{
-		printf("Instruction # %d\n", 0xffff-INST_CNT);
+		printf("Instruction # %d\n", -1-INST_CNT);
 		cpu->fetch( );
 		cpu->decode( );
 		printf("%04x: %02x %s %04x / %02x\n",

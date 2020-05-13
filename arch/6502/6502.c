@@ -1087,6 +1087,7 @@ print_regs( )
 		GET_FLAG( C ));
 }
 
+//https://wiki.nesdev.com/w/index.php/CPU_interrupts#IRQ_and_NMI_tick-by-tick_execution
 static void
 nmi( void )
 {
@@ -1099,17 +1100,19 @@ nmi( void )
 	cpu.write( cpu.SP, ( cpu.PC & 0x00FF ) );
 	cpu.SP--;
 
+	// Clear B, set I
+	SET_FLAG( B, 0 );
 	// Push SR
 	cpu.write( cpu.SP, cpu.flags.reg );
 	cpu.SP--;
+	SET_FLAG( I, 1 );
+
 
 	// Jmp to NMI vector
 	addr = cpu.read( vector );
 	addr |=  ( cpu.read( vector + 1 ) << 8 );
 
 	cpu.PC = addr;
-
-	//FLAGS???
 }
 
 static void
@@ -1126,17 +1129,19 @@ irq( void )
 		cpu.write( cpu.SP, ( cpu.PC & 0x00FF ) );
 		cpu.SP--;
 
+		// Clear B, set I
+		SET_FLAG( B, 0 );
 		// Push SR
 		cpu.write( cpu.SP, cpu.flags.reg );
 		cpu.SP--;
+		SET_FLAG( I, 1 );
+
 
 		// Jmp to NMI vector
 		addr = cpu.read( vector );
 		addr |=  ( cpu.read( vector + 1 ) << 8 );
 
 		cpu.PC = addr;
-
-		//FLAGS???
 	}
 }
 

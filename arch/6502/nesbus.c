@@ -29,7 +29,6 @@ read( uint16_t addr )
 	else if ( (addr >= 0x2000 ) && ( addr < 0x3fff ) )
 	{
 		// So wrong but need to implement PPU later
-		//return ram[ addr ];
 		return 0xff;
 	}
 	else if ( ( addr == 0x3fff ) )
