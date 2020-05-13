@@ -115,6 +115,9 @@ load_rom( const char *filename )
 
 	cartridge->mapper_id = MAPPER_ADDR( cartridge->hdr->flags7.mapper_upper, cartridge->hdr->flags6.mapper_lower );
 
+	// Initialize and connect the mapper. The proper mapper will be determined
+	// inside the mapper_init function
+	cartridge->map = mapper_init( cartridge );
 out:
 	if ( ret < 0 )
 	{

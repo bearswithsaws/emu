@@ -3,10 +3,13 @@
 
 #include <stdint.h>
 
+#include "mapper.h"
+
 #define MAPPER_ADDR( x, y ) ( ( x << 4 ) | ( y ) )
 
 // NES\x1a
 #define NES_MAGIC 0x1A53454E
+
 
 struct nes_cartridge_hdr
 {
@@ -82,7 +85,10 @@ struct nes_cartridge
 	uint8_t *pc_prom;
 	uint8_t mapper_id;
 	int fd;
+	struct mapper *map;
 };
+
+typedef void ( *fp_connect_cartridge ) ( struct nes_cartridge *cartridge );
 
 struct nes_cartridge * load_rom( const char *filename );
 

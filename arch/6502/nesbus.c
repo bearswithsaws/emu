@@ -44,7 +44,7 @@ read( uint16_t addr )
 	else
 	{
 		// remainder of reads like cartridge and open bus?
-		return bus.map->read( bus.map, addr );
+		return bus.cart->map->read( bus.cart->map, addr );
 	}
 }
 
@@ -78,17 +78,15 @@ write( uint16_t addr, uint8_t data )
 	else
 	{
 		// remainder of reads like cartridge and open bus?
-		bus.map->write( bus.map, addr, data );
+		bus.cart->map->write( bus.cart->map, addr, data );
 	}
 	return;
 }
 
-static struct mapper * 
-connect_cartridge( struct nes_cartridge *cartridge )
+static void 
+connect_cartridge( struct nes_cartridge *cart )
 {
-	struct mapper *map;
-	map = mapper_init( &bus, cartridge );
-	bus.map = map;
+	bus.cart = cart;
 }
 
 static void

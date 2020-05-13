@@ -8,7 +8,7 @@
 static struct mapper map = { 0 };
 
 struct mapper *
-mapper_init( struct nesbus *bus, struct nes_cartridge *cartridge )
+mapper_init( struct nes_cartridge *cartridge )
 {
 	// Not sure if we need the entire cartridge or just values from it.
 	// Saving both for now.
@@ -37,8 +37,6 @@ mapper_init( struct nesbus *bus, struct nes_cartridge *cartridge )
 			break;
 
 	}
-
-	map.bus = bus;
 
 	return &map;
 }
