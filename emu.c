@@ -22,7 +22,7 @@ main(int argc, char *argv[] )
 {
 	( void ) argc;
 	( void ) argv;
-	uint32_t INST_CNT = 200;
+	uint32_t INST_CNT = 20;
 
 	struct nes_cartridge *cartridge;
 
@@ -31,6 +31,7 @@ main(int argc, char *argv[] )
 	printf( "Emu version %d.%d\n", emu_VERSION_MAJOR, emu_VERSION_MINOR );
 	
 	cartridge = load_rom( "/mnt/c/work/test/roms/nestest.nes" );
+	//cartridge = load_rom( "/mnt/c/work/test/roms/donkeykong.nes" );
 	cartridge_info( cartridge );
 
 	bus = nesbus_init( );
@@ -49,7 +50,7 @@ main(int argc, char *argv[] )
 
 	do
 	{
-		printf("Instruction # %d\n", 200-INST_CNT);
+		printf("Instruction # %d\n", 20-INST_CNT);
 		cpu->fetch( );
 		cpu->decode( );
 		printf("%04x: %02x %s %04x / %02x\n",

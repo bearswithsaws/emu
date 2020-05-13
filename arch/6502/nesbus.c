@@ -25,6 +25,12 @@ read( uint16_t addr )
 		// mirroring
 		return ram[ addr & 0x7ff ];
 	}
+	else if ( (addr >= 0x2000 ) && ( addr < 0x3fff ) )
+	{
+		// So wrong but need to implement PPU later
+		//return ram[ addr ];
+		return 0xff;
+	}
 	else if ( ( addr == 0x3fff ) )
 	{
 		// ppu read
@@ -53,6 +59,11 @@ write( uint16_t addr, uint8_t data )
 	{
 		// mirroring
 		ram[ addr & 0x7ff ] = data;
+	}
+	else if ( (addr >= 0x2000 ) && ( addr < 0x3fff ) )
+	{
+		// So wrong but need to implement PPU later
+		ram[ addr ] = data;
 	}
 	else if ( ( addr == 0x3fff ) )
 	{

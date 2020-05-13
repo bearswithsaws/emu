@@ -348,7 +348,7 @@ AND( )
 	cpu.A = cpu.A & cpu.operand;
 
 	// Set flags
-	SET_FLAG( N, ( cpu.A | 0x80 ) );
+	SET_FLAG( N, ( cpu.A & 0x80 ) );
 	SET_FLAG( Z, ( !cpu.A ) );
 
 	return 0;
@@ -609,7 +609,7 @@ DEX( )
 static uint8_t 
 DEY( )
 {
-	cpu.X--;
+	cpu.Y--;
 
 	SET_FLAG( N, ( cpu.Y & 0x80 ) );
 	SET_FLAG( Z, ( !cpu.Y ) );
@@ -624,7 +624,7 @@ EOR( )
 {
 	cpu.A = cpu.A ^ cpu.operand;
 
-	SET_FLAG( N, ( cpu.A | 0x80 ) );
+	SET_FLAG( N, ( cpu.A & 0x80 ) );
 	SET_FLAG( Z, ( !cpu.A ) );
 
 	return 0;
@@ -704,7 +704,7 @@ LDA( )
 {
 	cpu.A = cpu.operand;
 
-	SET_FLAG( N, ( cpu.A | 0x80 ) );
+	SET_FLAG( N, ( cpu.A & 0x80 ) );
 	SET_FLAG( Z, ( !cpu.A ) );
 
 	return 0;
@@ -774,7 +774,7 @@ ORA( )
 {
 	cpu.A |= cpu.operand;
 
-	SET_FLAG( N, ( cpu.A | 0x80 ) );
+	SET_FLAG( N, ( cpu.A & 0x80 ) );
 	SET_FLAG( Z, ( !cpu.A ) );
 	return 0;
 }
@@ -807,7 +807,7 @@ PLA( )
 	cpu.SP++;
 	cpu.A = cpu.read( cpu.SP );
 
-	SET_FLAG( N, ( cpu.A | 0x80 ) );
+	SET_FLAG( N, ( cpu.A & 0x80 ) );
 	SET_FLAG( Z, ( !cpu.A ) );
 
 	return 0;
@@ -1030,7 +1030,7 @@ static uint8_t
 TXA( )
 {
 	cpu.A = cpu.X;
-	SET_FLAG( N, ( cpu.A | 0x80 ) );
+	SET_FLAG( N, ( cpu.A & 0x80 ) );
 	SET_FLAG( Z, ( !cpu.A ) );
 
 	return 0;
@@ -1052,7 +1052,7 @@ static uint8_t
 TYA( )
 {
 	cpu.A = cpu.Y;
-	SET_FLAG( N, ( cpu.A | 0x80 ) );
+	SET_FLAG( N, ( cpu.A & 0x80 ) );
 	SET_FLAG( Z, ( !cpu.A ) );
 
 	return 0;
@@ -1075,6 +1075,16 @@ print_regs( )
 	printf("SP: %04X\n", cpu.SP );
 	printf("PC: %04X\n", cpu.PC );
 	printf("FLAGS: %02X\n", cpu.flags.reg );
+	printf("N V U B D I Z C\n");
+	printf("%d %d %d %d %d %d %d %d\n", 
+		GET_FLAG( N ),
+		GET_FLAG( V ),
+		GET_FLAG( U ),
+		GET_FLAG( B ),
+		GET_FLAG( D ),
+		GET_FLAG( I ),
+		GET_FLAG( Z ),
+		GET_FLAG( C ));
 }
 
 // TODO: read the docs fo rthe 6502 on what a reset state looks like
