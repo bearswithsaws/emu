@@ -6,6 +6,8 @@
 
 struct cpu6502;
 
+typedef void ( *fp_nmi ) ( void );
+typedef void ( *fp_irq ) ( void );
 typedef void ( *fp_reset ) ( void );
 typedef uint8_t ( *fp_read ) ( uint16_t addr );
 typedef void ( *fp_write ) ( uint16_t addr, uint8_t data );
@@ -28,6 +30,8 @@ struct instruction
 
 struct cpu6502
 {
+	fp_nmi nmi;
+	fp_irq irq;
 	fp_reset reset;
 	fp_read read;
 	fp_write write;

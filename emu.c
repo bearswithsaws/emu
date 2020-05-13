@@ -16,17 +16,18 @@ uint8_t SAMPLE_BIN[] = { 0x20, 0x06, 0x06, 0x20, 0x38, 0x06, 0x20, 0x0d, 0x06, 0
 
 static struct nesbus *bus;
 static struct cpu6502 *cpu;
-
+	
 int
 main(int argc, char *argv[] )
 {
 	( void ) argc;
 	( void ) argv;
-	uint32_t INST_CNT = 20;
+	uint32_t INST_CNT = 0xffff;
 
 	struct nes_cartridge *cartridge;
 
 	uint8_t buf[0x100];
+	uint8_t cycles = 0;
 
 	printf( "Emu version %d.%d\n", emu_VERSION_MAJOR, emu_VERSION_MINOR );
 	
@@ -50,7 +51,7 @@ main(int argc, char *argv[] )
 
 	do
 	{
-		printf("Instruction # %d\n", 20-INST_CNT);
+		printf("Instruction # %d\n", 0xffff-INST_CNT);
 		cpu->fetch( );
 		cpu->decode( );
 		printf("%04x: %02x %s %04x / %02x\n",
@@ -59,6 +60,8 @@ main(int argc, char *argv[] )
 				cpu->curr_insn->mnem,
 				cpu->operand_addr,
 				cpu->operand);
+
+		cycles = cpu->curr_insn->cycles;
 
 		cpu->execute( );
 		cpu->print_regs( );

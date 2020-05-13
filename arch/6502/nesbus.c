@@ -9,7 +9,8 @@
 
 static struct nesbus bus = { 0 };
 
-#define NES_RAM_SIZE ( 64 * 1024 )
+// 2 kilobytes ram fir the NES
+#define NES_RAM_SIZE ( 2 * 1024 )
 
 static uint8_t ram[ NES_RAM_SIZE ] = { 0 };
 
@@ -63,7 +64,7 @@ write( uint16_t addr, uint8_t data )
 	else if ( (addr >= 0x2000 ) && ( addr < 0x3fff ) )
 	{
 		// So wrong but need to implement PPU later
-		ram[ addr ] = data;
+		//ram[ addr ] = data;
 	}
 	else if ( ( addr == 0x3fff ) )
 	{

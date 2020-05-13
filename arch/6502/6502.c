@@ -460,9 +460,9 @@ BRK( )
 	printf( "Intterupts not implied\n" );
 	exit(1);
 	// TODO: What else?
-	cpu.write( cpu.SP, cpu.PC + 1 );
+	cpu.write( cpu.SP, ( cpu.PC >> 8 ) & 0x00FF );
 	cpu.SP--;
-	cpu.write( cpu.SP, cpu.PC );
+	cpu.write( cpu.SP, cpu.PC & 0x00ff );
 	cpu.SP--;
 
 	SET_FLAG( I , 1 );
@@ -1087,7 +1087,60 @@ print_regs( )
 		GET_FLAG( C ));
 }
 
-// TODO: read the docs fo rthe 6502 on what a reset state looks like
+static void
+nmi( void )
+{
+	uint16_t vector = 0xFFFA;
+	uint16_t addr;
+
+	// Push PC
+	cpu.write( cpu.SP, ( cpu.PC >> 8 ) & 0x00FF );
+	cpu.SP--;
+	cpu.write( cpu.SP, ( cpu.PC & 0x00FF ) );
+	cpu.SP--;
+
+	// Push SR
+	cpu.write( cpu.SP, cpu.flags.reg );
+	cpu.SP--;
+
+	// Jmp to NMI vector
+	addr = cpu.read( vector );
+	addr |=  ( cpu.read( vector + 1 ) << 8 );
+
+	cpu.PC = addr;
+
+	//FLAGS???
+}
+
+static void
+irq( void )
+{
+	uint16_t vector = 0xFFFE;
+	uint16_t addr;
+
+	if ( GET_FLAG( I ) )
+	{
+		// Push PC
+		cpu.write( cpu.SP, ( cpu.PC >> 8 ) & 0x00FF );
+		cpu.SP--;
+		cpu.write( cpu.SP, ( cpu.PC & 0x00FF ) );
+		cpu.SP--;
+
+		// Push SR
+		cpu.write( cpu.SP, cpu.flags.reg );
+		cpu.SP--;
+
+		// Jmp to NMI vector
+		addr = cpu.read( vector );
+		addr |=  ( cpu.read( vector + 1 ) << 8 );
+
+		cpu.PC = addr;
+
+		//FLAGS???
+	}
+}
+
+// TODO: read the docs for the 6502 on what a reset state looks like
 static void
 reset( void )
 {
@@ -1160,6 +1213,8 @@ execute( )
 struct cpu6502 *
 cpu6502_init( struct nesbus *bus )
 {
+	cpu.nmi 	= nmi;
+	cpu.irq 	= irq;
 	cpu.reset 	= reset;
 	cpu.read 	= read;
 	cpu.write 	= write;
