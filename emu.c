@@ -5,6 +5,7 @@
 #include "emu_config.h"
 #include "6502.h"
 #include "nesbus.h"
+#include "2c02.h"
 #include "cartridge.h"
 
 #include "debug.h"
@@ -16,13 +17,12 @@ uint8_t SAMPLE_BIN[] = { 0x20, 0x06, 0x06, 0x20, 0x38, 0x06, 0x20, 0x0d, 0x06, 0
 
 static struct nesbus *bus;
 static struct cpu6502 *cpu;
+static struct ppu2c02 *ppu;
 	
 int
 main(int argc, char *argv[] )
 {
-	( void ) argc;
-	( void ) argv;
-	uint32_t INST_CNT = -1;
+	uint32_t INST_CNT = 1;
 
 	struct nes_cartridge *cartridge;
 
@@ -31,12 +31,20 @@ main(int argc, char *argv[] )
 
 	printf( "Emu version %d.%d\n", emu_VERSION_MAJOR, emu_VERSION_MINOR );
 	
-	cartridge = load_rom( "/mnt/c/work/test/roms/nestest.nes" );
-	//cartridge = load_rom( "/mnt/c/work/test/roms/donkeykong.nes" );
+	if ( argc > 1 )
+	{
+		cartridge = load_rom( argv[1] );
+	}
+	else
+	{
+		cartridge = load_rom( "/mnt/c/work/test/roms/nestest.nes" );
+		//cartridge = load_rom( "/mnt/c/work/test/roms/donkeykong.nes" );
+	}
 	cartridge_info( cartridge );
 
 	bus = nesbus_init( );
 	cpu = cpu6502_init( bus );
+	ppu = ppu2c02_init( bus );
 	bus->connect_cartridge( cartridge );
 
 
@@ -51,30 +59,12 @@ main(int argc, char *argv[] )
 
 	do
 	{
-		printf("Instruction # %d\n", -1-INST_CNT);
-		cpu->fetch( );
-		cpu->decode( );
-		printf("%04x: %02x %s %04x / %02x\n",
-				cpu->start_pc,
-				cpu->opcode,
-				cpu->curr_insn->mnem,
-				cpu->operand_addr,
-				cpu->operand);
+		// Obviouslt this is not correct. The PPU operates faster
+		// than the CPU so clock the cpu only once ever X times
+		// per loop where as PPU will clock each time
+		cpu->clock();
+		ppu->clock();
 
-		cycles = cpu->curr_insn->cycles;
-
-		cpu->execute( );
-		cpu->print_regs( );
-		bus->debug_read(0x200-0x10, buf, 0x20);
-		printf("Stack:\n");
-		hex_dump( buf, 0x20 );
-		bus->debug_read(cpu->PC, buf, 0x10);
-		printf("%04x: \n",cpu->PC);
-		hex_dump( buf, 0x10 );
-		bus->debug_read(0, buf, 0x20);
-		printf("%04x: \n",0);
-		hex_dump( buf, 0x20 );
-		printf("\n");
 	} while ( INST_CNT-- );//cpu->PC < sizeof( SAMPLE_BIN ) );
 
 	return 0;

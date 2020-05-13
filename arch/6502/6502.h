@@ -38,6 +38,7 @@ struct cpu6502
 	fp_fetch fetch;
 	fp_decode decode;
 	fp_execute execute;
+	fp_clock clock;
 	fp_print_regs print_regs;
 
 	struct nesbus *bus;

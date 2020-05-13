@@ -32,6 +32,12 @@ cpu_write( uint16_t addr, uint8_t data )
 
 }
 
+static void
+clock( )
+{
+
+}
+
 struct ppu2c02 *
 ppu2c02_init( struct nesbus *bus )
 {
@@ -39,6 +45,7 @@ ppu2c02_init( struct nesbus *bus )
 	ppu.cpu_write 	= cpu_write;
 	ppu.ppu_read 	= ppu_read;
 	ppu.ppu_write 	= ppu_write;
+	ppu.clock 		= clock;
 	ppu.connect_cartridge = connect_cartridge;
 	ppu.bus = bus;
 

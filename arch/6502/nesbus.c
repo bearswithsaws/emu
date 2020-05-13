@@ -89,12 +89,6 @@ connect_cartridge( struct nes_cartridge *cart )
 	bus.cart = cart;
 }
 
-static void
-load( uint16_t addr, uint8_t *data, uint16_t len )
-{
-	memcpy( &ram[ addr ], data, len );
-}
-
 static uint8_t *
 debug_read( uint16_t offset, uint8_t *buf, uint16_t len )
 {
@@ -111,7 +105,6 @@ nesbus_init( )
 	bus.read 	= read;
 	bus.write 	= write;
 	bus.connect_cartridge = connect_cartridge;
-	bus.load 	= load;
 	bus.debug_read = debug_read;
 
 	return &bus;

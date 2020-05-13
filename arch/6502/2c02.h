@@ -18,6 +18,7 @@ struct ppu2c02
 	fp_ppu_write 	ppu_write;
 	fp_cpu_read 	cpu_read;
 	fp_cpu_write 	cpu_write;
+	fp_clock		clock;
 	fp_connect_cartridge connect_cartridge;
 	struct nes_cartridge *cart;
 	struct nesbus *bus;

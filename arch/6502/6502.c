@@ -6,6 +6,8 @@
 
 #include "6502.h"
 
+#include "../../debug.h"
+
 static struct cpu6502 cpu = { 0 };
 
 // Each should return how many extra clock cycles are required
@@ -1215,6 +1217,37 @@ execute( )
 	cpu.curr_insn->execute( );
 }
 
+static void
+clock( )
+{
+	uint8_t buf[0x100];
+	uint8_t cycles = 0;
+
+	cpu.fetch( );
+	cpu.decode( );
+	printf("%04x: %02x %s %04x / %02x\n",
+			cpu.start_pc,
+			cpu.opcode,
+			cpu.curr_insn->mnem,
+			cpu.operand_addr,
+			cpu.operand);
+
+	cycles = cpu.curr_insn->cycles;
+
+	cpu.execute( );
+	cpu.print_regs( );
+	cpu.bus->debug_read(0x200-0x10, buf, 0x20);
+	printf("Stack:\n");
+	hex_dump( buf, 0x20 );
+	cpu.bus->debug_read(cpu.PC, buf, 0x10);
+	printf("%04x: \n",cpu.PC);
+	hex_dump( buf, 0x10 );
+	cpu.bus->debug_read(0, buf, 0x20);
+	printf("%04x: \n",0);
+	hex_dump( buf, 0x20 );
+	printf("\n");
+}
+
 struct cpu6502 *
 cpu6502_init( struct nesbus *bus )
 {
@@ -1226,6 +1259,7 @@ cpu6502_init( struct nesbus *bus )
 	cpu.fetch 	= fetch;
 	cpu.decode 	= decode;
 	cpu.execute	= execute;
+	cpu.clock 	= clock;
 	cpu.print_regs = print_regs;
 
 	cpu.bus = bus;
