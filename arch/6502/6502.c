@@ -95,77 +95,77 @@ static struct instruction instruction_table[3][8][8] =
 			{"BRK", 0x00, &BRK, &IMP, 7 }, {"???", 0x04, &XXX, &IMP, 2 }, {"PHP", 0x08, &PHP, &IMP, 3 }, {"???", 0x0C, &XXX, &IMP, 2 }, {"BPL", 0x10, &BPL, &REL, 2 }, {"???", 0x14, &XXX, &IMP, 2 }, {"CLC", 0x18, &CLC, &IMP, 2 }, {"???", 0x1C, &XXX, &IMP, 2 } 
 		},
 		{
-			{"JSR", 0x20, &JSR, &ABS, }, {"BIT", 0x24, &BIT, &ZPG, }, {"PLP", 0x28, &PLP, &IMP, }, {"BIT", 0x2C, &BIT, &ABS, }, {"BMI", 0x30, &BMI, &REL, }, {"???", 0x34, &XXX, &IMP, }, {"SEC", 0x38, &SEC, &IMP, }, {"???", 0x3C, &XXX, &IMP, }
+			{"JSR", 0x20, &JSR, &ABS, 6 }, {"BIT", 0x24, &BIT, &ZPG, 3 }, {"PLP", 0x28, &PLP, &IMP, 4 }, {"BIT", 0x2C, &BIT, &ABS, 4 }, {"BMI", 0x30, &BMI, &REL, 2 }, {"???", 0x34, &XXX, &IMP, 2 }, {"SEC", 0x38, &SEC, &IMP, 2 }, {"???", 0x3C, &XXX, &IMP, 2 }
 		},
 		{
-			{"RTI", 0x40, &RTI, &IMP, }, {"???", 0x44, &XXX, &IMP, }, {"PHA", 0x48, &PHA, &IMP, }, {"JMP", 0x4C, &JMP, &ABS, }, {"BVC", 0x50, &BVC, &REL, }, {"???", 0x54, &XXX, &IMP, }, {"CLI", 0x58, &CLI, &IMP, }, {"???", 0x5C, &XXX, &IMP, }
+			{"RTI", 0x40, &RTI, &IMP, 6 }, {"???", 0x44, &XXX, &IMP, 2 }, {"PHA", 0x48, &PHA, &IMP, 3 }, {"JMP", 0x4C, &JMP, &ABS, 3 }, {"BVC", 0x50, &BVC, &REL, 2 }, {"???", 0x54, &XXX, &IMP, 2 }, {"CLI", 0x58, &CLI, &IMP, 2 }, {"???", 0x5C, &XXX, &IMP, 2 }
 		},
 		{
-			{"RTS", 0x60, &RTS, &IMP, }, {"???", 0x64, &XXX, &IMP, }, {"PLA", 0x68, &PLA, &IMP, }, {"JMP", 0x6C, &JMP, &ABS, }, {"BVS", 0x70, &BVS, &REL, }, {"???", 0x74, &XXX, &IMP, }, {"SEI", 0x78, &SEI, &IMP, }, {"???", 0x7C, &XXX, &IMP, }
+			{"RTS", 0x60, &RTS, &IMP, 6 }, {"???", 0x64, &XXX, &IMP, 2 }, {"PLA", 0x68, &PLA, &IMP, 4 }, {"JMP", 0x6C, &JMP, &ABS, 5 }, {"BVS", 0x70, &BVS, &REL, 2 }, {"???", 0x74, &XXX, &IMP, 2 }, {"SEI", 0x78, &SEI, &IMP, 2 }, {"???", 0x7C, &XXX, &IMP, 2 }
 		},
 		{
-			{"???", 0x80, &XXX, &IMP, }, {"STY", 0x84, &STY, &ZPG, }, {"DEY", 0x88, &DEY, &IMP, }, {"STY", 0x8C, &STY, &ABS, }, {"BCC", 0x90, &BCC, &REL, }, {"STY", 0x94, &STY, &ZPX, }, {"TYA", 0x98, &TYA, &IMP, }, {"???", 0x9C, &XXX, &IMP, }
+			{"???", 0x80, &XXX, &IMP, 2 }, {"STY", 0x84, &STY, &ZPG, 3 }, {"DEY", 0x88, &DEY, &IMP, 2 }, {"STY", 0x8C, &STY, &ABS, 4 }, {"BCC", 0x90, &BCC, &REL, 2 }, {"STY", 0x94, &STY, &ZPX, 4 }, {"TYA", 0x98, &TYA, &IMP, 2 }, {"???", 0x9C, &XXX, &IMP, 2 }
 		},
 		{
-			{"LDY", 0xA0, &LDY, &IMM, }, {"LDY", 0xA4, &LDY, &ZPG, }, {"TAY", 0xA8, &TAY, &IMP, }, {"LDY", 0xAC, &LDY, &ABS, }, {"BCS", 0xB0, &BCS, &REL, }, {"LDY", 0xB4, &LDY, &ZPX, }, {"CLV", 0xB8, &CLV, &IMP, }, {"LDY", 0xBC, &LDY, &ABX, }
+			{"LDY", 0xA0, &LDY, &IMM, 2 }, {"LDY", 0xA4, &LDY, &ZPG, 3 }, {"TAY", 0xA8, &TAY, &IMP, 2 }, {"LDY", 0xAC, &LDY, &ABS, 4 }, {"BCS", 0xB0, &BCS, &REL, 2 }, {"LDY", 0xB4, &LDY, &ZPX, 4 }, {"CLV", 0xB8, &CLV, &IMP, 2 }, {"LDY", 0xBC, &LDY, &ABX, 4 }
 		},
 		{
-			{"CPY", 0xC0, &CPY, &IMM, }, {"CPY", 0xC4, &CPY, &ZPG, }, {"INY", 0xC8, &INY, &IMP, }, {"CPY", 0xCC, &CPY, &ABS, }, {"BNE", 0xD0, &BNE, &REL, }, {"???", 0xD4, &XXX, &IMP, }, {"CLD", 0xD8, &CLD, &IMP, }, {"???", 0xDC, &XXX, &IMP, }
+			{"CPY", 0xC0, &CPY, &IMM, 2 }, {"CPY", 0xC4, &CPY, &ZPG, 3 }, {"INY", 0xC8, &INY, &IMP, 2 }, {"CPY", 0xCC, &CPY, &ABS, 4 }, {"BNE", 0xD0, &BNE, &REL, 2 }, {"???", 0xD4, &XXX, &IMP, 2 }, {"CLD", 0xD8, &CLD, &IMP, 2 }, {"???", 0xDC, &XXX, &IMP, 2 }
 		},
 		{
-			{"CPX", 0xE0, &CPX, &IMM, }, {"CPX", 0xE4, &CPX, &ZPG, }, {"INX", 0xE8, &INX, &IMP, }, {"CPX", 0xEC, &CPX, &ABS, }, {"BEQ", 0xF0, &BEQ, &REL, }, {"???", 0xF4, &XXX, &IMP, }, {"SED", 0xF8, &SED, &IMP, }, {"???", 0xFC, &XXX, &IMP, }
-		},
-	},
-	{
-		{
-			{"ORA", 0x01, &ORA, &IND, }, {"ORA", 0x05, &ORA, &ZPG, }, {"ORA", 0x09, &ORA, &IMM, }, {"ORA", 0x0D, &ORA, &ABS, }, {"ORA", 0x11, &ORA, &IZY, }, {"ORA", 0x15, &ORA, &ZPX, }, {"ORA", 0x19, &ORA, &ABY, }, {"ORA", 0x1D, &ORA, &ABX, }
-		},
-		{
-			{"AND", 0x21, &AND, &IND, }, {"AND", 0x25, &AND, &ZPG, }, {"AND", 0x29, &AND, &IMM, }, {"AND", 0x2D, &AND, &ABS, }, {"AND", 0x31, &AND, &IZY, }, {"AND", 0x35, &AND, &ZPX, }, {"AND", 0x39, &AND, &ABY, }, {"AND", 0x3D, &AND, &ABX, }
-		},
-		{
-			{"EOR", 0x41, &EOR, &IND, }, {"EOR", 0x45, &EOR, &ZPG, }, {"EOR", 0x49, &EOR, &IMM, }, {"EOR", 0x4D, &EOR, &ABS, }, {"EOR", 0x51, &EOR, &IZY, }, {"EOR", 0x55, &EOR, &ZPX, }, {"EOR", 0x59, &EOR, &ABY, }, {"EOR", 0x5D, &EOR, &ABX, }
-		},
-		{
-			{"ADC", 0x61, &ADC, &IND, }, {"ADC", 0x65, &ADC, &ZPG, }, {"ADC", 0x69, &ADC, &IMM, }, {"ADC", 0x6D, &ADC, &ABS, }, {"ADC", 0x71, &ADC, &IZY, }, {"ADC", 0x75, &ADC, &ZPX, }, {"ADC", 0x79, &ADC, &ABY, }, {"ADC", 0x7D, &ADC, &ABX, }
-		},
-		{
-			{"STA", 0x81, &STA, &IND, }, {"STA", 0x85, &STA, &ZPG, }, {"???", 0x89, &XXX, &IMP, }, {"STA", 0x8D, &STA, &ABS, }, {"STA", 0x91, &STA, &IZY, }, {"STA", 0x95, &STA, &ZPX, }, {"STA", 0x99, &STA, &ABY, }, {"STA", 0x9D, &STA, &ABX, }
-		},
-		{
-			{"LDA", 0xA1, &LDA, &IND, }, {"LDA", 0xA5, &LDA, &ZPG, }, {"LDA", 0xA9, &LDA, &IMM, }, {"LDA", 0xAD, &LDA, &ABS, }, {"LDA", 0xB1, &LDA, &IZY, }, {"LDA", 0xB5, &LDA, &ZPX, }, {"LDA", 0xB9, &LDA, &ABY, }, {"LDA", 0xBD, &LDA, &ABX, }
-		},
-		{
-			{"CMP", 0xC1, &CMP, &IND, }, {"CMP", 0xC5, &CMP, &ZPG, }, {"CMP", 0xC9, &CMP, &IMM, }, {"CMP", 0xCD, &CMP, &ABS, }, {"CMP", 0xD1, &CMP, &IZY, }, {"CMP", 0xD5, &CMP, &ZPX, }, {"CMP", 0xD9, &CMP, &ABY, }, {"CMP", 0xDD, &CMP, &ABX, }
-		},
-		{
-			{"SBC", 0xE1, &SBC, &IND, }, {"SBC", 0xE5, &SBC, &ZPG, }, {"SBC", 0xE9, &SBC, &IMM, }, {"SBC", 0xED, &SBC, &ABS, }, {"SBC", 0xF1, &SBC, &IZY, }, {"SBC", 0xF5, &SBC, &ZPX, }, {"SBC", 0xF9, &SBC, &ABY, }, {"SBC", 0xFD, &SBC, &ABX, }
+			{"CPX", 0xE0, &CPX, &IMM, 2 }, {"CPX", 0xE4, &CPX, &ZPG, 3 }, {"INX", 0xE8, &INX, &IMP, 2 }, {"CPX", 0xEC, &CPX, &ABS, 4 }, {"BEQ", 0xF0, &BEQ, &REL, 2 }, {"???", 0xF4, &XXX, &IMP, 2 }, {"SED", 0xF8, &SED, &IMP, 2 }, {"???", 0xFC, &XXX, &IMP, 2 }
 		},
 	},
 	{
 		{
-			{"???", 0x02, &XXX, &IMP, }, {"ASL", 0x06, &ASL, &ZPG, }, {"ASL", 0x0A, &ASL, &ACC, }, {"ASL", 0x0E, &ASL, &ABS, }, {"???", 0x12, &XXX, &IMP, }, {"ASL", 0x16, &ASL, &ZPX, }, {"???", 0x1A, &XXX, &IMP, }, {"ASL", 0x1E, &ASL, &ABX, }
+			{"ORA", 0x01, &ORA, &IND, 6 }, {"ORA", 0x05, &ORA, &ZPG, 3 }, {"ORA", 0x09, &ORA, &IMM, 2 }, {"ORA", 0x0D, &ORA, &ABS, 4 }, {"ORA", 0x11, &ORA, &IZY, 5 }, {"ORA", 0x15, &ORA, &ZPX, 2 }, {"ORA", 0x19, &ORA, &ABY, 4 }, {"ORA", 0x1D, &ORA, &ABX, 4 }
 		},
 		{
-			{"???", 0x22, &XXX, &IMP, }, {"ROL", 0x26, &ROL, &ZPG, }, {"ROL", 0x2A, &ROL, &ACC, }, {"ROL", 0x2E, &ROL, &ABS, }, {"???", 0x32, &XXX, &IMP, }, {"ROL", 0x36, &ROL, &ZPX, }, {"???", 0x3A, &XXX, &IMP, }, {"ROL", 0x3E, &ROL, &ABX, }
+			{"AND", 0x21, &AND, &IND, 6 }, {"AND", 0x25, &AND, &ZPG, 3 }, {"AND", 0x29, &AND, &IMM, 2 }, {"AND", 0x2D, &AND, &ABS, 4 }, {"AND", 0x31, &AND, &IZY, 5 }, {"AND", 0x35, &AND, &ZPX, 4 }, {"AND", 0x39, &AND, &ABY, 4 }, {"AND", 0x3D, &AND, &ABX, 4 }
 		},
 		{
-			{"???", 0x42, &XXX, &IMP, }, {"LSR", 0x46, &LSR, &ZPG, }, {"LSR", 0x4A, &LSR, &ACC, }, {"LSR", 0x4E, &LSR, &ABS, }, {"???", 0x52, &XXX, &IMP, }, {"LSR", 0x56, &LSR, &ZPX, }, {"???", 0x5A, &XXX, &IMP, }, {"LSR", 0x5E, &LSR, &ABX, }
+			{"EOR", 0x41, &EOR, &IND, 6 }, {"EOR", 0x45, &EOR, &ZPG, 3 }, {"EOR", 0x49, &EOR, &IMM, 2 }, {"EOR", 0x4D, &EOR, &ABS, 4 }, {"EOR", 0x51, &EOR, &IZY, 5 }, {"EOR", 0x55, &EOR, &ZPX, 4 }, {"EOR", 0x59, &EOR, &ABY, 4 }, {"EOR", 0x5D, &EOR, &ABX, 4 }
 		},
 		{
-			{"???", 0x62, &XXX, &IMP, }, {"ROR", 0x66, &ROR, &ZPG, }, {"ROR", 0x6A, &ROR, &ACC, }, {"ROR", 0x6E, &ROR, &ABS, }, {"???", 0x72, &XXX, &IMP, }, {"ROR", 0x76, &ROR, &ZPX, }, {"???", 0x7A, &XXX, &IMP, }, {"ROR", 0x7E, &ROR, &ABX, }
+			{"ADC", 0x61, &ADC, &IND, 6 }, {"ADC", 0x65, &ADC, &ZPG, 3 }, {"ADC", 0x69, &ADC, &IMM, 2 }, {"ADC", 0x6D, &ADC, &ABS, 4 }, {"ADC", 0x71, &ADC, &IZY, 5 }, {"ADC", 0x75, &ADC, &ZPX, 4 }, {"ADC", 0x79, &ADC, &ABY, 4 }, {"ADC", 0x7D, &ADC, &ABX, 4 }
 		},
 		{
-			{"???", 0x82, &XXX, &IMP, }, {"STX", 0x86, &STX, &ZPG, }, {"TXA", 0x8A, &TXA, &IMP, }, {"STX", 0x8E, &STX, &ABS, }, {"???", 0x92, &XXX, &IMP, }, {"STX", 0x96, &STX, &ZPY, }, {"TSX", 0x9A, &TSX, &IMP, }, {"???", 0x9E, &XXX, &IMP, }
+			{"STA", 0x81, &STA, &IND, 6 }, {"STA", 0x85, &STA, &ZPG, 3 }, {"???", 0x89, &XXX, &IMP, 2 }, {"STA", 0x8D, &STA, &ABS, 4 }, {"STA", 0x91, &STA, &IZY, 6 }, {"STA", 0x95, &STA, &ZPX, 4 }, {"STA", 0x99, &STA, &ABY, 5 }, {"STA", 0x9D, &STA, &ABX, 5 }
 		},
 		{
-			{"LDX", 0xA2, &LDX, &IMM, }, {"LDX", 0xA6, &LDX, &ZPG, }, {"TAX", 0xAA, &TAX, &IMP, }, {"LDX", 0xAE, &LDX, &ABS, }, {"???", 0xB2, &XXX, &IMP, }, {"LDX", 0xB6, &LDX, &ZPY, }, {"TSX", 0xBA, &TSX, &IMP, }, {"LDX", 0xBE, &LDX, &ABY, }
+			{"LDA", 0xA1, &LDA, &IND, 6 }, {"LDA", 0xA5, &LDA, &ZPG, 3 }, {"LDA", 0xA9, &LDA, &IMM, 2 }, {"LDA", 0xAD, &LDA, &ABS, 4 }, {"LDA", 0xB1, &LDA, &IZY, 5 }, {"LDA", 0xB5, &LDA, &ZPX, 4 }, {"LDA", 0xB9, &LDA, &ABY, 4 }, {"LDA", 0xBD, &LDA, &ABX, 4 }
 		},
 		{
-			{"???", 0xC2, &XXX, &IMP, }, {"DEC", 0xC6, &DEC, &ZPG, }, {"DEX", 0xCA, &DEX, &IMP, }, {"DEC", 0xCE, &DEC, &ABS, }, {"???", 0xD2, &XXX, &IMP, }, {"DEC", 0xD6, &DEC, &ZPX, }, {"???", 0xDA, &XXX, &IMP, }, {"DEC", 0xDE, &DEC, &ABX, }
+			{"CMP", 0xC1, &CMP, &IND, 6 }, {"CMP", 0xC5, &CMP, &ZPG, 3 }, {"CMP", 0xC9, &CMP, &IMM, 2 }, {"CMP", 0xCD, &CMP, &ABS, 4 }, {"CMP", 0xD1, &CMP, &IZY, 5 }, {"CMP", 0xD5, &CMP, &ZPX, 4 }, {"CMP", 0xD9, &CMP, &ABY, 4 }, {"CMP", 0xDD, &CMP, &ABX, 4 }
 		},
 		{
-			{"???", 0xE2, &XXX, &IMP, }, {"INC", 0xE6, &INC, &ZPG, }, {"NOP", 0xEA, &NOP, &IMP, }, {"INC", 0xEE, &INC, &ABS, }, {"???", 0xF2, &XXX, &IMP, }, {"INC", 0xF6, &INC, &ZPX, }, {"???", 0xFA, &XXX, &IMP, }, {"INC", 0xFE, &INC, &ABX, }
+			{"SBC", 0xE1, &SBC, &IND, 6 }, {"SBC", 0xE5, &SBC, &ZPG, 3 }, {"SBC", 0xE9, &SBC, &IMM, 2 }, {"SBC", 0xED, &SBC, &ABS, 4 }, {"SBC", 0xF1, &SBC, &IZY, 5 }, {"SBC", 0xF5, &SBC, &ZPX, 4 }, {"SBC", 0xF9, &SBC, &ABY, 4 }, {"SBC", 0xFD, &SBC, &ABX, 4 }
+		},
+	},
+	{
+		{
+			{"???", 0x02, &XXX, &IMP, 2 }, {"ASL", 0x06, &ASL, &ZPG, 2 }, {"ASL", 0x0A, &ASL, &ACC, 2 }, {"ASL", 0x0E, &ASL, &ABS, 6 }, {"???", 0x12, &XXX, &IMP, 2 }, {"ASL", 0x16, &ASL, &ZPX, 6 }, {"???", 0x1A, &XXX, &IMP, 2 }, {"ASL", 0x1E, &ASL, &ABX, 7 }
+		},
+		{
+			{"???", 0x22, &XXX, &IMP, 2 }, {"ROL", 0x26, &ROL, &ZPG, 2 }, {"ROL", 0x2A, &ROL, &ACC, 2 }, {"ROL", 0x2E, &ROL, &ABS, 6 }, {"???", 0x32, &XXX, &IMP, 2 }, {"ROL", 0x36, &ROL, &ZPX, 6 }, {"???", 0x3A, &XXX, &IMP, 2 }, {"ROL", 0x3E, &ROL, &ABX, 7 }
+		},
+		{
+			{"???", 0x42, &XXX, &IMP, 2 }, {"LSR", 0x46, &LSR, &ZPG, 5 }, {"LSR", 0x4A, &LSR, &ACC, 2 }, {"LSR", 0x4E, &LSR, &ABS, 6 }, {"???", 0x52, &XXX, &IMP, 2 }, {"LSR", 0x56, &LSR, &ZPX, 6 }, {"???", 0x5A, &XXX, &IMP, 2 }, {"LSR", 0x5E, &LSR, &ABX, 7 }
+		},
+		{
+			{"???", 0x62, &XXX, &IMP, 2 }, {"ROR", 0x66, &ROR, &ZPG, 2 }, {"ROR", 0x6A, &ROR, &ACC, 2 }, {"ROR", 0x6E, &ROR, &ABS, 6 }, {"???", 0x72, &XXX, &IMP, 2 }, {"ROR", 0x76, &ROR, &ZPX, 6 }, {"???", 0x7A, &XXX, &IMP, 2 }, {"ROR", 0x7E, &ROR, &ABX, 7 }
+		},
+		{
+			{"???", 0x82, &XXX, &IMP, 2 }, {"STX", 0x86, &STX, &ZPG, 3 }, {"TXA", 0x8A, &TXA, &IMP, 2 }, {"STX", 0x8E, &STX, &ABS, 4 }, {"???", 0x92, &XXX, &IMP, 2 }, {"STX", 0x96, &STX, &ZPY, 4 }, {"TSX", 0x9A, &TSX, &IMP, 2 }, {"???", 0x9E, &XXX, &IMP, 2 }
+		},
+		{
+			{"LDX", 0xA2, &LDX, &IMM, 2 }, {"LDX", 0xA6, &LDX, &ZPG, 3 }, {"TAX", 0xAA, &TAX, &IMP, 2 }, {"LDX", 0xAE, &LDX, &ABS, 4 }, {"???", 0xB2, &XXX, &IMP, 2 }, {"LDX", 0xB6, &LDX, &ZPY, 4 }, {"TSX", 0xBA, &TSX, &IMP, 2 }, {"LDX", 0xBE, &LDX, &ABY, 4 }
+		},
+		{
+			{"???", 0xC2, &XXX, &IMP, 2 }, {"DEC", 0xC6, &DEC, &ZPG, 5 }, {"DEX", 0xCA, &DEX, &IMP, 2 }, {"DEC", 0xCE, &DEC, &ABS, 6 }, {"???", 0xD2, &XXX, &IMP, 2 }, {"DEC", 0xD6, &DEC, &ZPX, 6 }, {"???", 0xDA, &XXX, &IMP, 2 }, {"DEC", 0xDE, &DEC, &ABX, 7 }
+		},
+		{
+			{"???", 0xE2, &XXX, &IMP, 2 }, {"INC", 0xE6, &INC, &ZPG, 5 }, {"NOP", 0xEA, &NOP, &IMP, 2 }, {"INC", 0xEE, &INC, &ABS, 6 }, {"???", 0xF2, &XXX, &IMP, 2 }, {"INC", 0xF6, &INC, &ZPX, 6 }, {"???", 0xFA, &XXX, &IMP, 2 }, {"INC", 0xFE, &INC, &ABX, 7 }
 		},
 	},
 };
