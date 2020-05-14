@@ -1248,8 +1248,14 @@ clock( )
 	printf("\n");
 }
 
+static void
+connect_bus( void *bus )
+{
+	cpu.bus = ( struct nesbus * ) bus;
+}
+
 struct cpu6502 *
-cpu6502_init( struct nesbus *bus )
+cpu6502_init(  )
 {
 	cpu.nmi 	= nmi;
 	cpu.irq 	= irq;
@@ -1260,9 +1266,8 @@ cpu6502_init( struct nesbus *bus )
 	cpu.decode 	= decode;
 	cpu.execute	= execute;
 	cpu.clock 	= clock;
+	cpu.connect_bus = connect_bus;
 	cpu.print_regs = print_regs;
-
-	cpu.bus = bus;
 
 	return &cpu;
 }

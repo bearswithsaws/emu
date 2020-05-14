@@ -34,7 +34,7 @@ read( uint16_t addr )
 	else if ( ( addr == 0x3fff ) )
 	{
 		// ppu read
-		printf("PPU READ\n");
+		return bus.ppu->cpu_read(addr );
 	}
 	else if ( ( addr >= 0x4000 ) && ( addr <= 0x4017 ) )
 	{
@@ -44,7 +44,7 @@ read( uint16_t addr )
 	else
 	{
 		// remainder of reads like cartridge and open bus?
-		return bus.cart->map->read( bus.cart->map, addr );
+		return bus.cart->map->cpu_read( bus.cart->map, addr );
 	}
 }
 
@@ -63,7 +63,7 @@ write( uint16_t addr, uint8_t data )
 	else if ( (addr >= 0x2000 ) && ( addr < 0x3fff ) )
 	{
 		// So wrong but need to implement PPU later
-		//ram[ addr ] = data;
+		bus.ppu->cpu_write( addr, data );
 	}
 	else if ( ( addr == 0x3fff ) )
 	{
@@ -78,7 +78,7 @@ write( uint16_t addr, uint8_t data )
 	else
 	{
 		// remainder of reads like cartridge and open bus?
-		bus.cart->map->write( bus.cart->map, addr, data );
+		bus.cart->map->cpu_write( bus.cart->map, addr, data );
 	}
 	return;
 }
@@ -100,12 +100,18 @@ debug_read( uint16_t offset, uint8_t *buf, uint16_t len )
 }
 
 struct nesbus *
-nesbus_init( )
+nesbus_init( struct cpu6502 *cpu, struct ppu2c02 *ppu )
 {
 	bus.read 	= read;
 	bus.write 	= write;
 	bus.connect_cartridge = connect_cartridge;
 	bus.debug_read = debug_read;
+
+	bus.cpu = cpu;
+	cpu->connect_bus( &bus );
+
+	bus.ppu = ppu;
+	ppu->connect_bus( &bus );
 
 	return &bus;
 }

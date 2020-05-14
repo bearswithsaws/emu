@@ -16,6 +16,9 @@ typedef uint8_t ( *fp_decode ) ( void );
 typedef uint8_t ( *fp_execute ) ( void );
 typedef void ( *fp_print_regs ) ( void );
 
+typedef void ( *fp_clock ) ( void );
+typedef void ( *fp_connect_bus ) ( void * bus );
+
 typedef uint8_t ( *fp_addr_mode )( void );
 typedef uint8_t ( *fp_mnem )( void );
 
@@ -39,6 +42,7 @@ struct cpu6502
 	fp_decode decode;
 	fp_execute execute;
 	fp_clock clock;
+	fp_connect_bus connect_bus;
 	fp_print_regs print_regs;
 
 	struct nesbus *bus;
@@ -81,6 +85,6 @@ struct cpu6502
 #define GET_FLAG( f ) ( cpu.flags.f )
 #define SET_FLAG( f, v ) ( cpu.flags.f = !!(v) )
 
-struct cpu6502 * cpu6502_init( struct nesbus *bus );
+struct cpu6502 * cpu6502_init( );
 
 #endif /* __6502_H__ */

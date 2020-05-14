@@ -29,6 +29,8 @@ main(int argc, char *argv[] )
 	uint8_t buf[0x100];
 	uint8_t cycles = 0;
 
+	uint64_t tick_count = 0;
+
 	printf( "Emu version %d.%d\n", emu_VERSION_MAJOR, emu_VERSION_MINOR );
 	
 	if ( argc > 1 )
@@ -42,9 +44,9 @@ main(int argc, char *argv[] )
 	}
 	cartridge_info( cartridge );
 
-	bus = nesbus_init( );
-	cpu = cpu6502_init( bus );
-	ppu = ppu2c02_init( bus );
+	cpu = cpu6502_init( );
+	ppu = ppu2c02_init( );
+	bus = nesbus_init( cpu, ppu );
 	bus->connect_cartridge( cartridge );
 
 
@@ -59,11 +61,11 @@ main(int argc, char *argv[] )
 
 	do
 	{
-		// Obviouslt this is not correct. The PPU operates faster
-		// than the CPU so clock the cpu only once ever X times
-		// per loop where as PPU will clock each time
-		cpu->clock();
+		// PPU runs 3X faster than CPU
+		//http://nemulator.com/files/nes_emu.txt (timing section)
 		ppu->clock();
+		if ( tick_count % 3 == 0 )
+			cpu->clock();
 
 	} while ( INST_CNT-- );//cpu->PC < sizeof( SAMPLE_BIN ) );
 

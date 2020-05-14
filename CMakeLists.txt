@@ -8,6 +8,8 @@ configure_file(emu_config.h.in emu_config.h)
 # Add the architecures
 add_subdirectory(arch)
 
+set(CMAKE_BUILD_TYPE Debug)
+
 # add the executable
 add_executable(emu emu.c debug.c)
 

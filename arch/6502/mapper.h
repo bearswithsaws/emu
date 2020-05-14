@@ -13,8 +13,10 @@ typedef void ( *fp_mapper_write ) ( struct mapper *map,  uint16_t addr, uint8_t 
 struct mapper
 {
 	uint8_t mapper_id;
-	fp_mapper_read read;
-	fp_mapper_write write;
+	fp_mapper_read cpu_read;
+	fp_mapper_write cpu_write;
+	fp_mapper_read ppu_read;
+	fp_mapper_write ppu_write;
 	struct nes_cartridge *cartridge;
 	uint8_t num_prg_rom;
 	uint8_t num_chr_rom;
