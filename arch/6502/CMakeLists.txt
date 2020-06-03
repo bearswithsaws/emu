@@ -1,0 +1,1 @@
+add_library(lib6502 6502.c nesbus.c)
