@@ -9,7 +9,7 @@ configure_file(emu_config.h.in emu_config.h)
 add_subdirectory(arch)
 
 # add the executable
-add_executable(emu emu.c)
+add_executable(emu emu.c debug.c)
 
 target_link_libraries(emu PUBLIC lib6502)
 

@@ -32,12 +32,20 @@ load( uint16_t addr, uint8_t *data, uint16_t len )
 	memcpy( &ram[ addr ], data, len );
 }
 
+static uint8_t *
+debug_read( uint16_t offset, uint8_t *buf, uint16_t len )
+{
+	memcpy( buf, &ram[offset], len );
+	return buf;
+}
+
 struct nesbus *
 nesbus_init( )
 {
-	bus.read = read;
-	bus.write = write;
-	bus.load = load;
+	bus.read 	= read;
+	bus.write 	= write;
+	bus.load 	= load;
+	bus.debug_read = debug_read;
 
 	return &bus;
 }
