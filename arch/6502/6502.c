@@ -377,6 +377,8 @@ ASL( )
 	return 0;
 }
 
+// branch on C = 0                  N Z C I D V
+//                                  - - - - - -
 static uint8_t 
 BCC( )
 {
@@ -385,6 +387,8 @@ BCC( )
 	return 0;
 }
 
+// branch on C = 1                  N Z C I D V
+//                                  - - - - - -
 static uint8_t 
 BCS( )
 {
@@ -393,6 +397,8 @@ BCS( )
 	return 0;
 }
 
+// branch on Z = 1                  N Z C I D V
+//                                  - - - - - -
 static uint8_t 
 BEQ( )
 {
@@ -415,6 +421,8 @@ BIT( )
 	return 0;
 }
 
+// branch on N = 1                  N Z C I D V
+//                                  - - - - - -
 static uint8_t 
 BMI( )
 {
@@ -423,6 +431,8 @@ BMI( )
 	return 0;
 }
 
+// branch on Z = 0                  N Z C I D V
+//                                  - - - - - -
 static uint8_t 
 BNE( )
 {
@@ -432,6 +442,8 @@ BNE( )
 	return 0;
 }
 
+// branch on N = 0                  N Z C I D V
+//                                  - - - - - -
 static uint8_t 
 BPL( )
 {
@@ -440,6 +452,8 @@ BPL( )
 	return 0;
 }
 
+// interrupt,                       N Z C I D V
+// push PC+2, push SR               - - - 1 - -
 static uint8_t 
 BRK( )
 {
@@ -453,6 +467,8 @@ BRK( )
 	return 0;
 }
 
+// branch on V = 0                  N Z C I D V
+//                                  - - - - - -
 static uint8_t 
 BVC( )
 {
@@ -461,6 +477,8 @@ BVC( )
 	return 0;
 }
 
+// branch on V = 1                  N Z C I D V
+//                                  - - - - - -
 static uint8_t 
 BVS( )
 {
@@ -469,6 +487,8 @@ BVS( )
 	return 0;
 }
 
+// 0 -> C                           N Z C I D V
+//                                  - - 0 - - -
 static uint8_t 
 CLC( )
 {
@@ -476,6 +496,8 @@ CLC( )
 	return 0;
 }
 
+// 0 -> D                           N Z C I D V
+//                                  - - - - 0 -
 static uint8_t 
 CLD( )
 {
@@ -483,6 +505,8 @@ CLD( )
 	return 0;
 }
 
+// 0 -> I                           N Z C I D V
+//                                  - - - 0 - -
 static uint8_t 
 CLI( )
 {
@@ -490,6 +514,8 @@ CLI( )
 	return 0;
 }
 
+// 0 -> V                           N Z C I D V
+//                                  - - - - - 0
 static uint8_t 
 CLV( )
 {
@@ -497,6 +523,8 @@ CLV( )
 	return 0;
 }
 
+// A - M                            N Z C I D V
+//                                  + + + - - -
 static uint8_t 
 CMP( )
 {
@@ -514,6 +542,8 @@ CMP( )
 	return 0;
 }
 
+// X - M                            N Z C I D V
+//                                  + + + - - -
 static uint8_t 
 CPX( )
 {
@@ -528,6 +558,8 @@ CPX( )
 	return 0;
 }
 
+// Y - M                            N Z C I D V
+//                                  + + + - - -
 static uint8_t 
 CPY( )
 {
@@ -541,6 +573,8 @@ CPY( )
 	return 0;
 }
 
+// M - 1 -> M                       N Z C I D V
+//                                  + + - - - -
 static uint8_t 
 DEC( )
 {
@@ -555,6 +589,8 @@ DEC( )
 	return 0;
 }
 
+// X - 1 -> X                       N Z C I D V
+//                                  + + - - - -
 static uint8_t 
 DEX( )
 {
@@ -566,6 +602,8 @@ DEX( )
 	return 0;
 }
 
+// Y - 1 -> Y                       N Z C I D V
+//                                  + + - - - -
 static uint8_t 
 DEY( )
 {
@@ -577,12 +615,21 @@ DEY( )
 	return 0;
 }
 
+// A EOR M -> A                     N Z C I D V
+//                                  + + - - - -
 static uint8_t 
 EOR( )
 {
+	cpu.A = cpu.A ^ cpu.operand;
+
+	SET_FLAG( N, ( cpu.A | 0x80 ) );
+	SET_FLAG( Z, ( !cpu.A ) );
+
 	return 0;
 }
 
+// M + 1 -> M                       N Z C I D V
+//                                  + + - - - -
 static uint8_t 
 INC( )
 {
@@ -597,6 +644,9 @@ INC( )
 	return 0;
 }
 
+
+// X + 1 -> X                       N Z C I D V
+//                                  + + - - - -
 static uint8_t 
 INX( )
 {
@@ -608,6 +658,8 @@ INX( )
 	return 0;
 }
 
+// Y + 1 -> Y                       N Z C I D V
+//                                  + + - - - -
 static uint8_t 
 INY( )
 {
@@ -619,6 +671,8 @@ INY( )
 	return 0;
 }
 
+// (PC+1) -> PCL                    N Z C I D V
+// (PC+2) -> PCH                    - - - - - -
 static uint8_t 
 JMP( )
 {
@@ -626,6 +680,9 @@ JMP( )
 	return 0;
 }
 
+// push (PC+2),                     N Z C I D V
+// (PC+1) -> PCL                    - - - - - -
+// (PC+2) -> PCH
 static uint8_t 
 JSR( )
 {
@@ -638,6 +695,8 @@ JSR( )
 	return 0;
 }
 
+// M -> A                           N Z C I D V
+//                                  + + - - - -
 static uint8_t 
 LDA( )
 {
@@ -649,6 +708,8 @@ LDA( )
 	return 0;
 }
 
+// M -> X                           N Z C I D V
+//                                  + + - - - -
 static uint8_t 
 LDX( )
 {
@@ -660,6 +721,8 @@ LDX( )
 	return 0;
 }
 
+// M -> Y                           N Z C I D V
+//                                  + + - - - -
 static uint8_t 
 LDY( )
 {
@@ -671,10 +734,13 @@ LDY( )
 	return 0;
 }
 
+// 0 -> [76543210] -> C             N Z C I D V
+//                                  0 + + - - -
 static uint8_t 
 LSR( )
 {
-
+	
+	SET_FLAG( N, 0 );
 	return 0;
 }
 
@@ -709,16 +775,20 @@ PHP( )
 static uint8_t 
 PLA( )
 {
-	cpu.A = cpu.read( cpu.SP );
 	cpu.SP++;
+	cpu.A = cpu.read( cpu.SP );
+
+	SET_FLAG( N, ( cpu.A | 0x80 ) );
+	SET_FLAG( Z, ( !cpu.A ) );
+
 	return 0;
 }
 
 static uint8_t 
 PLP( )
 {
-	cpu.flags.reg = cpu.read( cpu.SP );
 	cpu.SP++;
+	cpu.flags.reg = cpu.read( cpu.SP );
 	return 0;
 }
 
