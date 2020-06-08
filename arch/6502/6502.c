@@ -323,13 +323,19 @@ ADC( )
 
 	tmp = ( uint16_t )cpu.A + ( uint16_t )cpu.operand + ( uint16_t )GET_FLAG( C );
 	SET_FLAG( C, ( tmp > 0xFF ) );
-	
-	cpu.A = tmp & 0x00FF;
+
+	// 1 + -1 = 0, c <- 1
+	if ( ( ( cpu.A & 0x80 )  ^ ( cpu.operand & 0x80 ) ) && !tmp )
+		SET_FLAG( C, 1 );
 
 	// Set flags
 	SET_FLAG( N, ( tmp | 0x80 ) );
 	SET_FLAG( Z, ( !tmp ) );
-	SET_FLAG( V, 0/* TODO LOGIC */ );
+	// See https://github.com/OneLoneCoder/olcNES/blob/master/Part%232%20-%20CPU/olc6502.cpp#L601
+	SET_FLAG( V, ( ~( ( uint16_t ) cpu.A ^ ( uint16_t ) cpu.operand ) & 
+				    ( ( uint16_t ) cpu.A ^ ( uint16_t ) tmp ) ) & 0x0080 );
+	
+	cpu.A = tmp & 0x00FF;
 	
 	return 0;
 }
@@ -395,9 +401,17 @@ BEQ( )
 	return 0;
 }
 
+// bits 7 and 6 of operand are transfered to bit 7 and 6 of SR (N,V);
+// the zeroflag is set to the result of operand AND accumulator.
+// A AND M, M7 -> N, M6 -> V        N Z C I D V
+//                                 M7 + - - - M6
 static uint8_t 
 BIT( )
 {
+	SET_FLAG( N, ( cpu.operand & 0x80 ) );
+	SET_FLAG( V, ( cpu.operand & 0x40 ) );
+	SET_FLAG( Z, cpu.A & cpu.operand );
+
 	return 0;
 }
 
@@ -429,6 +443,13 @@ BPL( )
 static uint8_t 
 BRK( )
 {
+	// TODO: What else?
+	cpu.write( cpu.SP, cpu.PC + 1 );
+	cpu.SP--;
+	cpu.write( cpu.SP, cpu.PC );
+	cpu.SP--;
+
+	SET_FLAG( I , 1 );
 	return 0;
 }
 
@@ -479,6 +500,17 @@ CLV( )
 static uint8_t 
 CMP( )
 {
+	uint16_t tmp;
+
+	tmp = ( uint16_t )cpu.A - ( uint16_t )cpu.operand;
+	SET_FLAG( C, ( cpu.A >= cpu.operand ) ? 1 : 0  );
+
+	// Set flags
+	SET_FLAG( N, ( tmp | 0x80 ) );
+	SET_FLAG( Z, ( !( tmp & 0xff ) ) );
+	
+	cpu.A = tmp & 0x00FF;
+
 	return 0;
 }
 
@@ -590,18 +622,30 @@ INY( )
 static uint8_t 
 JMP( )
 {
+	cpu.PC = cpu.operand_addr;
 	return 0;
 }
 
 static uint8_t 
 JSR( )
 {
+	cpu.write( cpu.SP, ( cpu.PC >> 8 ) & 0x00FF );
+	cpu.SP--;
+	cpu.write( cpu.SP, ( cpu.PC & 0x00FF ) );
+	cpu.SP--;
+	cpu.PC = cpu.operand_addr;
+
 	return 0;
 }
 
 static uint8_t 
 LDA( )
 {
+	cpu.A = cpu.operand;
+
+	SET_FLAG( N, ( cpu.A | 0x80 ) );
+	SET_FLAG( Z, ( !cpu.A ) );
+
 	return 0;
 }
 
@@ -630,6 +674,7 @@ LDY( )
 static uint8_t 
 LSR( )
 {
+
 	return 0;
 }
 
@@ -656,6 +701,8 @@ PHA( )
 static uint8_t 
 PHP( )
 {
+	cpu.write( cpu.SP, cpu.flags.reg );
+	cpu.SP--;
 	return 0;
 }
 
@@ -670,12 +717,15 @@ PLA( )
 static uint8_t 
 PLP( )
 {
+	cpu.flags.reg = cpu.read( cpu.SP );
+	cpu.SP++;
 	return 0;
 }
 
 static uint8_t 
 ROL( )
 {
+
 	return 0;
 }
 
@@ -694,6 +744,14 @@ RTI( )
 static uint8_t 
 RTS( )
 {
+	uint16_t tmp;
+
+	cpu.SP++;
+	tmp = cpu.read( cpu.SP );
+	cpu.SP++;
+	tmp |=  ( cpu.read( cpu.SP ) << 8 );
+	//cpu.SP++;
+	cpu.PC = tmp;
 	return 0;
 }
 
@@ -706,18 +764,21 @@ SBC( )
 static uint8_t 
 SEC( )
 {
+	SET_FLAG( C, 1 );
 	return 0;
 }
 
 static uint8_t 
 SED( )
 {
+	SET_FLAG( D, 1 );
 	return 0;
 }
 
 static uint8_t 
 SEI( )
 {
+	SET_FLAG( I, 1 );
 	return 0;
 }
 
@@ -731,12 +792,14 @@ STA( )
 static uint8_t 
 STX( )
 {
+	cpu.write( cpu.operand_addr, cpu.X );
 	return 0;
 }
 
 static uint8_t 
 STY( )
 {
+	cpu.write( cpu.operand_addr, cpu.Y );
 	return 0;
 }
 
@@ -821,7 +884,9 @@ print_regs( )
 static void
 reset( void )
 {
-	cpu.SP = (uint16_t)0x1fc;
+	SET_FLAG( U, 1 );
+	cpu.SP = (uint16_t)0xff;
+	cpu.PC = (uint16_t)0x600;
 }
 
 static uint8_t
