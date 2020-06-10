@@ -739,23 +739,30 @@ LDY( )
 static uint8_t 
 LSR( )
 {
-	
+	/* TODO: FILL IN */
 	SET_FLAG( N, 0 );
 	return 0;
 }
 
+// ---                              N Z C I D V
+//                                  - - - - - -
 static uint8_t 
 NOP( )
 {
 	return 0;
 }
 
+// A OR M -> A                      N Z C I D V
+//                                  + + - - - -
 static uint8_t 
 ORA( )
 {
+	/* TODO: FILL IN */
 	return 0;
 }
 
+// push A                           N Z C I D V
+//                                  - - - - - -
 static uint8_t 
 PHA( )
 {
@@ -764,6 +771,8 @@ PHA( )
 	return 0;
 }
 
+// push SR                          N Z C I D V
+//                                  - - - - - -
 static uint8_t 
 PHP( )
 {
@@ -772,6 +781,8 @@ PHP( )
 	return 0;
 }
 
+// pull A                           N Z C I D V
+//                                  + + - - - -
 static uint8_t 
 PLA( )
 {
@@ -784,6 +795,8 @@ PLA( )
 	return 0;
 }
 
+// pull SR                          N Z C I D V
+//                                  from stack
 static uint8_t 
 PLP( )
 {
@@ -792,6 +805,8 @@ PLP( )
 	return 0;
 }
 
+// C <- [76543210] <- C             N Z C I D V
+//                                  + + + - - -
 static uint8_t 
 ROL( )
 {
@@ -799,18 +814,36 @@ ROL( )
 	return 0;
 }
 
+// C -> [76543210] -> C             N Z C I D V
+//                                  + + + - - -
 static uint8_t 
 ROR( )
 {
 	return 0;
 }
 
+// pull SR, pull PC                 N Z C I D V
+//                                  from stack
 static uint8_t 
 RTI( )
 {
+	uint16_t tmp;
+
+	cpu.SP++;
+	cpu.flags.reg = cpu.read( cpu.SP );
+
+	cpu.SP++;
+	tmp = cpu.read( cpu.SP );
+	cpu.SP++;
+	tmp |=  ( cpu.read( cpu.SP ) << 8 );
+
+	cpu.PC = tmp;
+
 	return 0;
 }
 
+// pull PC, PC+1 -> PC              N Z C I D V
+//                                  - - - - - -
 static uint8_t 
 RTS( )
 {
@@ -820,17 +853,22 @@ RTS( )
 	tmp = cpu.read( cpu.SP );
 	cpu.SP++;
 	tmp |=  ( cpu.read( cpu.SP ) << 8 );
-	//cpu.SP++;
+
 	cpu.PC = tmp;
+
 	return 0;
 }
 
+// A - M - C -> A                   N Z C I D V
+//                                  + + + - - +
 static uint8_t 
 SBC( )
 {
 	return 0;
 }
 
+// 1 -> C                           N Z C I D V
+//                                  - - 1 - - -
 static uint8_t 
 SEC( )
 {
@@ -838,6 +876,8 @@ SEC( )
 	return 0;
 }
 
+// 1 -> D                           N Z C I D V
+//                                  - - - - 1 -
 static uint8_t 
 SED( )
 {
@@ -845,6 +885,8 @@ SED( )
 	return 0;
 }
 
+// 1 -> I                           N Z C I D V
+//                                  - - - 1 - -
 static uint8_t 
 SEI( )
 {
@@ -852,6 +894,8 @@ SEI( )
 	return 0;
 }
 
+// A -> M                           N Z C I D V
+//                                  - - - - - -
 static uint8_t 
 STA( )
 {
@@ -859,6 +903,8 @@ STA( )
 	return 0;
 }
 
+// X -> M                           N Z C I D V
+//                                  - - - - - -
 static uint8_t 
 STX( )
 {
@@ -866,6 +912,8 @@ STX( )
 	return 0;
 }
 
+// Y -> M                           N Z C I D V
+//                                  - - - - - -
 static uint8_t 
 STY( )
 {
@@ -873,6 +921,8 @@ STY( )
 	return 0;
 }
 
+// A -> X                           N Z C I D V
+//                                  + + - - - -
 static uint8_t 
 TAX( )
 {
@@ -883,6 +933,8 @@ TAX( )
 	return 0;
 }
 
+// A -> Y                           N Z C I D V
+//                                  + + - - - -
 static uint8_t 
 TAY( )
 {
@@ -893,6 +945,8 @@ TAY( )
 	return 0;
 }
 
+// SP -> X                          N Z C I D V
+//                                  + + - - - -
 static uint8_t 
 TSX( )
 {
@@ -903,6 +957,8 @@ TSX( )
 	return 0;
 }
 
+// X -> A                           N Z C I D V
+//                                  + + - - - -
 static uint8_t 
 TXA( )
 {
@@ -913,6 +969,8 @@ TXA( )
 	return 0;
 }
 
+// X -> SP                          N Z C I D V
+//                                  - - - - - -
 static uint8_t 
 TXS( )
 {
@@ -921,6 +979,8 @@ TXS( )
 	return 0;
 }
 
+// Y -> A                           N Z C I D V
+//                                  + + - - - -
 static uint8_t 
 TYA( )
 {
@@ -955,8 +1015,8 @@ static void
 reset( void )
 {
 	SET_FLAG( U, 1 );
-	cpu.SP = (uint16_t)0xff;
-	cpu.PC = (uint16_t)0x600;
+	cpu.SP = (uint16_t)0x1ff;
+	cpu.PC = (uint16_t)0x8000;
 }
 
 static uint8_t

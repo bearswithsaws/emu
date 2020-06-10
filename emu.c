@@ -5,6 +5,7 @@
 #include "emu_config.h"
 #include "6502.h"
 #include "nesbus.h"
+#include "cartridge.h"
 
 #include "debug.h"
 
@@ -21,16 +22,21 @@ main(int argc, char *argv[] )
 {
 	( void ) argc;
 	( void ) argv;
-	uint32_t INST_CNT = 100;
+	uint32_t INST_CNT = 10;
+
+	struct nes_cartridge *cartridge;
 
 	uint8_t buf[0x100];
 
 	printf( "Emu version %d.%d\n", emu_VERSION_MAJOR, emu_VERSION_MINOR );
+	cartridge = load_rom( "/mnt/c/work/test/roms/cpu_dummy_reads.nes" );
+	cartridge_info( cartridge );
+
 	bus = nesbus_init( );
 	cpu = cpu6502_init( bus );
 	cpu->reset();
 	// Hack for now to "load" mem
-	bus->load( 0x600, SAMPLE_BIN, sizeof( SAMPLE_BIN ) );
+	bus->load( 0x8000, cartridge->prg_rom, cartridge->prg_rom_len );
 	bus->debug_read(cpu->PC, buf, 0x20);
 	hex_dump( buf, 0x20 );
 
@@ -47,7 +53,7 @@ main(int argc, char *argv[] )
 
 		cpu->execute( );
 		cpu->print_regs( );
-		bus->debug_read(0x100-0x10, buf, 0x20);
+		bus->debug_read(0x200-0x10, buf, 0x20);
 		printf("Stack:\n");
 		hex_dump( buf, 0x20 );
 		bus->debug_read(cpu->PC, buf, 0x10);
