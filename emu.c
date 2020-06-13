@@ -22,29 +22,34 @@ main(int argc, char *argv[] )
 {
 	( void ) argc;
 	( void ) argv;
-	uint32_t INST_CNT = 100;
+	uint32_t INST_CNT = 200;
 
 	struct nes_cartridge *cartridge;
 
 	uint8_t buf[0x100];
 
 	printf( "Emu version %d.%d\n", emu_VERSION_MAJOR, emu_VERSION_MINOR );
+	
 	cartridge = load_rom( "/mnt/c/work/test/roms/nestest.nes" );
 	cartridge_info( cartridge );
 
 	bus = nesbus_init( );
 	cpu = cpu6502_init( bus );
-	// Hack for now to "load" mem
-	bus->load( 0x8000, cartridge->prg_rom, cartridge->prg_rom_len );
-	bus->load( 0xC000, cartridge->prg_rom, cartridge->prg_rom_len );
+	bus->connect_cartridge( cartridge );
+
+
+	printf("End of the cartridge:\n");
 	bus->debug_read(0xffff-0xf, buf, 0x10);
 	hex_dump(buf, 0x10);
+
+	printf("PC:\n");
 	bus->debug_read(cpu->PC, buf, 0x20);
 	hex_dump( buf, 0x20 );
 	cpu->reset();
 
 	do
 	{
+		printf("Instruction # %d\n", 200-INST_CNT);
 		cpu->fetch( );
 		cpu->decode( );
 		printf("%04x: %02x %s %04x / %02x\n",

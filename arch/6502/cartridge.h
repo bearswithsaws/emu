@@ -80,6 +80,7 @@ struct nes_cartridge
 	uint16_t chr_rom_len;
 	uint8_t *pc_inst_rom;
 	uint8_t *pc_prom;
+	uint8_t mapper_id;
 	int fd;
 };
 
