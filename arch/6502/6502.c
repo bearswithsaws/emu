@@ -329,7 +329,7 @@ ADC( )
 		SET_FLAG( C, 1 );
 
 	// Set flags
-	SET_FLAG( N, ( tmp | 0x80 ) );
+	SET_FLAG( N, ( tmp & 0x80 ) );
 	SET_FLAG( Z, ( !tmp ) );
 	// See https://github.com/OneLoneCoder/olcNES/blob/master/Part%232%20-%20CPU/olc6502.cpp#L601
 	SET_FLAG( V, ( ~( ( uint16_t ) cpu.A ^ ( uint16_t ) cpu.operand ) & 
@@ -371,7 +371,7 @@ ASL( )
 		cpu.write( cpu.operand_addr, ( tmp ) );
 
 	// Set flags
-	SET_FLAG( N, ( tmp | 0x80 ) );
+	SET_FLAG( N, ( tmp & 0x80 ) );
 	SET_FLAG( Z, ( !tmp ) );
 
 	return 0;
@@ -457,6 +457,8 @@ BPL( )
 static uint8_t 
 BRK( )
 {
+	printf( "Intterupts not implied\n" );
+	exit(1);
 	// TODO: What else?
 	cpu.write( cpu.SP, cpu.PC + 1 );
 	cpu.SP--;
@@ -534,7 +536,7 @@ CMP( )
 	SET_FLAG( C, ( cpu.A >= cpu.operand ) ? 1 : 0  );
 
 	// Set flags
-	SET_FLAG( N, ( tmp | 0x80 ) );
+	SET_FLAG( N, ( tmp & 0x80 ) );
 	SET_FLAG( Z, ( !( tmp & 0xff ) ) );
 	
 	cpu.A = tmp & 0x00FF;
@@ -551,7 +553,7 @@ CPX( )
 
 	tmp = cpu.X - cpu.operand;
 	
-	SET_FLAG( N, ( tmp | 0x80 ) );
+	SET_FLAG( N, ( tmp & 0x80 ) );
 	SET_FLAG( Z, ( !tmp ) );
 	SET_FLAG( C, ( cpu.X >= cpu.operand ) );
 
@@ -567,7 +569,7 @@ CPY( )
 
 	tmp = cpu.Y - cpu.operand;
 
-	SET_FLAG( N, ( tmp | 0x80 ) );
+	SET_FLAG( N, ( tmp & 0x80 ) );
 	SET_FLAG( Z, ( !tmp ) );
 	SET_FLAG( C, ( cpu.Y >= cpu.operand ) );
 	return 0;
@@ -583,7 +585,7 @@ DEC( )
 
 	cpu.write( tmp, cpu.operand_addr );
 
-	SET_FLAG( N, ( tmp | 0x80 ) );
+	SET_FLAG( N, ( tmp & 0x80 ) );
 	SET_FLAG( Z, ( !tmp ) );
 
 	return 0;
@@ -596,7 +598,7 @@ DEX( )
 {
 	cpu.X--;
 
-	SET_FLAG( N, ( cpu.X | 0x80 ) );
+	SET_FLAG( N, ( cpu.X & 0x80 ) );
 	SET_FLAG( Z, ( !cpu.X ) );
 
 	return 0;
@@ -609,7 +611,7 @@ DEY( )
 {
 	cpu.X--;
 
-	SET_FLAG( N, ( cpu.Y | 0x80 ) );
+	SET_FLAG( N, ( cpu.Y & 0x80 ) );
 	SET_FLAG( Z, ( !cpu.Y ) );
 
 	return 0;
@@ -638,7 +640,7 @@ INC( )
 
 	cpu.write( tmp, cpu.operand_addr );
 
-	SET_FLAG( N, ( tmp | 0x80 ) );
+	SET_FLAG( N, ( tmp & 0x80 ) );
 	SET_FLAG( Z, ( !tmp ) );
 
 	return 0;
@@ -652,7 +654,7 @@ INX( )
 {
 	cpu.X++;
 
-	SET_FLAG( N, ( cpu.X | 0x80 ) );
+	SET_FLAG( N, ( cpu.X & 0x80 ) );
 	SET_FLAG( Z, ( !cpu.X ) );
 
 	return 0;
@@ -665,7 +667,7 @@ INY( )
 {
 	cpu.Y++;
 
-	SET_FLAG( N, ( cpu.Y | 0x80 ) );
+	SET_FLAG( N, ( cpu.Y & 0x80 ) );
 	SET_FLAG( Z, ( !cpu.Y ) );
 
 	return 0;
@@ -715,7 +717,7 @@ LDX( )
 {
 	cpu.X = cpu.operand;
 
-	SET_FLAG( N, ( cpu.X | 0x80 ) );
+	SET_FLAG( N, ( cpu.X & 0x80 ) );
 	SET_FLAG( Z, ( !cpu.X ) );
 
 	return 0;
@@ -728,7 +730,7 @@ LDY( )
 {
 	cpu.Y = cpu.operand;
 
-	SET_FLAG( N, ( cpu.Y | 0x80 ) );
+	SET_FLAG( N, ( cpu.Y & 0x80 ) );
 	SET_FLAG( Z, ( !cpu.Y ) );
 
 	return 0;
@@ -739,8 +741,21 @@ LDY( )
 static uint8_t 
 LSR( )
 {
-	/* TODO: FILL IN */
+	uint8_t tmp;
+
+	SET_FLAG( C, ( cpu.operand & 0x1 )  );
+	
+	tmp = cpu.operand >> 1;
+
+
+	if ( cpu.curr_insn->addr_mode != ACC )
+		cpu.A = tmp;
+	else
+		cpu.write( cpu.operand_addr, ( tmp ) );
+
+	SET_FLAG( Z, ( !tmp ) );
 	SET_FLAG( N, 0 );
+	
 	return 0;
 }
 
@@ -757,7 +772,10 @@ NOP( )
 static uint8_t 
 ORA( )
 {
-	/* TODO: FILL IN */
+	cpu.A |= cpu.operand;
+
+	SET_FLAG( N, ( cpu.A | 0x80 ) );
+	SET_FLAG( Z, ( !cpu.A ) );
 	return 0;
 }
 
@@ -811,6 +829,22 @@ static uint8_t
 ROL( )
 {
 
+	uint8_t tmp;
+	uint8_t old_carry = GET_FLAG( C );
+
+	SET_FLAG( C, ( cpu.operand & 0x80 ) >> 7 );
+
+	tmp = cpu.operand << 1 | old_carry;
+
+	if ( cpu.curr_insn->addr_mode != ACC )
+		cpu.A = tmp;
+	else
+		cpu.write( cpu.operand_addr, ( tmp ) );
+
+	// Set flags
+	SET_FLAG( N, ( tmp & 0x80 ) );
+	SET_FLAG( Z, ( !tmp ) );
+	
 	return 0;
 }
 
@@ -819,6 +853,22 @@ ROL( )
 static uint8_t 
 ROR( )
 {
+	uint8_t tmp;
+	uint8_t old_carry = GET_FLAG( C );
+
+	SET_FLAG( C, ( cpu.operand & 0x1 )  );
+	
+	tmp = cpu.operand >> 1 | ( old_carry << 7 );
+
+
+	if ( cpu.curr_insn->addr_mode != ACC )
+		cpu.A = tmp;
+	else
+		cpu.write( cpu.operand_addr, ( tmp ) );
+
+	SET_FLAG( Z, ( !tmp ) );
+	SET_FLAG( N, 0 );
+	
 	return 0;
 }
 
@@ -864,6 +914,23 @@ RTS( )
 static uint8_t 
 SBC( )
 {
+	uint16_t tmp;
+
+	uint16_t value;
+
+	value = ( ( uint16_t ) cpu.operand ) ^ 0x00ff;
+
+
+	tmp = ( uint16_t )cpu.A + value + ( uint16_t )GET_FLAG( C );
+	SET_FLAG( C, ( tmp & 0xFF00 ) );
+
+	// Set flags
+	SET_FLAG( N, ( tmp & 0x0080 ) );
+	SET_FLAG( Z, ( !tmp ) );
+	SET_FLAG( V, ( ( tmp ^ ( uint16_t ) cpu.A ) & ( tmp ^ value ) & 0x0080 ) );
+	
+	cpu.A = tmp & 0x00FF;
+
 	return 0;
 }
 
@@ -927,7 +994,7 @@ static uint8_t
 TAX( )
 {
 	cpu.X = cpu.A;
-	SET_FLAG( N, ( cpu.X | 0x80 ) );
+	SET_FLAG( N, ( cpu.X & 0x80 ) );
 	SET_FLAG( Z, ( !cpu.X ) );
 
 	return 0;
@@ -939,7 +1006,7 @@ static uint8_t
 TAY( )
 {
 	cpu.Y = cpu.A;
-	SET_FLAG( N, ( cpu.Y | 0x80 ) );
+	SET_FLAG( N, ( cpu.Y & 0x80 ) );
 	SET_FLAG( Z, ( !cpu.Y ) );
 
 	return 0;
@@ -951,7 +1018,7 @@ static uint8_t
 TSX( )
 {
 	cpu.X = (uint8_t) cpu.SP;
-	SET_FLAG( N, ( cpu.X | 0x80 ) );
+	SET_FLAG( N, ( cpu.X & 0x80 ) );
 	SET_FLAG( Z, ( !cpu.X ) );
 
 	return 0;
@@ -1015,8 +1082,9 @@ static void
 reset( void )
 {
 	SET_FLAG( U, 1 );
-	cpu.SP = (uint16_t)0x1ff;
-	cpu.PC = (uint16_t)0x8000;
+	cpu.SP = (uint16_t)0xfd;
+	cpu.PC = cpu.read( 0xFFFC ) | cpu.read( 0xFFFD ) << 8;
+
 }
 
 static uint8_t

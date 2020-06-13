@@ -22,23 +22,26 @@ main(int argc, char *argv[] )
 {
 	( void ) argc;
 	( void ) argv;
-	uint32_t INST_CNT = 10;
+	uint32_t INST_CNT = 100;
 
 	struct nes_cartridge *cartridge;
 
 	uint8_t buf[0x100];
 
 	printf( "Emu version %d.%d\n", emu_VERSION_MAJOR, emu_VERSION_MINOR );
-	cartridge = load_rom( "/mnt/c/work/test/roms/cpu_dummy_reads.nes" );
+	cartridge = load_rom( "/mnt/c/work/test/roms/nestest.nes" );
 	cartridge_info( cartridge );
 
 	bus = nesbus_init( );
 	cpu = cpu6502_init( bus );
-	cpu->reset();
 	// Hack for now to "load" mem
 	bus->load( 0x8000, cartridge->prg_rom, cartridge->prg_rom_len );
+	bus->load( 0xC000, cartridge->prg_rom, cartridge->prg_rom_len );
+	bus->debug_read(0xffff-0xf, buf, 0x10);
+	hex_dump(buf, 0x10);
 	bus->debug_read(cpu->PC, buf, 0x20);
 	hex_dump( buf, 0x20 );
+	cpu->reset();
 
 	do
 	{

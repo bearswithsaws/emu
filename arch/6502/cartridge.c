@@ -108,8 +108,6 @@ load_rom( const char *filename )
 						cartridge->trainer_len;
 	cartridge->prg_rom_len = cartridge->hdr->prg_rom_size * 0x4000;
 
-cartridge->prg_rom = cartridge->raw_data+0x6010;
-cartridge->prg_rom_len = 0x700;
 
 	cartridge->chr_rom = cartridge->raw_data + sizeof( struct nes_cartridge_hdr ) + 
 						cartridge->trainer_len + cartridge->prg_rom_len;
