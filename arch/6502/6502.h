@@ -75,6 +75,7 @@ struct cpu6502
 	struct instruction *curr_insn;
 	uint8_t operand;
 	uint16_t operand_addr;
+	uint8_t cycles;
 
 };
 

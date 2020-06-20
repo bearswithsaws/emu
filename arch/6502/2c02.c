@@ -26,33 +26,48 @@ ppu_write( uint16_t addr, uint8_t data )
 static uint8_t
 cpu_read( uint16_t addr )
 {
+	uint8_t data;
 	switch( addr & 0x2007 )
 	{
 		case PPUCTRL:
+			// WRITE ONLY
 			break;
 
 		case PPUMASK:
+			// WRITE ONLY
 			break;
 
 		case PPUSTATUS:
+			//hack
+			ppu.ppustatus.vblank_started  = 1;
+			// The act of reading this register resets vblank
+			data =  ppu.ppustatus.reg;
+			ppu.ppustatus.vblank_started  = 0;
 			break;
 
 		case OAMADDR:
+			// Reading returns open bus...
 			break;
 
 		case OAMDATA:
+			// Return data at OMAMADDR
 			break;
 
 		case PPUSCROLL:
+			//
 			break;
 
 		case PPUADDR:
+			// Reading returns open bus...
 			break;
 
 		case PPUDATA:
+			// Return data at PPUADDR
 			break;
 
 	}
+
+	return data;
 }
 
 static void
@@ -61,9 +76,11 @@ cpu_write( uint16_t addr, uint8_t data )
 	switch( addr & 0x2007 )
 	{
 		case PPUCTRL:
+			ppu.ppuctrl.reg = data;
 			break;
 
 		case PPUMASK:
+		ppu.ppumask.reg = data;
 			break;
 
 		case PPUSTATUS:

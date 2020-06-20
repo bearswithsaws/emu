@@ -23,8 +23,8 @@ static uint8_t ABS( );
 static uint8_t ABX( );
 static uint8_t ABY( );
 static uint8_t IND( );
-static uint8_t IZX( );
-static uint8_t IZY( );
+static uint8_t IDX( );
+static uint8_t IDY( );
 
 
 static uint8_t ADC( );
@@ -120,28 +120,28 @@ static struct instruction instruction_table[3][8][8] =
 	},
 	{
 		{
-			{"ORA", 0x01, &ORA, &IND, 6 }, {"ORA", 0x05, &ORA, &ZPG, 3 }, {"ORA", 0x09, &ORA, &IMM, 2 }, {"ORA", 0x0D, &ORA, &ABS, 4 }, {"ORA", 0x11, &ORA, &IZY, 5 }, {"ORA", 0x15, &ORA, &ZPX, 2 }, {"ORA", 0x19, &ORA, &ABY, 4 }, {"ORA", 0x1D, &ORA, &ABX, 4 }
+			{"ORA", 0x01, &ORA, &IDX, 6 }, {"ORA", 0x05, &ORA, &ZPG, 3 }, {"ORA", 0x09, &ORA, &IMM, 2 }, {"ORA", 0x0D, &ORA, &ABS, 4 }, {"ORA", 0x11, &ORA, &IDY, 5 }, {"ORA", 0x15, &ORA, &ZPX, 2 }, {"ORA", 0x19, &ORA, &ABY, 4 }, {"ORA", 0x1D, &ORA, &ABX, 4 }
 		},
 		{
-			{"AND", 0x21, &AND, &IND, 6 }, {"AND", 0x25, &AND, &ZPG, 3 }, {"AND", 0x29, &AND, &IMM, 2 }, {"AND", 0x2D, &AND, &ABS, 4 }, {"AND", 0x31, &AND, &IZY, 5 }, {"AND", 0x35, &AND, &ZPX, 4 }, {"AND", 0x39, &AND, &ABY, 4 }, {"AND", 0x3D, &AND, &ABX, 4 }
+			{"AND", 0x21, &AND, &IDX, 6 }, {"AND", 0x25, &AND, &ZPG, 3 }, {"AND", 0x29, &AND, &IMM, 2 }, {"AND", 0x2D, &AND, &ABS, 4 }, {"AND", 0x31, &AND, &IDY, 5 }, {"AND", 0x35, &AND, &ZPX, 4 }, {"AND", 0x39, &AND, &ABY, 4 }, {"AND", 0x3D, &AND, &ABX, 4 }
 		},
 		{
-			{"EOR", 0x41, &EOR, &IND, 6 }, {"EOR", 0x45, &EOR, &ZPG, 3 }, {"EOR", 0x49, &EOR, &IMM, 2 }, {"EOR", 0x4D, &EOR, &ABS, 4 }, {"EOR", 0x51, &EOR, &IZY, 5 }, {"EOR", 0x55, &EOR, &ZPX, 4 }, {"EOR", 0x59, &EOR, &ABY, 4 }, {"EOR", 0x5D, &EOR, &ABX, 4 }
+			{"EOR", 0x41, &EOR, &IDX, 6 }, {"EOR", 0x45, &EOR, &ZPG, 3 }, {"EOR", 0x49, &EOR, &IMM, 2 }, {"EOR", 0x4D, &EOR, &ABS, 4 }, {"EOR", 0x51, &EOR, &IDY, 5 }, {"EOR", 0x55, &EOR, &ZPX, 4 }, {"EOR", 0x59, &EOR, &ABY, 4 }, {"EOR", 0x5D, &EOR, &ABX, 4 }
 		},
 		{
-			{"ADC", 0x61, &ADC, &IND, 6 }, {"ADC", 0x65, &ADC, &ZPG, 3 }, {"ADC", 0x69, &ADC, &IMM, 2 }, {"ADC", 0x6D, &ADC, &ABS, 4 }, {"ADC", 0x71, &ADC, &IZY, 5 }, {"ADC", 0x75, &ADC, &ZPX, 4 }, {"ADC", 0x79, &ADC, &ABY, 4 }, {"ADC", 0x7D, &ADC, &ABX, 4 }
+			{"ADC", 0x61, &ADC, &IDX, 6 }, {"ADC", 0x65, &ADC, &ZPG, 3 }, {"ADC", 0x69, &ADC, &IMM, 2 }, {"ADC", 0x6D, &ADC, &ABS, 4 }, {"ADC", 0x71, &ADC, &IDY, 5 }, {"ADC", 0x75, &ADC, &ZPX, 4 }, {"ADC", 0x79, &ADC, &ABY, 4 }, {"ADC", 0x7D, &ADC, &ABX, 4 }
 		},
 		{
-			{"STA", 0x81, &STA, &IND, 6 }, {"STA", 0x85, &STA, &ZPG, 3 }, {"???", 0x89, &XXX, &IMP, 2 }, {"STA", 0x8D, &STA, &ABS, 4 }, {"STA", 0x91, &STA, &IZY, 6 }, {"STA", 0x95, &STA, &ZPX, 4 }, {"STA", 0x99, &STA, &ABY, 5 }, {"STA", 0x9D, &STA, &ABX, 5 }
+			{"STA", 0x81, &STA, &IDX, 6 }, {"STA", 0x85, &STA, &ZPG, 3 }, {"???", 0x89, &XXX, &IMP, 2 }, {"STA", 0x8D, &STA, &ABS, 4 }, {"STA", 0x91, &STA, &IDY, 6 }, {"STA", 0x95, &STA, &ZPX, 4 }, {"STA", 0x99, &STA, &ABY, 5 }, {"STA", 0x9D, &STA, &ABX, 5 }
 		},
 		{
-			{"LDA", 0xA1, &LDA, &IND, 6 }, {"LDA", 0xA5, &LDA, &ZPG, 3 }, {"LDA", 0xA9, &LDA, &IMM, 2 }, {"LDA", 0xAD, &LDA, &ABS, 4 }, {"LDA", 0xB1, &LDA, &IZY, 5 }, {"LDA", 0xB5, &LDA, &ZPX, 4 }, {"LDA", 0xB9, &LDA, &ABY, 4 }, {"LDA", 0xBD, &LDA, &ABX, 4 }
+			{"LDA", 0xA1, &LDA, &IDX, 6 }, {"LDA", 0xA5, &LDA, &ZPG, 3 }, {"LDA", 0xA9, &LDA, &IMM, 2 }, {"LDA", 0xAD, &LDA, &ABS, 4 }, {"LDA", 0xB1, &LDA, &IDY, 5 }, {"LDA", 0xB5, &LDA, &ZPX, 4 }, {"LDA", 0xB9, &LDA, &ABY, 4 }, {"LDA", 0xBD, &LDA, &ABX, 4 }
 		},
 		{
-			{"CMP", 0xC1, &CMP, &IND, 6 }, {"CMP", 0xC5, &CMP, &ZPG, 3 }, {"CMP", 0xC9, &CMP, &IMM, 2 }, {"CMP", 0xCD, &CMP, &ABS, 4 }, {"CMP", 0xD1, &CMP, &IZY, 5 }, {"CMP", 0xD5, &CMP, &ZPX, 4 }, {"CMP", 0xD9, &CMP, &ABY, 4 }, {"CMP", 0xDD, &CMP, &ABX, 4 }
+			{"CMP", 0xC1, &CMP, &IDX, 6 }, {"CMP", 0xC5, &CMP, &ZPG, 3 }, {"CMP", 0xC9, &CMP, &IMM, 2 }, {"CMP", 0xCD, &CMP, &ABS, 4 }, {"CMP", 0xD1, &CMP, &IDY, 5 }, {"CMP", 0xD5, &CMP, &ZPX, 4 }, {"CMP", 0xD9, &CMP, &ABY, 4 }, {"CMP", 0xDD, &CMP, &ABX, 4 }
 		},
 		{
-			{"SBC", 0xE1, &SBC, &IND, 6 }, {"SBC", 0xE5, &SBC, &ZPG, 3 }, {"SBC", 0xE9, &SBC, &IMM, 2 }, {"SBC", 0xED, &SBC, &ABS, 4 }, {"SBC", 0xF1, &SBC, &IZY, 5 }, {"SBC", 0xF5, &SBC, &ZPX, 4 }, {"SBC", 0xF9, &SBC, &ABY, 4 }, {"SBC", 0xFD, &SBC, &ABX, 4 }
+			{"SBC", 0xE1, &SBC, &IDX, 6 }, {"SBC", 0xE5, &SBC, &ZPG, 3 }, {"SBC", 0xE9, &SBC, &IMM, 2 }, {"SBC", 0xED, &SBC, &ABS, 4 }, {"SBC", 0xF1, &SBC, &IDY, 5 }, {"SBC", 0xF5, &SBC, &ZPX, 4 }, {"SBC", 0xF9, &SBC, &ABY, 4 }, {"SBC", 0xFD, &SBC, &ABX, 4 }
 		},
 	},
 	{
@@ -282,7 +282,7 @@ static uint8_t IND( )
 	return 0;
 }
 
-static uint8_t IZX( )
+static uint8_t IDX( )
 {
 	uint16_t ind_addr;
 
@@ -298,7 +298,7 @@ static uint8_t IZX( )
 	return 0;
 }
 
-static uint8_t IZY( )
+static uint8_t IDY( )
 {
 	uint16_t ind_addr;
 
@@ -311,7 +311,10 @@ static uint8_t IZY( )
 
 	cpu.operand_addr = cpu.read( ind_addr++ );
 	cpu.operand_addr |= cpu.read( ind_addr ) << 8;
-	
+
+	if ( ( cpu.operand_addr & 0xff00 ) != ( ind_addr & 0xff00 ) )
+		return 1;
+
 	return 0;
 }
 
