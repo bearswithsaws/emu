@@ -29,12 +29,11 @@ read( uint16_t addr )
 	else if ( (addr >= 0x2000 ) && ( addr < 0x3fff ) )
 	{
 		// So wrong but need to implement PPU later
-		return 0xff;
+		return bus.ppu->cpu_read( addr );
 	}
 	else if ( ( addr == 0x3fff ) )
 	{
 		// ppu read
-		return bus.ppu->cpu_read(addr );
 	}
 	else if ( ( addr >= 0x4000 ) && ( addr <= 0x4017 ) )
 	{

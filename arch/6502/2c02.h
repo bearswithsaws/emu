@@ -2,6 +2,8 @@
 #define __2C02_H__
 
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include "nesbus.h"
 #include "cartridge.h"
 
@@ -21,6 +23,7 @@ typedef uint8_t ( *fp_ppu_read ) ( uint16_t addr );
 typedef void ( *fp_ppu_write ) ( uint16_t addr, uint8_t data );
 typedef uint8_t ( *fp_cpu_read ) ( uint16_t addr );
 typedef void ( *fp_cpu_write ) ( uint16_t addr, uint8_t data );
+typedef void ( *fp_reset ) ( void );
 
 typedef void ( *fp_clock ) ( void );
 typedef void ( *fp_connect_bus ) ( void * bus );
@@ -34,8 +37,12 @@ struct ppu2c02
 	fp_clock		clock;
 	fp_connect_bus 	connect_bus;
 	fp_connect_cartridge connect_cartridge;
+	fp_reset 		reset;
 	struct nes_cartridge *cart;
 	struct nesbus *bus;
+
+	uint8_t pattern_table[0x2000]; 	// CHR ROM
+	uint8_t nametable[0x2000]; 		// VRAM
 
 	union
 	{
@@ -83,8 +90,10 @@ struct ppu2c02
 	uint8_t omaaddr;
 	uint8_t oamdata;
 	uint8_t ppuscroll;
-	uint8_t ppuaddr;
+	uint16_t ppuaddr;
 	uint8_t ppudata;
+
+	uint8_t ppuaddr_latch;
 
 };
 

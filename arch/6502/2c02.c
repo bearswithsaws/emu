@@ -27,6 +27,8 @@ static uint8_t
 cpu_read( uint16_t addr )
 {
 	uint8_t data;
+	printf("ADDR %04x\n", addr);
+
 	switch( addr & 0x2007 )
 	{
 		case PPUCTRL:
@@ -73,6 +75,7 @@ cpu_read( uint16_t addr )
 static void
 cpu_write( uint16_t addr, uint8_t data )
 {
+	printf("ADDR %04x DATA %02x\n", addr, data);
 	switch( addr & 0x2007 )
 	{
 		case PPUCTRL:
@@ -80,7 +83,7 @@ cpu_write( uint16_t addr, uint8_t data )
 			break;
 
 		case PPUMASK:
-		ppu.ppumask.reg = data;
+			ppu.ppumask.reg = data;
 			break;
 
 		case PPUSTATUS:
@@ -94,9 +97,22 @@ cpu_write( uint16_t addr, uint8_t data )
 			break;
 
 		case PPUSCROLL:
+			ppu.ppuscroll = data;
 			break;
 
 		case PPUADDR:
+			if ( ppu.ppuaddr_latch == 0 )
+			{
+				ppu.ppuaddr = ( data << 8 );
+				ppu.ppuaddr_latch = 1;
+				printf("PPUADDR: %04x\n", ppu.ppuaddr);
+			}
+			else
+			{
+				ppu.ppuaddr |= data;
+				ppu.ppuaddr_latch = 0;
+				printf("PPUADDR: %04x\n", ppu.ppuaddr);
+			}
 			break;
 
 		case PPUDATA:
@@ -117,6 +133,13 @@ connect_bus( void *bus )
 	ppu.bus = ( struct nesbus * ) bus;
 }
 
+static void
+reset( void )
+{
+	ppu.ppuaddr_latch = 0;
+
+}
+
 struct ppu2c02 *
 ppu2c02_init( )
 {
@@ -126,6 +149,7 @@ ppu2c02_init( )
 	ppu.ppu_write 	= ppu_write;
 	ppu.clock 		= clock;
 	ppu.connect_bus = connect_bus;
+	ppu.reset 		= reset;
 	ppu.connect_cartridge = connect_cartridge;
 
 	return &ppu;

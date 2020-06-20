@@ -28,7 +28,7 @@ static struct ppu2c02 *ppu;
 int
 main(int argc, char *argv[] )
 {
-	uint32_t INST_CNT = 10;
+	uint32_t INST_CNT = -1;
 
 	struct nes_cartridge *cartridge;
 
@@ -104,7 +104,7 @@ main(int argc, char *argv[] )
 		if ( tick_count % 3 == 0 )
 			cpu->clock();
 
-	} while ( INST_CNT-- );//cpu->PC < sizeof( SAMPLE_BIN ) );
+	} while ( INST_CNT-- );
 
 	return 0;
 }
