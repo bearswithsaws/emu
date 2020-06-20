@@ -387,9 +387,22 @@ ASL( )
 static uint8_t 
 BCC( )
 {
+	uint8_t cycles = 0;
+	uint16_t old_pc = cpu.PC;
+
 	if ( !GET_FLAG( C ) )
+	{
+		// One extra cycle if the branch is taken
+		cycles++;
+
 		cpu.PC += cpu.operand_addr;
-	return 0;
+
+		// One extra cycle if the branch crosses a page
+		if ( ( cpu.PC & 0xff00 ) != ( old_pc & 0xff00 ) )
+			cpu.cycles++;
+
+	}
+	return cycles;
 }
 
 // branch on C = 1                  N Z C I D V
@@ -397,9 +410,22 @@ BCC( )
 static uint8_t 
 BCS( )
 {
+	uint8_t cycles = 0;
+	uint16_t old_pc = cpu.PC;
+
 	if ( GET_FLAG( C ) )
+	{
+		// One extra cycle if the branch is taken
+		cycles++;
+
 		cpu.PC += cpu.operand_addr;
-	return 0;
+
+		// One extra cycle if the branch crosses a page
+		if ( ( cpu.PC & 0xff00 ) != ( old_pc & 0xff00 ) )
+			cpu.cycles++;
+
+	}
+	return cycles;
 }
 
 // branch on Z = 1                  N Z C I D V
@@ -407,9 +433,22 @@ BCS( )
 static uint8_t 
 BEQ( )
 {
-	if ( GET_FLAG( Z ) )
+	uint8_t cycles = 0;
+	uint16_t old_pc = cpu.PC;
+
+	if ( !GET_FLAG( Z ) )
+	{
+		// One extra cycle if the branch is taken
+		cycles++;
+
 		cpu.PC += cpu.operand_addr;
-	return 0;
+
+		// One extra cycle if the branch crosses a page
+		if ( ( cpu.PC & 0xff00 ) != ( old_pc & 0xff00 ) )
+			cpu.cycles++;
+
+	}
+	return cycles;
 }
 
 // bits 7 and 6 of operand are transfered to bit 7 and 6 of SR (N,V);
@@ -431,9 +470,22 @@ BIT( )
 static uint8_t 
 BMI( )
 {
+	uint8_t cycles = 0;
+	uint16_t old_pc = cpu.PC;
+
 	if ( GET_FLAG( N ) )
+	{
+		// One extra cycle if the branch is taken
+		cycles++;
+
 		cpu.PC += cpu.operand_addr;
-	return 0;
+
+		// One extra cycle if the branch crosses a page
+		if ( ( cpu.PC & 0xff00 ) != ( old_pc & 0xff00 ) )
+			cpu.cycles++;
+
+	}
+	return cycles;
 }
 
 // branch on Z = 0                  N Z C I D V
@@ -441,10 +493,22 @@ BMI( )
 static uint8_t 
 BNE( )
 {
+	uint8_t cycles = 0;
+	uint16_t old_pc = cpu.PC;
+
 	if ( !GET_FLAG( Z ) )
+	{
+		// One extra cycle if the branch is taken
+		cycles++;
+
 		cpu.PC += cpu.operand_addr;
 
-	return 0;
+		// One extra cycle if the branch crosses a page
+		if ( ( cpu.PC & 0xff00 ) != ( old_pc & 0xff00 ) )
+			cpu.cycles++;
+
+	}
+	return cycles;
 }
 
 // branch on N = 0                  N Z C I D V
@@ -452,9 +516,22 @@ BNE( )
 static uint8_t 
 BPL( )
 {
+	uint8_t cycles = 0;
+	uint16_t old_pc = cpu.PC;
+
 	if ( !GET_FLAG( N ) )
+	{
+		// One extra cycle if the branch is taken
+		cycles++;
+
 		cpu.PC += cpu.operand_addr;
-	return 0;
+
+		// One extra cycle if the branch crosses a page
+		if ( ( cpu.PC & 0xff00 ) != ( old_pc & 0xff00 ) )
+			cpu.cycles++;
+
+	}
+	return cycles;
 }
 
 // interrupt,                       N Z C I D V
@@ -479,9 +556,22 @@ BRK( )
 static uint8_t 
 BVC( )
 {
+	uint8_t cycles = 0;
+	uint16_t old_pc = cpu.PC;
+
 	if ( !GET_FLAG( V ) )
+	{
+		// One extra cycle if the branch is taken
+		cycles++;
+
 		cpu.PC += cpu.operand_addr;
-	return 0;
+
+		// One extra cycle if the branch crosses a page
+		if ( ( cpu.PC & 0xff00 ) != ( old_pc & 0xff00 ) )
+			cpu.cycles++;
+
+	}
+	return cycles;
 }
 
 // branch on V = 1                  N Z C I D V
@@ -489,9 +579,22 @@ BVC( )
 static uint8_t 
 BVS( )
 {
+	uint8_t cycles = 0;
+	uint16_t old_pc = cpu.PC;
+
 	if ( GET_FLAG( V ) )
+	{
+		// One extra cycle if the branch is taken
+		cycles++;
+
 		cpu.PC += cpu.operand_addr;
-	return 0;
+
+		// One extra cycle if the branch crosses a page
+		if ( ( cpu.PC & 0xff00 ) != ( old_pc & 0xff00 ) )
+			cpu.cycles++;
+
+	}
+	return cycles;
 }
 
 // 0 -> C                           N Z C I D V
@@ -1204,10 +1307,19 @@ fetch( )
 static uint8_t
 decode( )
 {
+	// Set the initial cycle count
+	cpu.cycles = cpu.curr_insn->cycles;
 
+	// Calling addr_mode will resolve operand and any addresses
+	// as well as determine any additional cycles to be added on
+	// for memory access types. Branc instructions can incur
+	// additional cycles but need to be resolved at execution
 	cpu.curr_insn->addr_mode();
+
+	// Resolve the operand based on address mode
 	if ( ( cpu.curr_insn->addr_mode != IMP ) && ( cpu.curr_insn->addr_mode != ACC ) )
 		cpu.operand = cpu.read( cpu.operand_addr );
+
 	if ( cpu.curr_insn->addr_mode == ACC )
 		cpu.operand = cpu.A;
 	
@@ -1217,38 +1329,48 @@ decode( )
 static uint8_t
 execute( )
 {
-	cpu.curr_insn->execute( );
+	cpu.cycles += cpu.curr_insn->execute( );
+	return 0;
 }
 
 static void
 clock( )
 {
 	uint8_t buf[0x100];
-	uint8_t cycles = 0;
+	
+	if ( cpu.cycles == 0 )
+	{
+		cpu.fetch( );
 
-	cpu.fetch( );
-	cpu.decode( );
-	printf("%04x: %02x %s %04x / %02x\n",
-			cpu.start_pc,
-			cpu.opcode,
-			cpu.curr_insn->mnem,
-			cpu.operand_addr,
-			cpu.operand);
+		// decode will add cycles based on the fetched instruction
+		// as well as the decoded address mode
+		cpu.decode( );
 
-	cycles = cpu.curr_insn->cycles;
+		printf("%04x: %02x %s %04x / %02x\n",
+				cpu.start_pc,
+				cpu.opcode,
+				cpu.curr_insn->mnem,
+				cpu.operand_addr,
+				cpu.operand);
 
-	cpu.execute( );
-	cpu.print_regs( );
-	cpu.bus->debug_read(0x200-0x10, buf, 0x20);
-	printf("Stack:\n");
-	hex_dump( buf, 0x20 );
-	cpu.bus->debug_read(cpu.PC, buf, 0x10);
-	printf("%04x: \n",cpu.PC);
-	hex_dump( buf, 0x10 );
-	cpu.bus->debug_read(0, buf, 0x20);
-	printf("%04x: \n",0);
-	hex_dump( buf, 0x20 );
-	printf("\n");
+		// Execution may add up to 2 cycles if a branch is taken that crosses
+		// a page boundry.
+		cpu.execute( );
+
+		cpu.print_regs( );
+		cpu.bus->debug_read(0x200-0x10, buf, 0x20);
+		printf("Stack:\n");
+		hex_dump( buf, 0x20 );
+		cpu.bus->debug_read(cpu.PC, buf, 0x10);
+		printf("%04x: \n",cpu.PC);
+		hex_dump( buf, 0x10 );
+		cpu.bus->debug_read(0, buf, 0x20);
+		printf("%04x: \n",0);
+		hex_dump( buf, 0x20 );
+		printf("\n");
+	}
+	printf("%d cycles for this op\n", cpu.cycles);
+	cpu.cycles--;
 }
 
 static void

@@ -28,7 +28,7 @@ static struct ppu2c02 *ppu;
 int
 main(int argc, char *argv[] )
 {
-	uint32_t INST_CNT = 100;
+	uint32_t INST_CNT = 10;
 
 	struct nes_cartridge *cartridge;
 
