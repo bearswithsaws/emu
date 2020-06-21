@@ -33,10 +33,14 @@ cpu_read( uint16_t addr )
 	{
 		case PPUCTRL:
 			// WRITE ONLY
+			printf("PPUCTRL is write only\n");
+			exit(1);
 			break;
 
 		case PPUMASK:
 			// WRITE ONLY
+			printf("PPUMASK is write only\n");
+			exit(1);
 			break;
 
 		case PPUSTATUS:
@@ -88,6 +92,8 @@ cpu_write( uint16_t addr, uint8_t data )
 
 		case PPUSTATUS:
 			// READ ONLY
+			printf("PPUSTATUS is read only\n");
+			exit(1);
 			break;
 
 		case OAMADDR:

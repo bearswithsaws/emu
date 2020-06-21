@@ -12,7 +12,6 @@ typedef void ( *fp_reset ) ( void );
 typedef uint8_t ( *fp_read ) ( uint16_t addr );
 typedef void ( *fp_write ) ( uint16_t addr, uint8_t data );
 typedef uint8_t ( *fp_fetch ) ( void );
-typedef uint8_t ( *fp_decode ) ( void );
 typedef uint8_t ( *fp_execute ) ( void );
 typedef void ( *fp_print_regs ) ( void );
 
@@ -39,7 +38,6 @@ struct cpu6502
 	fp_read read;
 	fp_write write;
 	fp_fetch fetch;
-	fp_decode decode;
 	fp_execute execute;
 	fp_clock clock;
 	fp_connect_bus connect_bus;

@@ -318,6 +318,12 @@ static uint8_t IDY( )
 	return 0;
 }
 
+	// if ( ( cpu.curr_insn->addr_mode != IMP ) && 
+	// 	 ( cpu.curr_insn->addr_mode != ACC ) )
+	// 	cpu.operand = cpu.read( cpu.operand_addr );
+
+	// if ( cpu.curr_insn->addr_mode == ACC )
+	// 	cpu.operand = cpu.A;
 
 //     A + M + C -> A, C                N Z C I D V
 //                                      + + + - - +
@@ -325,6 +331,8 @@ static uint8_t
 ADC( )
 {
 	uint16_t tmp;
+
+	cpu.operand = cpu.read( cpu.operand_addr );
 
 	tmp = ( uint16_t )cpu.A + ( uint16_t )cpu.operand + ( uint16_t )GET_FLAG( C );
 	SET_FLAG( C, ( tmp > 0xFF ) );
@@ -350,6 +358,8 @@ ADC( )
 static uint8_t 
 AND( )
 {
+	cpu.operand = cpu.read( cpu.operand_addr );
+
 	cpu.A = cpu.A & cpu.operand;
 
 	// Set flags
@@ -365,6 +375,13 @@ static uint8_t
 ASL( )
 {
 	uint8_t tmp;
+
+	if ( ( cpu.curr_insn->addr_mode != IMP ) && 
+		 ( cpu.curr_insn->addr_mode != ACC ) )
+		cpu.operand = cpu.read( cpu.operand_addr );
+
+	if ( cpu.curr_insn->addr_mode == ACC )
+		cpu.operand = cpu.A;
 
 	SET_FLAG( C, ( cpu.operand & 0x80 ) >> 7 );
 
@@ -458,6 +475,8 @@ BEQ( )
 static uint8_t 
 BIT( )
 {
+	cpu.operand = cpu.read( cpu.operand_addr );
+
 	SET_FLAG( N, ( cpu.operand & 0x80 ) );
 	SET_FLAG( V, ( cpu.operand & 0x40 ) );
 	SET_FLAG( Z, cpu.A & cpu.operand );
@@ -539,7 +558,7 @@ BPL( )
 static uint8_t 
 BRK( )
 {
-	printf( "Intterupts not implied\n" );
+	printf( "Interrupts not implemented\n" );
 	exit(1);
 	// TODO: What else?
 	cpu.write( cpu.SP, ( cpu.PC >> 8 ) & 0x00FF );
@@ -640,6 +659,8 @@ CMP( )
 {
 	uint16_t tmp;
 
+	cpu.operand = cpu.read( cpu.operand_addr );
+
 	tmp = ( uint16_t )cpu.A - ( uint16_t )cpu.operand;
 	SET_FLAG( C, ( cpu.A >= cpu.operand ) ? 1 : 0  );
 
@@ -659,6 +680,8 @@ CPX( )
 {
 	uint8_t tmp;
 
+	cpu.operand = cpu.read( cpu.operand_addr );
+
 	tmp = cpu.X - cpu.operand;
 	
 	SET_FLAG( N, ( tmp & 0x80 ) );
@@ -675,6 +698,8 @@ CPY( )
 {
 	uint8_t tmp;
 
+	cpu.operand = cpu.read( cpu.operand_addr );
+
 	tmp = cpu.Y - cpu.operand;
 
 	SET_FLAG( N, ( tmp & 0x80 ) );
@@ -689,6 +714,9 @@ static uint8_t
 DEC( )
 {
 	uint8_t tmp;
+
+	cpu.operand = cpu.read( cpu.operand_addr );
+
 	tmp = cpu.operand - 1;
 
 	cpu.write( tmp, cpu.operand_addr );
@@ -730,6 +758,8 @@ DEY( )
 static uint8_t 
 EOR( )
 {
+	cpu.operand = cpu.read( cpu.operand_addr );
+
 	cpu.A = cpu.A ^ cpu.operand;
 
 	SET_FLAG( N, ( cpu.A & 0x80 ) );
@@ -744,6 +774,9 @@ static uint8_t
 INC( )
 {
 	uint8_t tmp;
+
+	cpu.operand = cpu.read( cpu.operand_addr );
+
 	tmp = cpu.operand + 1;
 
 	cpu.write( tmp, cpu.operand_addr );
@@ -810,6 +843,7 @@ JSR( )
 static uint8_t 
 LDA( )
 {
+	cpu.operand = cpu.read( cpu.operand_addr );
 	cpu.A = cpu.operand;
 
 	SET_FLAG( N, ( cpu.A & 0x80 ) );
@@ -823,6 +857,8 @@ LDA( )
 static uint8_t 
 LDX( )
 {
+	cpu.operand = cpu.read( cpu.operand_addr );
+
 	cpu.X = cpu.operand;
 
 	SET_FLAG( N, ( cpu.X & 0x80 ) );
@@ -836,6 +872,8 @@ LDX( )
 static uint8_t 
 LDY( )
 {
+	cpu.operand = cpu.read( cpu.operand_addr );
+
 	cpu.Y = cpu.operand;
 
 	SET_FLAG( N, ( cpu.Y & 0x80 ) );
@@ -850,6 +888,13 @@ static uint8_t
 LSR( )
 {
 	uint8_t tmp;
+
+	if ( ( cpu.curr_insn->addr_mode != IMP ) && 
+		 ( cpu.curr_insn->addr_mode != ACC ) )
+		cpu.operand = cpu.read( cpu.operand_addr );
+
+	if ( cpu.curr_insn->addr_mode == ACC )
+		cpu.operand = cpu.A;
 
 	SET_FLAG( C, ( cpu.operand & 0x1 )  );
 	
@@ -880,6 +925,8 @@ NOP( )
 static uint8_t 
 ORA( )
 {
+	cpu.operand = cpu.read( cpu.operand_addr );
+
 	cpu.A |= cpu.operand;
 
 	SET_FLAG( N, ( cpu.A & 0x80 ) );
@@ -940,6 +987,13 @@ ROL( )
 	uint8_t tmp;
 	uint8_t old_carry = GET_FLAG( C );
 
+	if ( ( cpu.curr_insn->addr_mode != IMP ) && 
+		 ( cpu.curr_insn->addr_mode != ACC ) )
+		cpu.operand = cpu.read( cpu.operand_addr );
+
+	if ( cpu.curr_insn->addr_mode == ACC )
+		cpu.operand = cpu.A;
+
 	SET_FLAG( C, ( cpu.operand & 0x80 ) >> 7 );
 
 	tmp = cpu.operand << 1 | old_carry;
@@ -963,6 +1017,13 @@ ROR( )
 {
 	uint8_t tmp;
 	uint8_t old_carry = GET_FLAG( C );
+
+	if ( ( cpu.curr_insn->addr_mode != IMP ) && 
+		 ( cpu.curr_insn->addr_mode != ACC ) )
+		cpu.operand = cpu.read( cpu.operand_addr );
+
+	if ( cpu.curr_insn->addr_mode == ACC )
+		cpu.operand = cpu.A;
 
 	SET_FLAG( C, ( cpu.operand & 0x1 )  );
 	
@@ -1023,8 +1084,9 @@ static uint8_t
 SBC( )
 {
 	uint16_t tmp;
-
 	uint16_t value;
+
+	cpu.operand = cpu.read( cpu.operand_addr );
 
 	value = ( ( uint16_t ) cpu.operand ) ^ 0x00ff;
 
@@ -1301,12 +1363,6 @@ fetch( )
 
 	cpu.curr_insn = &instruction_table[ c ][ a ][ b ];
 
-	return cpu.opcode;
-}
-
-static uint8_t
-decode( )
-{
 	// Set the initial cycle count
 	cpu.cycles = cpu.curr_insn->cycles;
 
@@ -1316,14 +1372,7 @@ decode( )
 	// additional cycles but need to be resolved at execution
 	cpu.curr_insn->addr_mode();
 
-	// Resolve the operand based on address mode
-	if ( ( cpu.curr_insn->addr_mode != IMP ) && ( cpu.curr_insn->addr_mode != ACC ) )
-		cpu.operand = cpu.read( cpu.operand_addr );
-
-	if ( cpu.curr_insn->addr_mode == ACC )
-		cpu.operand = cpu.A;
-	
-	return 0;
+	return cpu.opcode;
 }
 
 static uint8_t
@@ -1341,10 +1390,6 @@ clock( )
 	if ( cpu.cycles == 0 )
 	{
 		cpu.fetch( );
-
-		// decode will add cycles based on the fetched instruction
-		// as well as the decoded address mode
-		cpu.decode( );
 
 		printf("%04x: %02x %s %04x / %02x\n",
 				cpu.start_pc,
@@ -1388,7 +1433,6 @@ cpu6502_init(  )
 	cpu.read 	= read;
 	cpu.write 	= write;
 	cpu.fetch 	= fetch;
-	cpu.decode 	= decode;
 	cpu.execute	= execute;
 	cpu.clock 	= clock;
 	cpu.connect_bus = connect_bus;
