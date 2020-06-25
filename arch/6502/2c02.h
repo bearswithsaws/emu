@@ -43,6 +43,7 @@ struct ppu2c02
 
 	uint8_t pattern_table[0x2000]; 	// CHR ROM
 	uint8_t nametable[0x2000]; 		// VRAM
+	uint8_t palette_table[0x20];
 
 	union
 	{

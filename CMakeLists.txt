@@ -17,7 +17,7 @@ add_subdirectory(arch)
 set(CMAKE_BUILD_TYPE Debug)
 
 # add the executable
-add_executable(emu emu.c)
+add_executable(emu emu.c gui.c)
 
 target_link_libraries(emu PUBLIC lib6502 ${SDL2_LIBRARIES} ${SDL2TTF_LIBRARIES})
 

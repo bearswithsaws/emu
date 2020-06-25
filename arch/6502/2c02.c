@@ -59,6 +59,8 @@ ppu_read( uint16_t addr )
 	else if ( addr >= 0x3f00 && addr <= 0x3fff )
 	{
 		//palette
+		printf("Palette READ\n");
+		return ppu.palette_table[ addr & 0x1f ];
 	}
 	else if ( addr >= 0x4000  )
 	{
@@ -86,6 +88,8 @@ ppu_write( uint16_t addr, uint8_t data )
 	else if ( addr >= 0x3f00 && addr <= 0x3fff )
 	{
 		//palette
+		printf("Palette WRITE %04x %02x\n", addr, data);
+		ppu.palette_table[ addr & 0x1f ] = data;
 	}
 	else if ( addr >= 0x4000  )
 	{

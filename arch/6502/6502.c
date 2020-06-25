@@ -558,7 +558,7 @@ BPL( )
 static uint8_t 
 BRK( )
 {
-	printf( "Interrupts not implemented\n" );
+	log_print( "Interrupts not implemented\n" );
 	exit(1);
 	// TODO: What else?
 	cpu.write( cpu.SP, ( cpu.PC >> 8 ) & 0x00FF );
@@ -1231,7 +1231,7 @@ TYA( )
 static uint8_t 
 XXX( )
 {
-	printf("Invalid opcode encountered\n");
+	log_print("Invalid opcode encountered\n");
 	exit( 1 );
 	return 0;
 }
@@ -1239,14 +1239,14 @@ XXX( )
 static void
 print_regs( )
 {
-	printf("A: %02X\n", cpu.A );
-	printf("X: %02X\n", cpu.X );
-	printf("Y: %02X\n", cpu.Y );
-	printf("SP: %04X\n", cpu.SP );
-	printf("PC: %04X\n", cpu.PC );
-	printf("FLAGS: %02X\n", cpu.flags.reg );
-	printf("N V U B D I Z C\n");
-	printf("%d %d %d %d %d %d %d %d\n", 
+	log_print("A: %02X\n", cpu.A );
+	log_print("X: %02X\n", cpu.X );
+	log_print("Y: %02X\n", cpu.Y );
+	log_print("SP: %04X\n", cpu.SP );
+	log_print("PC: %04X\n", cpu.PC );
+	log_print("FLAGS: %02X\n", cpu.flags.reg );
+	log_print("N V U B D I Z C\n");
+	log_print("%d %d %d %d %d %d %d %d\n", 
 		GET_FLAG( N ),
 		GET_FLAG( V ),
 		GET_FLAG( U ),
@@ -1391,7 +1391,7 @@ clock( )
 	{
 		cpu.fetch( );
 
-		printf("%04x: %02x %s %04x / %02x\n",
+		log_print("%04x: %02x %s %04x / %02x\n",
 				cpu.start_pc,
 				cpu.opcode,
 				cpu.curr_insn->mnem,
@@ -1404,17 +1404,17 @@ clock( )
 
 		cpu.print_regs( );
 		cpu.bus->debug_read(0x200-0x10, buf, 0x20);
-		printf("Stack:\n");
+		log_print("Stack:\n");
 		hex_dump( buf, 0x20 );
 		cpu.bus->debug_read(cpu.PC, buf, 0x10);
-		printf("%04x: \n",cpu.PC);
+		log_print("%04x: \n",cpu.PC);
 		hex_dump( buf, 0x10 );
 		cpu.bus->debug_read(0, buf, 0x20);
-		printf("%04x: \n",0);
+		log_print("%04x: \n",0);
 		hex_dump( buf, 0x20 );
-		printf("\n");
+		log_print("\n");
 	}
-	printf("%d cycles for this op\n", cpu.cycles);
+	log_print("%d cycles for this op\n", cpu.cycles);
 	cpu.cycles--;
 }
 
