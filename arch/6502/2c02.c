@@ -11,13 +11,23 @@ connect_cartridge( struct nes_cartridge *cartridge )
 static uint8_t
 ppu_read( uint16_t addr )
 {
-
+	if ( addr < 0x2000 )
+	{
+		return ppu.cart->ppu_read( ppu.cart, addr );
+	}
 }
 
 static void
 ppu_write( uint16_t addr, uint8_t data )
 {
-
+	if ( addr < 0x2000 )
+	{
+		ppu.cart->ppu_write( ppu.cart, addr, data );
+	}
+	else if ( addr >= 0x2000 && addr <= 0x3eff )
+	{
+		printf("nametable write %04x : %02x\n", addr, data );
+	}
 }
 
 // Commmunication with the CPU is done via the special registers at
@@ -69,6 +79,8 @@ cpu_read( uint16_t addr )
 
 		case PPUDATA:
 			// Return data at PPUADDR
+			// Reads are delayed
+			printf("PPU READ\n");
 			break;
 
 	}
@@ -122,6 +134,7 @@ cpu_write( uint16_t addr, uint8_t data )
 			break;
 
 		case PPUDATA:
+			ppu_write( ppu.ppuaddr, data );
 			break;
 
 	}

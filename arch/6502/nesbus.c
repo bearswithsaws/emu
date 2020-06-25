@@ -43,7 +43,7 @@ read( uint16_t addr )
 	else
 	{
 		// remainder of reads like cartridge and open bus?
-		return bus.cart->map->cpu_read( bus.cart->map, addr );
+		return bus.cart->cpu_read( bus.cart, addr );
 	}
 }
 
@@ -77,7 +77,7 @@ write( uint16_t addr, uint8_t data )
 	else
 	{
 		// remainder of reads like cartridge and open bus?
-		bus.cart->map->cpu_write( bus.cart->map, addr, data );
+		bus.cart->cpu_write( bus.cart, addr, data );
 	}
 	return;
 }

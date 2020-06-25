@@ -20,12 +20,12 @@ void mapper_000_cpu_write( struct mapper *map, uint16_t addr, uint8_t data )
 
 uint8_t mapper_000_ppu_read( struct mapper *map, uint16_t addr )
 {
-	uint8_t data = 0;
+	uint8_t data = map->cartridge->chr_rom[ addr ];
 	return data;
 }
 
 void mapper_000_ppu_write( struct mapper *map, uint16_t addr, uint8_t data )
 {
-
+	map->cartridge->chr_rom[ addr ] = data;
 	return;
 }

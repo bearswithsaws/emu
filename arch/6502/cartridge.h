@@ -10,6 +10,7 @@
 // NES\x1a
 #define NES_MAGIC 0x1A53454E
 
+struct nes_cartridge;
 
 struct nes_cartridge_hdr
 {
@@ -68,6 +69,11 @@ struct nes_cartridge_hdr
 	uint8_t pad[5];
 };
 
+typedef uint8_t ( *fp_cart_cpu_read ) ( struct nes_cartridge *cart, uint16_t addr );
+typedef void ( *fp_cart_cpu_write ) ( struct nes_cartridge *cart, uint16_t addr, uint8_t data );
+typedef uint8_t ( *fp_cart_ppu_read ) ( struct nes_cartridge *cart, uint16_t addr );
+typedef void ( *fp_cart_ppu_write ) ( struct nes_cartridge *cart, uint16_t addr, uint8_t data );
+
 struct nes_cartridge
 {
 	union
@@ -86,6 +92,10 @@ struct nes_cartridge
 	uint8_t mapper_id;
 	int fd;
 	struct mapper *map;
+	fp_cart_cpu_read cpu_read;
+	fp_cart_cpu_write cpu_write;
+	fp_cart_ppu_read ppu_read;
+	fp_cart_ppu_write ppu_write;
 };
 
 typedef void ( *fp_connect_cartridge ) ( struct nes_cartridge *cartridge );

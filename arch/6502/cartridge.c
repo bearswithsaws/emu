@@ -48,6 +48,31 @@ cartridge_info( struct nes_cartridge * cartridge )
 
 }
 
+static uint8_t
+ppu_read( struct nes_cartridge *cart, uint16_t addr )
+{
+	printf("PPU READ CARTRIDGE CHR ROM!\n");
+	return cart->map->ppu_read( cart->map, addr );
+}
+
+static void
+ppu_write( struct nes_cartridge *cart, uint16_t addr, uint8_t data )
+{
+	cart->map->ppu_write( cart->map, addr, data );
+}
+
+static uint8_t
+cpu_read( struct nes_cartridge *cart, uint16_t addr )
+{
+	return cart->map->cpu_read( cart->map, addr );
+}
+
+static void
+cpu_write( struct nes_cartridge *cart, uint16_t addr, uint8_t data )
+{
+	cart->map->cpu_write( cart->map, addr, data );
+}
+
 struct nes_cartridge* 
 load_rom( const char *filename )
 {
@@ -65,6 +90,11 @@ load_rom( const char *filename )
 	}
 
 	memset( cartridge, 0, sizeof( struct nes_cartridge ) );
+
+	cartridge->cpu_read = cpu_read;
+	cartridge->cpu_write = cpu_write;
+	cartridge->ppu_read = ppu_read;
+	cartridge->ppu_write = ppu_write;
 
 	fd = open( filename, O_RDONLY );
 	if ( fd < 0 )
@@ -118,6 +148,7 @@ load_rom( const char *filename )
 	// Initialize and connect the mapper. The proper mapper will be determined
 	// inside the mapper_init function
 	cartridge->map = mapper_init( cartridge );
+
 out:
 	if ( ret < 0 )
 	{
