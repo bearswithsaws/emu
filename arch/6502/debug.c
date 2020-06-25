@@ -31,3 +31,26 @@ void hex_dump(const void* data, size_t size) {
 		}
 	}
 }
+
+void dump_nametable(const void* data ) {
+	size_t size = 32 * 30;
+	size_t width = 32;
+	unsigned int i, j;
+	printf("    ");
+	for (i = 0; i < 32; i++)
+		printf("%02X ", i);
+	printf("\n");
+	printf("   +");
+	for (i = 0; i < 32; i++)
+		printf("---");
+	printf("\n");
+	for (i = 0; i < size; ++i) {
+		if (!i|| !(i % 32) )
+			printf("%02X |",(int) i/32);
+		printf("%02X ", ((unsigned char*)data)[i]);
+
+		if ((i+1) % 32 == 0) {
+			printf("\n");
+		}
+	}
+}

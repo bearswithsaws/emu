@@ -6,7 +6,7 @@
 
 #include "6502.h"
 
-#include "../../debug.h"
+#include "debug.h"
 
 static struct cpu6502 cpu = { 0 };
 

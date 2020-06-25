@@ -1,5 +1,7 @@
 #include "2c02.h"
 
+#include "debug.h"
+
 static struct ppu2c02 ppu = { 0 };
 
 static void 
@@ -8,12 +10,63 @@ connect_cartridge( struct nes_cartridge *cartridge )
 	ppu.cart = cartridge;
 }
 
+static uint16_t
+nametable_mirror( uint16_t addr )
+{
+	uint16_t mirror_addr;
+
+	//      (0,0)     (256,0)     (511,0)
+	//        +-----------+-----------+
+	//        |           |           |
+	//        |           |           |
+	//        |   $2000   |   $2400   |
+	//        |           |           |
+	//        |           |           |
+	// (0,240)+-----------+-----------+(511,240)
+	//        |           |           |
+	//        |           |           |
+	//        |   $2800   |   $2C00   |
+	//        |           |           |
+	//        |           |           |
+	//        +-----------+-----------+
+	//      (0,479)   (256,479)   (511,479)
+	mirror_addr = addr - 0x2000;
+	if ( ppu.cart->hdr->flags6.mirroring == 1 )
+	{
+		// horizontal
+	}
+	else
+	{
+		// vertical
+	}
+
+	return mirror_addr;
+}
+
 static uint8_t
 ppu_read( uint16_t addr )
 {
 	if ( addr < 0x2000 )
 	{
 		return ppu.cart->ppu_read( ppu.cart, addr );
+	}
+	else if ( addr >= 0x2000 && addr <= 0x3eff )
+	{
+		printf("nametable read %04x\n", addr );
+		return ppu.nametable[ nametable_mirror( addr ) ];
+
+	}
+	else if ( addr >= 0x3f00 && addr <= 0x3fff )
+	{
+		//palette
+	}
+	else if ( addr >= 0x4000  )
+	{
+		// [0x4000, 0xFFFF]
+		// 	These addresses are mirrors of the the of the
+		// memory space [0, 0x3FFF], that is, any address
+		// that falls in here, it is accessed by data[addr & 0x3FFF].
+		return ppu_read( addr & 0x3fff );
 	}
 }
 
@@ -26,7 +79,21 @@ ppu_write( uint16_t addr, uint8_t data )
 	}
 	else if ( addr >= 0x2000 && addr <= 0x3eff )
 	{
-		printf("nametable write %04x : %02x\n", addr, data );
+		printf("nametable write %04x : %02x\n", nametable_mirror( addr ), data );
+		ppu.nametable[ nametable_mirror( addr ) ] = data;
+		dump_nametable( ppu.nametable );
+	}
+	else if ( addr >= 0x3f00 && addr <= 0x3fff )
+	{
+		//palette
+	}
+	else if ( addr >= 0x4000  )
+	{
+		// [0x4000, 0xFFFF]
+		// 	These addresses are mirrors of the the of the
+		// memory space [0, 0x3FFF], that is, any address
+		// that falls in here, it is accessed by data[addr & 0x3FFF].
+		return ppu_write( addr & 0x3fff, data );
 	}
 }
 
@@ -81,6 +148,8 @@ cpu_read( uint16_t addr )
 			// Return data at PPUADDR
 			// Reads are delayed
 			printf("PPU READ\n");
+			// auto increment based on ctrl register
+			ppu.ppuaddr += ( ppu.ppuctrl.vram_addr_increment ) ? 32 : 1;
 			break;
 
 	}
@@ -135,6 +204,8 @@ cpu_write( uint16_t addr, uint8_t data )
 
 		case PPUDATA:
 			ppu_write( ppu.ppuaddr, data );
+			// auto increment based on ctrl register
+			ppu.ppuaddr += ( ppu.ppuctrl.vram_addr_increment ) ? 32 : 1;
 			break;
 
 	}
