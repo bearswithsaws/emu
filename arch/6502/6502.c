@@ -356,7 +356,7 @@ static uint8_t ABX() {
 
     // According to the 6502 manual, if the addition of X causes
     // this to cross a page, then add one cycle
-    if ((cpu.operand_addr >> 8) & 0x00ff != page_check)
+    if ((cpu.operand_addr >> 8) & (0x00ff != page_check))
         return 1;
 
     return 0;
@@ -372,7 +372,7 @@ static uint8_t ABY() {
 
     // According to the 6502 manual, if the addition of Y causes
     // this to cross a page, then add one cycle
-    if ((cpu.operand_addr >> 8) & 0x00ff != page_check)
+    if ((cpu.operand_addr >> 8) & (0x00ff != page_check))
         return 1;
 
     return 0;

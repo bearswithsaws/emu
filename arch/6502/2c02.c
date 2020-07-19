@@ -37,23 +37,27 @@ static uint16_t nametable_mirror(uint16_t addr) {
 }
 
 static uint8_t ppu_read(uint16_t addr) {
+    uint8_t data;
+    
     if (addr < 0x2000) {
-        return ppu.cart->ppu_read(ppu.cart, addr);
+        data = ppu.cart->ppu_read(ppu.cart, addr);
     } else if (addr >= 0x2000 && addr <= 0x3eff) {
         printf("nametable read %04x\n", addr);
-        return ppu.nametable[nametable_mirror(addr)];
+        data = ppu.nametable[nametable_mirror(addr)];
 
     } else if (addr >= 0x3f00 && addr <= 0x3fff) {
         // palette
         printf("Palette READ\n");
-        return ppu.palette_table[addr & 0x1f];
+        data = ppu.palette_table[addr & 0x1f];
     } else if (addr >= 0x4000) {
         // [0x4000, 0xFFFF]
         // 	These addresses are mirrors of the the of the
         // memory space [0, 0x3FFF], that is, any address
         // that falls in here, it is accessed by data[addr & 0x3FFF].
-        return ppu_read(addr & 0x3fff);
+        data = ppu_read(addr & 0x3fff);
     }
+
+    return data;
 }
 
 static void ppu_write(uint16_t addr, uint8_t data) {
