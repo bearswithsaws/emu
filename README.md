@@ -1,3 +1,5 @@
+[![Build Status](https://api.travis-ci.org/bearswithsaws/emu.svg?branch=master)](https://travis-ci.org/bearswithsaws/emu)
+
 # emu
 Just a basic NES emulator
 
