@@ -15,14 +15,16 @@ static struct nesbus bus = {0};
 static uint8_t ram[NES_RAM_SIZE] = {0};
 
 static uint8_t read(uint16_t addr) {
+    uint8_t data;
+
     if (addr < 0x800) {
-        return ram[addr];
+        data =  ram[addr];
     } else if ((addr >= 0x800) && (addr < 0x2000)) {
         // mirroring
-        return ram[addr & 0x7ff];
+        data =  ram[addr & 0x7ff];
     } else if ((addr >= 0x2000) && (addr < 0x3fff)) {
         // So wrong but need to implement PPU later
-        return bus.ppu->cpu_read(addr);
+        data =  bus.ppu->cpu_read(addr);
     } else if (addr == 0x3fff) {
         // ppu read
     } else if ((addr >= 0x4000) && (addr <= 0x4017)) {
@@ -30,8 +32,10 @@ static uint8_t read(uint16_t addr) {
         printf("APU READ\n");
     } else {
         // remainder of reads like cartridge and open bus?
-        return bus.cart->cpu_read(bus.cart, addr);
+        data =  bus.cart->cpu_read(bus.cart, addr);
     }
+
+    return data;
 }
 
 static void write(uint16_t addr, uint8_t data) {
