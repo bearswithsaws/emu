@@ -23,7 +23,7 @@ static uint8_t read(uint16_t addr) {
     } else if ((addr >= 0x2000) && (addr < 0x3fff)) {
         // So wrong but need to implement PPU later
         return bus.ppu->cpu_read(addr);
-    } else if ((addr == 0x3fff)) {
+    } else if (addr == 0x3fff) {
         // ppu read
     } else if ((addr >= 0x4000) && (addr <= 0x4017)) {
         // apu read
@@ -43,7 +43,7 @@ static void write(uint16_t addr, uint8_t data) {
     } else if ((addr >= 0x2000) && (addr < 0x3fff)) {
         // So wrong but need to implement PPU later
         bus.ppu->cpu_write(addr, data);
-    } else if ((addr == 0x3fff)) {
+    } else if (addr == 0x3fff) {
         // ppu write
         printf("PPU WRITE\n");
     } else if ((addr >= 0x4000) && (addr <= 0x4017)) {
