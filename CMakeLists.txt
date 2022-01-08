@@ -11,6 +11,9 @@ include_directories(${SDL2_INCLUDE_DIRS} ${SDL2TTF_INCLUDE_DIRS})
 
 configure_file(emu_config.h.in emu_config.h)
 
+#add_definitions( -DDEBUG )
+#add_definitions( -DINVALID_AS_NOP )
+
 # Add the architecures
 add_subdirectory(arch)
 

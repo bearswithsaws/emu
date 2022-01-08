@@ -57,6 +57,8 @@ int main(int argc, char *argv[]) {
         ppu->clock();
         if (tick_count % 3 == 0)
             cpu->clock();
+        // This is jsut for random input for nestest...
+        cpu->write(0xd2, INST_CNT & 0xff );
 
     } while (INST_CNT--);
 

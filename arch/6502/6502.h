@@ -60,7 +60,7 @@ struct cpu6502 {
     uint8_t Y;
     uint8_t X;
     uint16_t PC;
-    uint16_t SP;
+    uint8_t sp;
 
     // DEBUG purposes
     uint16_t start_pc;
@@ -71,6 +71,12 @@ struct cpu6502 {
     uint16_t operand_addr;
     uint8_t cycles;
 };
+
+#define SP(x) ((x.sp + 0x100))
+#define SET_SP(x, p) ((x.sp = (p & 0xFF)))
+#define INC_SP(x) ((x.sp++ ))
+#define DEC_SP(x) ((x.sp-- ))
+
 
 #define DECODE_A(inst) ((inst >> 5) & 0x7)
 #define DECODE_B(inst) ((inst >> 2) & 0x7)

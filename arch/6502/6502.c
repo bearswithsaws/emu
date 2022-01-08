@@ -118,7 +118,7 @@ static struct instruction instruction_table[3][8][8] = {
         {{"RTS", 0x60, &RTS, &IMP, 6},
          {"???", 0x64, &XXX, &IMP, 2},
          {"PLA", 0x68, &PLA, &IMP, 4},
-         {"JMP", 0x6C, &JMP, &ABS, 5},
+         {"JMP", 0x6C, &JMP, &IND, 5},
          {"BVS", 0x70, &BVS, &REL, 2},
          {"???", 0x74, &XXX, &IMP, 2},
          {"SEI", 0x78, &SEI, &IMP, 2},
@@ -261,7 +261,7 @@ static struct instruction instruction_table[3][8][8] = {
          {"STX", 0x8E, &STX, &ABS, 4},
          {"???", 0x92, &XXX, &IMP, 2},
          {"STX", 0x96, &STX, &ZPY, 4},
-         {"TSX", 0x9A, &TSX, &IMP, 2},
+         {"TXS", 0x9A, &TXS, &IMP, 2},
          {"???", 0x9E, &XXX, &IMP, 2}},
         {{"LDX", 0xA2, &LDX, &IMM, 2},
          {"LDX", 0xA6, &LDX, &ZPG, 3},
@@ -316,12 +316,12 @@ static uint8_t ZPG() {
 
 static uint8_t ZPX() {
     cpu.operand_addr = ((uint16_t)cpu.read(cpu.PC++) + cpu.X) & 0xff;
-
+    log_print("ZPX OPERAND ADDR: %02x\n", cpu.operand_addr);
     return 0;
 }
 
 static uint8_t ZPY() {
-    cpu.operand_addr = ((uint16_t)cpu.read(cpu.PC++) + cpu.X) & 0xff;
+    cpu.operand_addr = ((uint16_t)cpu.read(cpu.PC++) + cpu.Y) & 0xff;
 
     return 0;
 }
@@ -384,9 +384,18 @@ static uint8_t IND() {
     ind_addr = cpu.read(cpu.PC++);
     ind_addr |= cpu.read(cpu.PC++) << 8;
 
-    cpu.operand_addr = cpu.read(ind_addr++);
-    cpu.operand_addr |= cpu.read(ind_addr) << 8;
-
+    if ((ind_addr & 0x00FF) == 0xFF) {
+        // https://www.qmtpro.com/~nes/misc/nestest.txt
+        // 007h - JMP () data reading didn't wrap properly (this fails on a
+        // 65C02)
+        cpu.operand_addr = cpu.read(ind_addr);
+        cpu.operand_addr |= cpu.read(ind_addr & 0xff00) << 8;
+        log_print("IND operand addr %04x (from %04x wrapped)\n",
+                  cpu.operand_addr, ind_addr);
+    } else {
+        cpu.operand_addr = cpu.read(ind_addr++);
+        cpu.operand_addr |= cpu.read(ind_addr) << 8;
+    }
     return 0;
 }
 
@@ -394,13 +403,16 @@ static uint8_t IDX() {
     uint16_t ind_addr;
 
     ind_addr = cpu.read(cpu.PC++);
+    log_print("IDX indirect addr: %04x\n", ind_addr);
     ind_addr += cpu.X;
 
     // Zero page wrap around
     ind_addr &= 0xff;
+    log_print("IDX indirect addr + x & ff: %04x\n", ind_addr);
 
     cpu.operand_addr = cpu.read(ind_addr++);
-    cpu.operand_addr |= cpu.read(ind_addr) << 8;
+    cpu.operand_addr |= cpu.read(ind_addr&0xff) << 8;
+    log_print("IDX OPERAND ADDR: %02x\n", cpu.operand_addr);
 
     return 0;
 }
@@ -409,14 +421,16 @@ static uint8_t IDY() {
     uint16_t ind_addr;
 
     ind_addr = cpu.read(cpu.PC++);
+    log_print("IDY indirect addr in zero page: %04x\n", ind_addr);
 
     cpu.operand_addr = cpu.read(ind_addr++);
-    cpu.operand_addr |= cpu.read(ind_addr) << 8;
+    cpu.operand_addr |= cpu.read(ind_addr & 0xFF) << 8;
+    log_print("IDY OPERAND ADDR: %02x\n", cpu.operand_addr);
 
     ind_addr = cpu.operand_addr + cpu.Y;
+    log_print("IDY addr + y: %04x\n", ind_addr);
 
-    cpu.operand_addr = cpu.read(ind_addr++);
-    cpu.operand_addr |= cpu.read(ind_addr) << 8;
+    cpu.operand_addr = ind_addr;
 
     if ((cpu.operand_addr & 0xff00) != (ind_addr & 0xff00))
         return 1;
@@ -446,6 +460,7 @@ static uint8_t ADC() {
         SET_FLAG(C, 1);
 
     // Set flags
+    tmp &= 0x00FF;
     SET_FLAG(N, (tmp & 0x80));
     SET_FLAG(Z, (!tmp));
     // See
@@ -488,7 +503,7 @@ static uint8_t ASL() {
 
     tmp = cpu.operand << 1;
 
-    if (cpu.curr_insn->addr_mode != ACC)
+    if (cpu.curr_insn->addr_mode == ACC)
         cpu.A = tmp;
     else
         cpu.write(cpu.operand_addr, (tmp));
@@ -544,7 +559,7 @@ static uint8_t BEQ() {
     uint8_t cycles = 0;
     uint16_t old_pc = cpu.PC;
 
-    if (!GET_FLAG(Z)) {
+    if (GET_FLAG(Z)) {
         // One extra cycle if the branch is taken
         cycles++;
 
@@ -562,11 +577,15 @@ static uint8_t BEQ() {
 // A AND M, M7 -> N, M6 -> V        N Z C I D V
 //                                 M7 + - - - M6
 static uint8_t BIT() {
+    uint16_t tmp;
+
     cpu.operand = cpu.read(cpu.operand_addr);
+
+    tmp = cpu.A & cpu.operand;
+    SET_FLAG(Z, (tmp & 0x00ff) == 0x00);
 
     SET_FLAG(N, (cpu.operand & 0x80));
     SET_FLAG(V, (cpu.operand & 0x40));
-    SET_FLAG(Z, cpu.A & cpu.operand);
 
     return 0;
 }
@@ -634,10 +653,10 @@ static uint8_t BRK() {
     log_print("Interrupts not implemented\n");
     exit(1);
     // TODO: What else?
-    cpu.write(cpu.SP, (cpu.PC >> 8) & 0x00FF);
-    cpu.SP--;
-    cpu.write(cpu.SP, cpu.PC & 0x00ff);
-    cpu.SP--;
+    cpu.write(SP(cpu), (cpu.PC >> 8) & 0x00FF);
+    DEC_SP(cpu);
+    cpu.write(SP(cpu), cpu.PC & 0x00ff);
+    DEC_SP(cpu);
 
     SET_FLAG(I, 1);
     return 0;
@@ -723,8 +742,6 @@ static uint8_t CMP() {
     SET_FLAG(N, (tmp & 0x80));
     SET_FLAG(Z, (!(tmp & 0xff)));
 
-    cpu.A = tmp & 0x00FF;
-
     return 0;
 }
 
@@ -738,6 +755,7 @@ static uint8_t CPX() {
     tmp = cpu.X - cpu.operand;
 
     SET_FLAG(N, (tmp & 0x80));
+    tmp &= 0x00FF;
     SET_FLAG(Z, (!tmp));
     SET_FLAG(C, (cpu.X >= cpu.operand));
 
@@ -766,9 +784,9 @@ static uint8_t DEC() {
 
     cpu.operand = cpu.read(cpu.operand_addr);
 
-    tmp = cpu.operand - 1;
+    tmp = (uint16_t)cpu.operand - 1;
 
-    cpu.write(tmp, cpu.operand_addr);
+    cpu.write(cpu.operand_addr, tmp & 0xFF);
 
     SET_FLAG(N, (tmp & 0x80));
     SET_FLAG(Z, (!tmp));
@@ -817,10 +835,12 @@ static uint8_t INC() {
     uint8_t tmp;
 
     cpu.operand = cpu.read(cpu.operand_addr);
+    log_print("INC read %02x from %04x\n", cpu.operand, cpu.operand_addr);
 
-    tmp = cpu.operand + 1;
+    tmp = (uint16_t)cpu.operand + 1;
 
-    cpu.write(tmp, cpu.operand_addr);
+    cpu.write(cpu.operand_addr, tmp & 0xFF);
+    log_print("INC wrote %02x to %04x\n", tmp & 0xFF, cpu.operand_addr);
 
     SET_FLAG(N, (tmp & 0x80));
     SET_FLAG(Z, (!tmp));
@@ -861,10 +881,11 @@ static uint8_t JMP() {
 // (PC+1) -> PCL                    - - - - - -
 // (PC+2) -> PCH
 static uint8_t JSR() {
-    cpu.write(cpu.SP, (cpu.PC >> 8) & 0x00FF);
-    cpu.SP--;
-    cpu.write(cpu.SP, (cpu.PC & 0x00FF));
-    cpu.SP--;
+    uint16_t tmp = cpu.PC - 1;
+    cpu.write(SP(cpu), (tmp >> 8) & 0x00FF);
+    DEC_SP(cpu);
+    cpu.write(SP(cpu), (tmp & 0x00FF));
+    DEC_SP(cpu);
     cpu.PC = cpu.operand_addr;
 
     return 0;
@@ -923,7 +944,7 @@ static uint8_t LSR() {
 
     tmp = cpu.operand >> 1;
 
-    if (cpu.curr_insn->addr_mode != ACC)
+    if (cpu.curr_insn->addr_mode == ACC)
         cpu.A = tmp;
     else
         cpu.write(cpu.operand_addr, (tmp));
@@ -953,24 +974,24 @@ static uint8_t ORA() {
 // push A                           N Z C I D V
 //                                  - - - - - -
 static uint8_t PHA() {
-    cpu.write(cpu.SP, cpu.A);
-    cpu.SP--;
+    cpu.write(SP(cpu), cpu.A);
+    DEC_SP(cpu);
     return 0;
 }
 
 // push SR                          N Z C I D V
 //                                  - - - - - -
 static uint8_t PHP() {
-    cpu.write(cpu.SP, cpu.flags.reg);
-    cpu.SP--;
+    cpu.write(SP(cpu), cpu.flags.reg);
+    DEC_SP(cpu);
     return 0;
 }
 
 // pull A                           N Z C I D V
 //                                  + + - - - -
 static uint8_t PLA() {
-    cpu.SP++;
-    cpu.A = cpu.read(cpu.SP);
+    INC_SP(cpu);
+    cpu.A = cpu.read(SP(cpu));
 
     SET_FLAG(N, (cpu.A & 0x80));
     SET_FLAG(Z, (!cpu.A));
@@ -981,8 +1002,8 @@ static uint8_t PLA() {
 // pull SR                          N Z C I D V
 //                                  from stack
 static uint8_t PLP() {
-    cpu.SP++;
-    cpu.flags.reg = cpu.read(cpu.SP);
+    INC_SP(cpu);
+    cpu.flags.reg = cpu.read(SP(cpu));
     return 0;
 }
 
@@ -1003,7 +1024,7 @@ static uint8_t ROL() {
 
     tmp = cpu.operand << 1 | old_carry;
 
-    if (cpu.curr_insn->addr_mode != ACC)
+    if (cpu.curr_insn->addr_mode == ACC)
         cpu.A = tmp;
     else
         cpu.write(cpu.operand_addr, (tmp));
@@ -1031,13 +1052,14 @@ static uint8_t ROR() {
 
     tmp = cpu.operand >> 1 | (old_carry << 7);
 
-    if (cpu.curr_insn->addr_mode != ACC)
+    if (cpu.curr_insn->addr_mode == ACC)
         cpu.A = tmp;
     else
         cpu.write(cpu.operand_addr, (tmp));
 
+    tmp &= 0x00FF;
     SET_FLAG(Z, (!tmp));
-    SET_FLAG(N, 0);
+    SET_FLAG(N, tmp & 0x80);
 
     return 0;
 }
@@ -1047,13 +1069,13 @@ static uint8_t ROR() {
 static uint8_t RTI() {
     uint16_t tmp;
 
-    cpu.SP++;
-    cpu.flags.reg = cpu.read(cpu.SP);
+    INC_SP(cpu);
+    cpu.flags.reg = cpu.read(SP(cpu));
 
-    cpu.SP++;
-    tmp = cpu.read(cpu.SP);
-    cpu.SP++;
-    tmp |= (cpu.read(cpu.SP) << 8);
+    INC_SP(cpu);
+    tmp = cpu.read(SP(cpu));
+    INC_SP(cpu);
+    tmp |= (cpu.read(SP(cpu)) << 8);
 
     cpu.PC = tmp;
 
@@ -1065,12 +1087,12 @@ static uint8_t RTI() {
 static uint8_t RTS() {
     uint16_t tmp;
 
-    cpu.SP++;
-    tmp = cpu.read(cpu.SP);
-    cpu.SP++;
-    tmp |= (cpu.read(cpu.SP) << 8);
+    INC_SP(cpu);
+    tmp = cpu.read(SP(cpu));
+    INC_SP(cpu);
+    tmp |= (cpu.read(SP(cpu)) << 8);
 
-    cpu.PC = tmp;
+    cpu.PC = tmp + 1;
 
     return 0;
 }
@@ -1090,6 +1112,7 @@ static uint8_t SBC() {
 
     // Set flags
     SET_FLAG(N, (tmp & 0x0080));
+    tmp &= 0x00FF;
     SET_FLAG(Z, (!tmp));
     SET_FLAG(V, ((tmp ^ (uint16_t)cpu.A) & (tmp ^ value) & 0x0080));
 
@@ -1163,7 +1186,7 @@ static uint8_t TAY() {
 // SP -> X                          N Z C I D V
 //                                  + + - - - -
 static uint8_t TSX() {
-    cpu.X = (uint8_t)cpu.SP;
+    cpu.X = (uint8_t)SP(cpu);
     SET_FLAG(N, (cpu.X & 0x80));
     SET_FLAG(Z, (!cpu.X));
 
@@ -1183,7 +1206,7 @@ static uint8_t TXA() {
 // X -> SP                          N Z C I D V
 //                                  - - - - - -
 static uint8_t TXS() {
-    cpu.SP = ((uint16_t)cpu.X) & 0x00ff;
+    SET_SP(cpu, cpu.X);
 
     return 0;
 }
@@ -1200,15 +1223,17 @@ static uint8_t TYA() {
 
 static uint8_t XXX() {
     log_print("Invalid opcode encountered\n");
+#ifndef INVALID_AS_NOP
     exit(1);
-    return 0;
+#endif
+    return 1;
 }
 
 static void print_regs() {
     log_print("A: %02X\n", cpu.A);
     log_print("X: %02X\n", cpu.X);
     log_print("Y: %02X\n", cpu.Y);
-    log_print("SP: %04X\n", cpu.SP);
+    log_print("SP: %04X\n", SP(cpu));
     log_print("PC: %04X\n", cpu.PC);
     log_print("FLAGS: %02X\n", cpu.flags.reg);
     log_print("N V U B D I Z C\n");
@@ -1223,16 +1248,16 @@ static void nmi(void) {
     uint16_t addr;
 
     // Push PC
-    cpu.write(cpu.SP, (cpu.PC >> 8) & 0x00FF);
-    cpu.SP--;
-    cpu.write(cpu.SP, (cpu.PC & 0x00FF));
-    cpu.SP--;
+    cpu.write(SP(cpu), (cpu.PC >> 8) & 0x00FF);
+    DEC_SP(cpu);
+    cpu.write(SP(cpu), (cpu.PC & 0x00FF));
+    DEC_SP(cpu);
 
     // Clear B, set I
     SET_FLAG(B, 0);
     // Push SR
-    cpu.write(cpu.SP, cpu.flags.reg);
-    cpu.SP--;
+    cpu.write(SP(cpu), cpu.flags.reg);
+    DEC_SP(cpu);
     SET_FLAG(I, 1);
 
     // Jmp to NMI vector
@@ -1248,16 +1273,16 @@ static void irq(void) {
 
     if (GET_FLAG(I)) {
         // Push PC
-        cpu.write(cpu.SP, (cpu.PC >> 8) & 0x00FF);
-        cpu.SP--;
-        cpu.write(cpu.SP, (cpu.PC & 0x00FF));
-        cpu.SP--;
+        cpu.write(SP(cpu), (cpu.PC >> 8) & 0x00FF);
+        DEC_SP(cpu);
+        cpu.write(SP(cpu), (cpu.PC & 0x00FF));
+        DEC_SP(cpu);
 
         // Clear B, set I
         SET_FLAG(B, 0);
         // Push SR
-        cpu.write(cpu.SP, cpu.flags.reg);
-        cpu.SP--;
+        cpu.write(SP(cpu), cpu.flags.reg);
+        DEC_SP(cpu);
         SET_FLAG(I, 1);
 
         // Jmp to NMI vector
@@ -1271,13 +1296,15 @@ static void irq(void) {
 // TODO: read the docs for the 6502 on what a reset state looks like
 static void reset(void) {
     SET_FLAG(U, 1);
-    cpu.SP = (uint16_t)0xfd;
+    SET_SP(cpu, 0xfd);
     cpu.PC = cpu.read(0xFFFC) | cpu.read(0xFFFD) << 8;
+    //cpu.PC = 0x0c000; // nestest.nes
 }
 
 static uint8_t read(uint16_t addr) { return cpu.bus->read(addr); }
 
 static void write(uint16_t addr, uint8_t data) {
+    log_print("CPU RAM WRITE: %02x to %04x\n", data, addr);
     cpu.bus->write(addr, data);
     return;
 }
@@ -1335,7 +1362,7 @@ static void clock() {
         cpu.execute();
 
         cpu.print_regs();
-        cpu.bus->debug_read(0x200 - 0x10, buf, 0x20);
+        cpu.bus->debug_read(SP(cpu) - 0x10, buf, 0x20);
         log_print("Stack:\n");
         hex_dump(buf, 0x20);
         cpu.bus->debug_read(cpu.PC, buf, 0x10);
