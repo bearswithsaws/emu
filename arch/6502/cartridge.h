@@ -77,6 +77,7 @@ struct nes_cartridge {
     uint16_t prg_rom_len;
     uint8_t *chr_rom;
     uint16_t chr_rom_len;
+    uint8_t chr_ram_allocated;  // 1 if chr_rom is malloc'd CHR-RAM, 0 if from file
     uint8_t *pc_inst_rom;
     uint8_t *pc_prom;
     uint8_t mapper_id;

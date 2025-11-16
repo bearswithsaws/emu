@@ -17,6 +17,19 @@ void cartridge_info(struct nes_cartridge *cartridge) {
     printf("chr_rom_size: %02x\n", cartridge->hdr->chr_rom_size * 0x2000);
     printf("chr rom at %08lx in cartridge\n",
            cartridge->chr_rom - cartridge->raw_data);
+    printf("chr_rom pointer: %p, chr_rom_len: %u\n", (void*)cartridge->chr_rom, cartridge->chr_rom_len);
+
+    // Dump first 16 bytes of CHR-ROM to verify it loaded
+    if (cartridge->chr_rom && cartridge->chr_rom_len >= 16) {
+        printf("First 16 bytes of CHR-ROM: ");
+        for (int i = 0; i < 16; i++) {
+            printf("%02X ", cartridge->chr_rom[i]);
+        }
+        printf("\n");
+    } else {
+        printf("CHR-ROM is empty or NULL!\n");
+    }
+
     printf("mapper: %02x\n", MAPPER_ADDR(cartridge->hdr->flags7.mapper_upper,
                                          cartridge->hdr->flags6.mapper_lower));
     printf("\n");
@@ -56,7 +69,6 @@ void cartridge_info(struct nes_cartridge *cartridge) {
 }
 
 static uint8_t ppu_read(struct nes_cartridge *cart, uint16_t addr) {
-    printf("PPU READ CARTRIDGE CHR ROM!\n");
     return cart->map->ppu_read(cart->map, addr);
 }
 
@@ -132,10 +144,28 @@ struct nes_cartridge *load_rom(const char *filename) {
 
     cartridge->prg_rom_len = cartridge->hdr->prg_rom_size * 0x4000;
 
-    cartridge->chr_rom = cartridge->raw_data +
-                         sizeof(struct nes_cartridge_hdr) +
-                         cartridge->trainer_len + cartridge->prg_rom_len;
-    cartridge->chr_rom_len = cartridge->hdr->chr_rom_size * 0x2000;
+    // Handle CHR-ROM vs CHR-RAM
+    if (cartridge->hdr->chr_rom_size > 0) {
+        // Has CHR-ROM: point to ROM data in cartridge file
+        cartridge->chr_rom = cartridge->raw_data +
+                             sizeof(struct nes_cartridge_hdr) +
+                             cartridge->trainer_len + cartridge->prg_rom_len;
+        cartridge->chr_rom_len = cartridge->hdr->chr_rom_size * 0x2000;
+        cartridge->chr_ram_allocated = 0;
+    } else {
+        // No CHR-ROM: allocate 8KB CHR-RAM (games can use this as RAM)
+        cartridge->chr_rom_len = 0x2000;  // 8KB CHR-RAM
+        cartridge->chr_rom = (uint8_t *)malloc(cartridge->chr_rom_len);
+        if (cartridge->chr_rom) {
+            memset(cartridge->chr_rom, 0, cartridge->chr_rom_len);
+            cartridge->chr_ram_allocated = 1;
+            printf("Allocated 8KB CHR-RAM for cartridge (chr_rom_size=0)\n");
+        } else {
+            printf("ERROR: Failed to allocate CHR-RAM\n");
+            ret = -ENOMEM;
+            goto out;
+        }
+    }
 
     cartridge->mapper_id = MAPPER_ADDR(cartridge->hdr->flags7.mapper_upper,
                                        cartridge->hdr->flags6.mapper_lower);
@@ -146,6 +176,13 @@ struct nes_cartridge *load_rom(const char *filename) {
 
 out:
     if (ret < 0) {
+        if (cartridge) {
+            // Free CHR-RAM if we allocated it
+            if (cartridge->chr_ram_allocated && cartridge->chr_rom) {
+                free(cartridge->chr_rom);
+            }
+        }
+
         if (cartridge_data != MAP_FAILED) {
             munmap(cartridge_data, sb.st_size);
         }
