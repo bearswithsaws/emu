@@ -6,6 +6,7 @@
 #include "2c02.h"
 #include "6502.h"
 #include "cartridge.h"
+#include "controller.h"
 
 struct nesbus;
 
@@ -23,6 +24,8 @@ struct nesbus {
     struct cpu6502 *cpu;
     struct ppu2c02 *ppu;
     struct nes_cartridge *cart;
+    struct controller *controller1;
+    struct controller *controller2;
 };
 
 struct nesbus *nesbus_init();

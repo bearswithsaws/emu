@@ -37,6 +37,7 @@ void dump_nametable(const void *data) {
     size_t size = 32 * 30;
     size_t width = 32;
     unsigned int i, j;
+    return; // Disable for now to reduce log spam
     printf("    ");
     for (i = 0; i < 32; i++)
         printf("%02X ", i);

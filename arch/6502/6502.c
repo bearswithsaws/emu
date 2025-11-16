@@ -356,7 +356,7 @@ static uint8_t ABX() {
 
     // According to the 6502 manual, if the addition of X causes
     // this to cross a page, then add one cycle
-    if ((cpu.operand_addr >> 8) & (0x00ff != page_check))
+    if ((cpu.operand_addr >> 8) != page_check)
         return 1;
 
     return 0;
@@ -372,7 +372,7 @@ static uint8_t ABY() {
 
     // According to the 6502 manual, if the addition of Y causes
     // this to cross a page, then add one cycle
-    if ((cpu.operand_addr >> 8) & (0x00ff != page_check))
+    if ((cpu.operand_addr >> 8) != page_check)
         return 1;
 
     return 0;
@@ -411,7 +411,7 @@ static uint8_t IDX() {
     log_print("IDX indirect addr + x & ff: %04x\n", ind_addr);
 
     cpu.operand_addr = cpu.read(ind_addr++);
-    cpu.operand_addr |= cpu.read(ind_addr&0xff) << 8;
+    cpu.operand_addr |= cpu.read(ind_addr & 0xff) << 8;
     log_print("IDX OPERAND ADDR: %02x\n", cpu.operand_addr);
 
     return 0;
@@ -651,8 +651,9 @@ static uint8_t BPL() {
 // push PC+2, push SR               - - - 1 - -
 static uint8_t BRK() {
     log_print("Interrupts not implemented\n");
-    exit(1);
-    // TODO: What else?
+    // exit(1);
+    //  TODO: What else?
+    SET_FLAG(B, 1);
     cpu.write(SP(cpu), (cpu.PC >> 8) & 0x00FF);
     DEC_SP(cpu);
     cpu.write(SP(cpu), cpu.PC & 0x00ff);
@@ -982,6 +983,8 @@ static uint8_t PHA() {
 // push SR                          N Z C I D V
 //                                  - - - - - -
 static uint8_t PHP() {
+    // printf("PHP called, flags: %02x\n", cpu.flags.reg);
+    SET_FLAG(B, 1); // Set B flag when pushing to stack from BRK or PHP
     cpu.write(SP(cpu), cpu.flags.reg);
     DEC_SP(cpu);
     return 0;
@@ -1298,7 +1301,7 @@ static void reset(void) {
     SET_FLAG(U, 1);
     SET_SP(cpu, 0xfd);
     cpu.PC = cpu.read(0xFFFC) | cpu.read(0xFFFD) << 8;
-    //cpu.PC = 0x0c000; // nestest.nes
+    // cpu.PC = 0x0c000; // nestest.nes
 }
 
 static uint8_t read(uint16_t addr) { return cpu.bus->read(addr); }
@@ -1352,6 +1355,16 @@ static void clock() {
     uint8_t buf[0x100];
 
     if (cpu.cycles == 0) {
+        // Check for NMI before fetching next instruction
+        // NMI is edge-triggered and can't be disabled
+        if (cpu.bus && cpu.bus->ppu && cpu.bus->ppu->nmi_triggered) {
+            // printf("CPU: Servicing NMI interrupt\n");
+            cpu.bus->ppu->nmi_triggered = 0; // Clear the NMI flag
+            cpu.nmi(); // Call NMI handler (pushes PC/flags, jumps to vector)
+            cpu.cycles = 7; // NMI takes 7 cycles
+            return;         // Skip normal instruction fetch
+        }
+
         cpu.fetch();
 
         log_print("%04x: %02x %s %04x / %02x\n", cpu.start_pc, cpu.opcode,
