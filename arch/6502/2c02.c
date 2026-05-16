@@ -478,9 +478,9 @@ static void clock(void) {
         // --- Background tile fetch pipeline ---------------------------------
         // Active in two windows:
         //   dots 2-257: fetch tiles for this scanline's pixels
-        //   dots 321-336: prefetch first two tiles of the NEXT scanline
+        //   dots 321-337: prefetch first two tiles of the NEXT scanline
         if ((ppu.dot >= 2 && ppu.dot <= 257) ||
-            (ppu.dot >= 321 && ppu.dot <= 336)) {
+            (ppu.dot >= 321 && ppu.dot <= 337)) {
 
             update_shifters();
 
