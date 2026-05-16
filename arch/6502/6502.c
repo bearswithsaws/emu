@@ -1357,6 +1357,12 @@ static uint8_t execute() {
 static void clock() {
     uint8_t buf[0x100];
 
+    // OAM DMA stall: CPU halts for 513-514 cycles while DMA copies 256 bytes.
+    if (cpu.bus && cpu.bus->dma_halt_cycles > 0) {
+        cpu.bus->dma_halt_cycles--;
+        return;
+    }
+
     if (cpu.cycles == 0) {
         // Check for NMI before fetching next instruction
         // NMI is edge-triggered and can't be disabled
