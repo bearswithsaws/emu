@@ -80,8 +80,7 @@ struct display_context *display_init(const struct display_config *config) {
         return NULL;
     }
 
-    // Use linear filtering for scaling
-    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
+    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "nearest");
 
     // Create texture for screen
     ctx->screen_texture = SDL_CreateTexture(

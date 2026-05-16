@@ -650,16 +650,22 @@ static uint8_t BPL() {
 // interrupt,                       N Z C I D V
 // push PC+2, push SR               - - - 1 - -
 static uint8_t BRK() {
-    log_print("Interrupts not implemented\n");
-    // exit(1);
-    //  TODO: What else?
-    SET_FLAG(B, 1);
-    cpu.write(SP(cpu), (cpu.PC >> 8) & 0x00FF);
+    // PC already points one past the BRK opcode (the ignored padding byte).
+    // Push PC+1 so RTI returns to the instruction after the padding byte.
+    uint16_t ret = cpu.PC + 1;
+    cpu.write(SP(cpu), (ret >> 8) & 0xFF);
     DEC_SP(cpu);
-    cpu.write(SP(cpu), cpu.PC & 0x00ff);
+    cpu.write(SP(cpu), ret & 0xFF);
+    DEC_SP(cpu);
+
+    // Push flags with B and U both set in the pushed copy only.
+    cpu.write(SP(cpu), cpu.flags.reg | 0x30);
     DEC_SP(cpu);
 
     SET_FLAG(I, 1);
+
+    uint16_t addr = (uint16_t)cpu.read(0xFFFE) | ((uint16_t)cpu.read(0xFFFF) << 8);
+    cpu.PC = addr;
     return 0;
 }
 
@@ -1274,34 +1280,31 @@ static void irq(void) {
     uint16_t vector = 0xFFFE;
     uint16_t addr;
 
-    if (GET_FLAG(I)) {
+    if (!GET_FLAG(I)) {
         // Push PC
         cpu.write(SP(cpu), (cpu.PC >> 8) & 0x00FF);
         DEC_SP(cpu);
         cpu.write(SP(cpu), (cpu.PC & 0x00FF));
         DEC_SP(cpu);
 
-        // Clear B, set I
-        SET_FLAG(B, 0);
-        // Push SR
-        cpu.write(SP(cpu), cpu.flags.reg);
+        // Push SR with B clear (IRQ does not set B in pushed copy)
+        cpu.write(SP(cpu), (cpu.flags.reg | 0x20) & ~0x10);
         DEC_SP(cpu);
         SET_FLAG(I, 1);
 
-        // Jmp to NMI vector
         addr = cpu.read(vector);
-        addr |= (cpu.read(vector + 1) << 8);
+        addr |= ((uint16_t)cpu.read(vector + 1) << 8);
 
         cpu.PC = addr;
     }
 }
 
-// TODO: read the docs for the 6502 on what a reset state looks like
 static void reset(void) {
-    SET_FLAG(U, 1);
+    cpu.flags.reg = 0;
+    SET_FLAG(U, 1); // U always 1
+    SET_FLAG(I, 1); // interrupts disabled on reset
     SET_SP(cpu, 0xfd);
-    cpu.PC = cpu.read(0xFFFC) | cpu.read(0xFFFD) << 8;
-    // cpu.PC = 0x0c000; // nestest.nes
+    cpu.PC = (uint16_t)cpu.read(0xFFFC) | ((uint16_t)cpu.read(0xFFFD) << 8);
 }
 
 static uint8_t read(uint16_t addr) { return cpu.bus->read(addr); }
