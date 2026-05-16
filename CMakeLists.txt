@@ -11,7 +11,11 @@ include_directories(${SDL2_INCLUDE_DIRS} ${SDL2TTF_INCLUDE_DIRS})
 
 configure_file(emu_config.h.in emu_config.h)
 
-# add_definitions( -DDEBUG )
+option(NES_DEBUG "Enable debug logging" OFF)
+if(NES_DEBUG)
+    add_compile_definitions(NES_DEBUG)
+endif()
+
 add_definitions( -DINVALID_AS_NOP )
 
 # Add shared libraries

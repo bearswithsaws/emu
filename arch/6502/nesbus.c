@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "nesbus.h"
+#include "debug.h"
 
 static struct nesbus bus = {0};
 
@@ -61,7 +62,7 @@ static void write(uint16_t addr, uint8_t data) {
         bus.ppu->cpu_write(addr, data);
     } else if (addr == 0x3fff) {
         // ppu write
-        printf("PPU WRITE\n");
+        LOG_BUS("PPU WRITE\n");
     } else if (addr == 0x4014) {
         // Sprite DMA: Copy 256 bytes from CPU RAM to PPU OAM
         // Data byte = page number (0x00-0xFF)

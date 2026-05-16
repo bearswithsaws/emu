@@ -9,60 +9,58 @@
 #include <unistd.h>
 
 #include "cartridge.h"
+#include "debug.h"
 
 void cartridge_info(struct nes_cartridge *cartridge) {
-    printf("prg_rom_size: %02x\n", cartridge->hdr->prg_rom_size * 0x4000);
-    printf("program rom at %08lx in cartridge\n",
-           cartridge->prg_rom - cartridge->raw_data);
-    printf("chr_rom_size: %02x\n", cartridge->hdr->chr_rom_size * 0x2000);
-    printf("chr rom at %08lx in cartridge\n",
-           cartridge->chr_rom - cartridge->raw_data);
-    printf("chr_rom pointer: %p, chr_rom_len: %u\n", (void*)cartridge->chr_rom, cartridge->chr_rom_len);
+    LOG_CART("prg_rom_size: %02x\n", cartridge->hdr->prg_rom_size * 0x4000);
+    LOG_CART("program rom at %08lx in cartridge\n",
+             cartridge->prg_rom - cartridge->raw_data);
+    LOG_CART("chr_rom_size: %02x\n", cartridge->hdr->chr_rom_size * 0x2000);
+    LOG_CART("chr rom at %08lx in cartridge\n",
+             cartridge->chr_rom - cartridge->raw_data);
+    LOG_CART("chr_rom pointer: %p, chr_rom_len: %u\n",
+             (void *)cartridge->chr_rom, cartridge->chr_rom_len);
 
-    // Dump first 16 bytes of CHR-ROM to verify it loaded
     if (cartridge->chr_rom && cartridge->chr_rom_len >= 16) {
-        printf("First 16 bytes of CHR-ROM: ");
+        LOG_CART("First 16 bytes of CHR-ROM: ");
         for (int i = 0; i < 16; i++) {
-            printf("%02X ", cartridge->chr_rom[i]);
+            LOG_CART("%02X ", cartridge->chr_rom[i]);
         }
-        printf("\n");
+        LOG_CART("\n");
     } else {
-        printf("CHR-ROM is empty or NULL!\n");
+        LOG_CART("CHR-ROM is empty or NULL!\n");
     }
 
-    printf("mapper: %02x\n", MAPPER_ADDR(cartridge->hdr->flags7.mapper_upper,
-                                         cartridge->hdr->flags6.mapper_lower));
-    printf("\n");
-    printf("flags6.mirroring: %s\n",
-           (cartridge->hdr->flags6.mirroring) ? "horizontal" : "vertical");
-    printf("flags6.persistent_mem: %s\n",
-           (cartridge->hdr->flags6.persistent_mem) ? "yes" : "no");
-    printf("flags6.trainer: %s\n",
-           (cartridge->hdr->flags6.trainer) ? "yes" : "no");
-    printf("flags6.ignore_mirroring: %s\n",
-           (cartridge->hdr->flags6.ignore_mirroring) ? "yes" : "no");
-    printf("\n");
-    printf("flags7.vs_unisystem: %s\n",
-           (cartridge->hdr->flags7.vs_unisystem) ? "yes" : "no");
-    printf("flags7.playchoice_10: %s\n",
-           (cartridge->hdr->flags7.playchoice_10) ? "yes" : "no");
-    printf("flags7.ines_version: %s\n",
-           (cartridge->hdr->flags7.ines_version == 2) ? "iNES 2.0"
-                                                      : "iNES 1.0");
-    printf("\n");
+    LOG_CART("mapper: %02x\n", MAPPER_ADDR(cartridge->hdr->flags7.mapper_upper,
+                                           cartridge->hdr->flags6.mapper_lower));
+    LOG_CART("flags6.mirroring: %s\n",
+             (cartridge->hdr->flags6.mirroring) ? "horizontal" : "vertical");
+    LOG_CART("flags6.persistent_mem: %s\n",
+             (cartridge->hdr->flags6.persistent_mem) ? "yes" : "no");
+    LOG_CART("flags6.trainer: %s\n",
+             (cartridge->hdr->flags6.trainer) ? "yes" : "no");
+    LOG_CART("flags6.ignore_mirroring: %s\n",
+             (cartridge->hdr->flags6.ignore_mirroring) ? "yes" : "no");
+    LOG_CART("flags7.vs_unisystem: %s\n",
+             (cartridge->hdr->flags7.vs_unisystem) ? "yes" : "no");
+    LOG_CART("flags7.playchoice_10: %s\n",
+             (cartridge->hdr->flags7.playchoice_10) ? "yes" : "no");
+    LOG_CART("flags7.ines_version: %s\n",
+             (cartridge->hdr->flags7.ines_version == 2) ? "iNES 2.0"
+                                                        : "iNES 1.0");
     if (cartridge->hdr->flags7.ines_version == 2) {
-        printf("flags8.prg_ram_size: %02x\n",
-               cartridge->hdr->flags8.prg_ram_size);
+        LOG_CART("flags8.prg_ram_size: %02x\n",
+                 cartridge->hdr->flags8.prg_ram_size);
         switch (cartridge->hdr->flags10.tv_system) {
         case 0:
-            printf("tv system: NTSC\n");
+            LOG_CART("tv system: NTSC\n");
             break;
         case 1:
         case 3:
-            printf("tv system: Dual compatible\n");
+            LOG_CART("tv system: Dual compatible\n");
             break;
         case 2:
-            printf("tv system: PAL\n");
+            LOG_CART("tv system: PAL\n");
             break;
         }
     }
@@ -127,7 +125,7 @@ struct nes_cartridge *load_rom(const char *filename) {
     cartridge->hdr = (struct nes_cartridge_hdr *)cartridge_data;
 
     if (cartridge->hdr->magic != NES_MAGIC) {
-        printf("%s is not a valid NES cartridge\n", filename);
+        fprintf(stderr, "%s is not a valid NES cartridge\n", filename);
         ret = -1;
         goto out;
     }
@@ -159,9 +157,9 @@ struct nes_cartridge *load_rom(const char *filename) {
         if (cartridge->chr_rom) {
             memset(cartridge->chr_rom, 0, cartridge->chr_rom_len);
             cartridge->chr_ram_allocated = 1;
-            printf("Allocated 8KB CHR-RAM for cartridge (chr_rom_size=0)\n");
+            LOG_CART("Allocated 8KB CHR-RAM for cartridge (chr_rom_size=0)\n");
         } else {
-            printf("ERROR: Failed to allocate CHR-RAM\n");
+            fprintf(stderr, "ERROR: Failed to allocate CHR-RAM\n");
             ret = -ENOMEM;
             goto out;
         }
