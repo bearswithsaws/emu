@@ -295,6 +295,7 @@ static void copy_y_from_t(void) {
 static uint8_t get_bg_pixel(uint8_t *palette_idx) {
     *palette_idx = 0;
     if (!ppu.ppumask.bg_render_enable) return 0;
+    if (!ppu.ppumask.bg_enable && ppu.dot <= 8) return 0; // left-column clip
 
     uint8_t bit = 15 - ppu.x;
     uint8_t pixel = (((ppu.bg_shift_pattern_hi >> bit) & 1) << 1) |
@@ -353,6 +354,7 @@ static uint8_t get_sprite_pixel(uint8_t x, uint8_t scanline,
     *out_is_sprite_zero = 0;
 
     if (!ppu.ppumask.sprite_render_enable) return 0;
+    if (!ppu.ppumask.sprite_enable && x < 8) return 0; // left-column clip
 
     uint8_t height = ppu.ppuctrl.sprite_size ? 16 : 8;
 
@@ -409,9 +411,11 @@ static uint8_t get_sprite_pixel(uint8_t x, uint8_t scanline,
 static uint32_t composite_pixel(uint8_t bg_pixel, uint8_t bg_palette,
                                 uint8_t sp_pixel, uint8_t sp_palette,
                                 uint8_t sp_priority, uint8_t sp_is_zero) {
-    // Sprite 0 hit: both pixels opaque, not in the left clip region.
+    // Sprite 0 hit: both pixels opaque, dot not 255, not in clipped left column.
     if (sp_is_zero && bg_pixel != 0 && sp_pixel != 0 &&
-        ppu.ppumask.bg_render_enable && ppu.ppumask.sprite_render_enable) {
+        ppu.ppumask.bg_render_enable && ppu.ppumask.sprite_render_enable &&
+        ppu.dot != 255 &&
+        !(ppu.dot <= 8 && (!ppu.ppumask.bg_enable || !ppu.ppumask.sprite_enable))) {
         ppu.ppustatus.sprite_0_hit = 1;
     }
 
@@ -436,7 +440,23 @@ static uint32_t composite_pixel(uint8_t bg_pixel, uint8_t bg_palette,
         }
     }
 
-    return NES_PALETTE[color_idx & 0x3F];
+    if (ppu.ppumask.grayscale) color_idx &= 0x30;
+
+    uint32_t color = NES_PALETTE[color_idx & 0x3F];
+
+    // Color emphasis: darken non-emphasized channels by ~75%.
+    if (ppu.ppumask.intensify_red || ppu.ppumask.intensify_green ||
+        ppu.ppumask.intensify_blue) {
+        uint8_t r = (color >> 16) & 0xFF;
+        uint8_t g = (color >>  8) & 0xFF;
+        uint8_t b =  color        & 0xFF;
+        if (!ppu.ppumask.intensify_red)   r = (uint8_t)((r * 3) >> 2);
+        if (!ppu.ppumask.intensify_green) g = (uint8_t)((g * 3) >> 2);
+        if (!ppu.ppumask.intensify_blue)  b = (uint8_t)((b * 3) >> 2);
+        color = 0xFF000000u | ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
+    }
+
+    return color;
 }
 
 // ---------------------------------------------------------------------------

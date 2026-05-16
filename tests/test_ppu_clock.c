@@ -288,8 +288,8 @@ static void test_background_pixel_output(void) {
     ppu->set_framebuffer(fb);
     ppu->reset();
 
-    /* Enable background rendering */
-    ppu->cpu_write(0x2001, 0x08);
+    /* Enable background rendering + show BG in leftmost 8 columns (bit 1) */
+    ppu->cpu_write(0x2001, 0x0A);
 
     /* Write tile ID 1 into nametable[0,0] (address $2000) */
     ppu->cpu_write(0x2006, 0x20);
