@@ -1374,6 +1374,16 @@ static void clock() {
             return;         // Skip normal instruction fetch
         }
 
+        // Check for mapper IRQ (level-triggered: stays asserted until mapper
+        // acknowledges it, typically via a write to its IRQ-disable register).
+        if (!GET_FLAG(I) &&
+            cpu.bus && cpu.bus->cart && cpu.bus->cart->map &&
+            cpu.bus->cart->map->irq_pending) {
+            cpu.irq();      // pushes PC/flags, loads IRQ vector, sets I flag
+            cpu.cycles = 7;
+            return;
+        }
+
         cpu.fetch();
 
         log_print("%04x: %02x %s %04x / %02x\n", cpu.start_pc, cpu.opcode,

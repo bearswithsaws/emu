@@ -28,7 +28,8 @@ struct mapper {
     struct nes_cartridge *cartridge;
     uint8_t num_prg_rom;
     uint8_t num_chr_rom;
-    uint8_t mirroring;  // one of MIRROR_* above; updated dynamically by mapper
+    uint8_t mirroring;    // one of MIRROR_* above; updated dynamically by mapper
+    uint8_t irq_pending;  // set by mapper to request a CPU IRQ; cleared by cpu.irq()
 };
 
 struct mapper *mapper_init(struct nes_cartridge *cartridge);

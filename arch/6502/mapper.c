@@ -4,6 +4,7 @@
 #include "mapper_001.h"
 #include "mapper_002.h"
 #include "mapper_003.h"
+#include "mapper_004.h"
 
 static struct mapper map = {0};
 
@@ -45,6 +46,13 @@ struct mapper *mapper_init(struct nes_cartridge *cartridge) {
         map.cpu_write = mapper_003_cpu_write;
         map.ppu_read = mapper_003_ppu_read;
         map.ppu_write = mapper_003_ppu_write;
+        break;
+    case 4:
+        map.cpu_read = mapper_004_cpu_read;
+        map.cpu_write = mapper_004_cpu_write;
+        map.ppu_read = mapper_004_ppu_read;
+        map.ppu_write = mapper_004_ppu_write;
+        mapper_004_init(&map);
         break;
     }
 
