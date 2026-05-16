@@ -157,12 +157,12 @@ uint8_t mapper_001_ppu_read(struct mapper *map, uint16_t addr) {
         uint8_t num_banks = map->num_chr_rom;  // Each bank is 4KB
 
         if (mmc1.chr_mode == 0) {
-            // 8KB mode: Ignore low bit of CHR bank 0, map $0000-$1FFF to consecutive 4KB banks
+            // 8KB mode: chr_bank_0 bit 0 ignored; bank selects an 8KB page.
             uint8_t bank = (mmc1.chr_bank_0 >> 1) & 0x1F;
             if (num_banks > 0) {
-                bank = bank % (num_banks * 2);  // *2 because we're treating as 4KB banks
+                bank = bank % num_banks;
             }
-            chr_rom_offset = (bank * 0x1000) + (addr & 0x1FFF);
+            chr_rom_offset = (bank * 0x2000) + (addr & 0x1FFF);
         } else {
             // 4KB mode: Two separate 4KB banks
             if (addr >= 0x0000 && addr <= 0x0FFF) {

@@ -26,6 +26,7 @@ struct nesbus {
     struct nes_cartridge *cart;
     struct controller *controller1;
     struct controller *controller2;
+    uint16_t dma_halt_cycles;
 };
 
 struct nesbus *nesbus_init();

@@ -64,16 +64,12 @@ static void write(uint16_t addr, uint8_t data) {
         // ppu write
         LOG_BUS("PPU WRITE\n");
     } else if (addr == 0x4014) {
-        // Sprite DMA: Copy 256 bytes from CPU RAM to PPU OAM
-        // Data byte = page number (0x00-0xFF)
-        // Copies from $XX00-$XXFF to OAM
-        uint16_t src_addr = data << 8; // Page number -> start address
+        uint16_t src_addr = (uint16_t)data << 8;
         for (int i = 0; i < 256; i++) {
             bus.ppu->oam[i] = read(src_addr + i);
         }
-        // Note: Real hardware takes 513-514 CPU cycles and halts CPU
-        // We're not implementing cycle-accurate DMA timing yet
-        // printf("Sprite DMA: Copied 256 bytes from $%04X to OAM\n", src_addr);
+        // Stall the CPU for 513 cycles (514 on an odd cycle — approximated as 513).
+        bus.dma_halt_cycles = 513;
     } else if (addr == 0x4016) {
         // Controller strobe (writes to both controllers)
         controller_write(&ctrl1, data);
