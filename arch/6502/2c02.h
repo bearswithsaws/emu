@@ -107,6 +107,7 @@ struct ppu2c02 {
         uint8_t tile;
         uint8_t attr;
         uint8_t x;
+        uint8_t is_sprite_zero;
     } secondary_oam[8];
     uint8_t sprite_count;  // Number of sprites on current scanline (0-8)
 

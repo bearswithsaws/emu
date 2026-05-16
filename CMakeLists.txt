@@ -20,6 +20,9 @@ add_subdirectory(lib)
 # Add the architecures
 add_subdirectory(arch)
 
+# Tests
+add_subdirectory(tests)
+
 # Build configuration
 set(CMAKE_BUILD_TYPE Debug)
 

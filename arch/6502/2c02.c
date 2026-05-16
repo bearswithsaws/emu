@@ -3,101 +3,54 @@
 #include "debug.h"
 #include "palette.h"
 
-// PPU Implementation: Backgrounds and Sprites
-// - Static background rendering (no scrolling)
-// - Sprite evaluation and rendering
-// - Sprite 0 hit detection
-// - 4 background palettes + 4 sprite palettes
-
-// Debug logging control
-static int debug_frame_count = 0;
 static struct ppu2c02 ppu = {0};
+
+// ---------------------------------------------------------------------------
+// Internal memory access
+// ---------------------------------------------------------------------------
 
 static void connect_cartridge(struct nes_cartridge *cartridge) {
     ppu.cart = cartridge;
 }
 
 static uint16_t nametable_mirror(uint16_t addr) {
-    uint16_t mirror_addr;
-
-    //      (0,0)     (256,0)     (511,0)
-    //        +-----------+-----------+
-    //        |           |           |
-    //        |           |           |
-    //        |   $2000   |   $2400   |
-    //        |           |           |
-    //        |           |           |
-    // (0,240)+-----------+-----------+(511,240)
-    //        |           |           |
-    //        |           |           |
-    //        |   $2800   |   $2C00   |
-    //        |           |           |
-    //        |           |           |
-    //        +-----------+-----------+
-    //      (0,479)   (256,479)   (511,479)
-
-    // Guard against NULL cartridge pointer (can happen during initialization)
     if (!ppu.cart || !ppu.cart->hdr) {
-        // Default to horizontal mirroring if cartridge not yet loaded
-        // This mirrors the 2KB of nametable RAM
-        mirror_addr = (addr - 0x2000) % 0x800;
-        return mirror_addr;
+        return (addr - 0x2000) % 0x800;
     }
 
-    // Normalize address to $2000-$2FFF range (handle mirrors)
+    // Normalise to $2000-$2FFF
     addr = 0x2000 + ((addr - 0x2000) % 0x1000);
-
-    // Get nametable index (0-3)
-    uint8_t nametable = (addr >> 10) & 0x03; // Bits 10-11
+    uint8_t nt = (addr >> 10) & 0x03;
 
     if (ppu.cart->hdr->flags6.mirroring == 0) {
-        // Horizontal mirroring (vertical arrangement)
-        // $2000 = $2400, $2800 = $2C00
-        // Map: 0->0, 1->0, 2->1, 3->1
-        if (nametable == 0 || nametable == 1) {
-            mirror_addr = (addr & 0x03FF); // First 1KB
-        } else {
-            mirror_addr = 0x0400 | (addr & 0x03FF); // Second 1KB
-        }
+        // Horizontal mirroring: $2000=$2400, $2800=$2C00
+        // Nametables 0&1 share first 1 KB; 2&3 share second 1 KB.
+        return (nt <= 1) ? (addr & 0x03FF) : (0x0400 | (addr & 0x03FF));
     } else {
-        // Vertical mirroring (horizontal arrangement)
-        // $2000 = $2800, $2400 = $2C00
-        // Map: 0->0, 1->1, 2->0, 3->1
-        if (nametable == 0 || nametable == 2) {
-            mirror_addr = (addr & 0x03FF); // First 1KB
-        } else {
-            mirror_addr = 0x0400 | (addr & 0x03FF); // Second 1KB
-        }
+        // Vertical mirroring: $2000=$2800, $2400=$2C00
+        // Nametables 0&2 share first 1 KB; 1&3 share second 1 KB.
+        return (nt == 0 || nt == 2) ? (addr & 0x03FF) : (0x0400 | (addr & 0x03FF));
     }
-
-    return mirror_addr;
 }
 
 static uint8_t ppu_read(uint16_t addr) {
     uint8_t data = 0;
 
     if (addr < 0x2000) {
-        // Pattern table (CHR ROM) - accessed through cartridge
         if (ppu.cart && ppu.cart->ppu_read) {
             data = ppu.cart->ppu_read(ppu.cart, addr);
-        } else {
-            // Cartridge not loaded yet, return 0
-            data = 0;
         }
-    } else if (addr >= 0x2000 && addr <= 0x3eff) {
-        printf("nametable read %04x\n", addr);
+    } else if (addr <= 0x3EFF) {
         data = ppu.nametable[nametable_mirror(addr)];
-
-    } else if (addr >= 0x3f00 && addr <= 0x3fff) {
-        // palette
-        printf("Palette READ\n");
-        data = ppu.palette_table[addr & 0x1f];
-    } else if (addr >= 0x4000) {
-        // [0x4000, 0xFFFF]
-        // 	These addresses are mirrors of the the of the
-        // memory space [0, 0x3FFF], that is, any address
-        // that falls in here, it is accessed by data[addr & 0x3FFF].
-        data = ppu_read(addr & 0x3fff);
+    } else if (addr <= 0x3FFF) {
+        // Palette mirrors: $3F10/$3F14/$3F18/$3F1C mirror $3F00/$3F04/$3F08/$3F0C
+        uint8_t pal_addr = addr & 0x1F;
+        if (pal_addr == 0x10 || pal_addr == 0x14 || pal_addr == 0x18 || pal_addr == 0x1C) {
+            pal_addr &= 0x0F;
+        }
+        data = ppu.palette_table[pal_addr];
+    } else {
+        data = ppu_read(addr & 0x3FFF);
     }
 
     return data;
@@ -105,96 +58,61 @@ static uint8_t ppu_read(uint16_t addr) {
 
 static void ppu_write(uint16_t addr, uint8_t data) {
     if (addr < 0x2000) {
-        // Pattern table (CHR ROM/RAM) - accessed through cartridge
         if (ppu.cart && ppu.cart->ppu_write) {
             ppu.cart->ppu_write(ppu.cart, addr, data);
         }
-        // If cartridge not loaded, silently ignore write
-    } else if (addr >= 0x2000 && addr <= 0x3eff) {
-        // printf("nametable write %04x : %02x\n", nametable_mirror(addr),
-        // data);
+    } else if (addr <= 0x3EFF) {
         ppu.nametable[nametable_mirror(addr)] = data;
-        dump_nametable(ppu.nametable);
-    } else if (addr >= 0x3f00 && addr <= 0x3fff) {
-        // palette
-        printf("Palette WRITE %04x %02x\n", addr, data);
-        ppu.palette_table[addr & 0x1f] = data;
-    } else if (addr >= 0x4000) {
-        // [0x4000, 0xFFFF]
-        // 	These addresses are mirrors of the the of the
-        // memory space [0, 0x3FFF], that is, any address
-        // that falls in here, it is accessed by data[addr & 0x3FFF].
-        return ppu_write(addr & 0x3fff, data);
+    } else if (addr <= 0x3FFF) {
+        uint8_t pal_addr = addr & 0x1F;
+        if (pal_addr == 0x10 || pal_addr == 0x14 || pal_addr == 0x18 || pal_addr == 0x1C) {
+            pal_addr &= 0x0F;
+        }
+        ppu.palette_table[pal_addr] = data;
+    } else {
+        ppu_write(addr & 0x3FFF, data);
     }
 }
 
-// Commmunication with the CPU is done via the special registers at
-// $2000-$2007 (mirrored for 0x1000)
+// ---------------------------------------------------------------------------
+// CPU register interface ($2000-$2007)
+// ---------------------------------------------------------------------------
 
 static uint8_t cpu_read(uint16_t addr) {
-    uint8_t data = 0; // Initialize to avoid undefined behavior
-    // printf("CPU read from %04x\n", addr);
+    uint8_t data = 0;
 
-    switch (addr & 0x2007) {
-    case PPUCTRL:
-        // WRITE ONLY
-        printf("PPUCTRL is write only\n");
-        // exit(1);
-        break;
-
-    case PPUMASK:
-        // WRITE ONLY
-        printf("PPUMASK is write only\n");
-        // exit(1);
-        break;
-
-    case PPUSTATUS:
-        // The act of reading this register resets vblank and w latch
-        data = ppu.ppustatus.reg;
+    switch (addr & 0x0007) {
+    case 0x0002: // PPUSTATUS
+        data = (ppu.ppustatus.reg & 0xE0) | (ppu.ppudata_read_buffer & 0x1F);
         ppu.ppustatus.vblank_started = 0;
-        ppu.w = 0; // Reset write latch
+        ppu.w = 0;
         break;
 
-    case OAMADDR:
-        // Reading OAMADDR returns open bus (undefined behavior)
-        data = 0;
-        break;
-
-    case OAMDATA:
-        // Return data at current OAM address
+    case 0x0004: // OAMDATA
         data = ppu.oam[ppu.oamaddr];
         break;
 
-    case PPUSCROLL:
-        //
-        break;
-
-    case PPUADDR:
-        // Reading returns open bus...
-        break;
-
-    case PPUDATA:
-        // PPUDATA read buffering behavior:
-        // - Reads from $0000-$3EFF are buffered (delayed by one read)
-        // - Reads from $3F00-$3FFF (palette) are immediate, but still fill
-        // buffer
-
-        uint16_t addr = ppu.v & 0x3FFF; // Use v register as address
-
-        if (addr >= 0x3F00 && addr <= 0x3FFF) {
-            // Palette reads bypass buffer (immediate)
-            data = ppu_read(addr);
-            // But buffer is still filled with nametable data "underneath"
-            ppu.ppudata_read_buffer = ppu_read(addr & 0x2FFF);
+    case 0x0007: // PPUDATA
+    {
+        uint16_t v_addr = ppu.v & 0x3FFF;
+        if (v_addr >= 0x3F00) {
+            // Palette: immediate read, buffer gets the nametable "under" it
+            uint8_t pal_addr = v_addr & 0x1F;
+            if (pal_addr == 0x10 || pal_addr == 0x14 ||
+                pal_addr == 0x18 || pal_addr == 0x1C) {
+                pal_addr &= 0x0F;
+            }
+            data = ppu.palette_table[pal_addr];
+            ppu.ppudata_read_buffer = ppu_read(v_addr & 0x2FFF);
         } else {
-            // Buffered read: return previous buffer contents
             data = ppu.ppudata_read_buffer;
-            // Fill buffer with new data for next read
-            ppu.ppudata_read_buffer = ppu_read(addr);
+            ppu.ppudata_read_buffer = ppu_read(v_addr);
         }
+        ppu.v += ppu.ppuctrl.vram_addr_increment ? 32 : 1;
+        break;
+    }
 
-        // Auto-increment v register based on PPUCTRL bit 2
-        ppu.v += (ppu.ppuctrl.vram_addr_increment) ? 32 : 1;
+    default:
         break;
     }
 
@@ -202,328 +120,222 @@ static uint8_t cpu_read(uint16_t addr) {
 }
 
 static void cpu_write(uint16_t addr, uint8_t data) {
-    // printf("CPU write %04x DATA %02x\n", addr, data);
-    switch (addr & 0x2007) {
-    case PPUCTRL:
+    switch (addr & 0x0007) {
+    case 0x0000: // PPUCTRL
         ppu.ppuctrl.reg = data;
-        // PPUCTRL: Nametable select bits also affect t register
-        //   t: ....BA.. ........ = d: ......BA
-        ppu.t = (ppu.t & 0xF3FF) | ((data & 0x03) << 10);
+        // Nametable select goes into t bits 11-10
+        ppu.t = (ppu.t & 0xF3FF) | ((uint16_t)(data & 0x03) << 10);
         break;
 
-    case PPUMASK:
+    case 0x0001: // PPUMASK
         ppu.ppumask.reg = data;
-        /*
-        printf(
-            "  -> PPUMASK write: reg=0x%02x gray=%d bg_left8=%d spr_left8=%d "
-            "bg_enable=%d spr_enable=%d emph_r=%d emph_g=%d emph_b=%d\n",
-            data, ppu.ppumask.grayscale, ppu.ppumask.bg_enable,
-            ppu.ppumask.sprite_enable, ppu.ppumask.bg_render_enable,
-            ppu.ppumask.sprite_render_enable, ppu.ppumask.intensify_red,
-            ppu.ppumask.intensify_green, ppu.ppumask.intensify_blue);
-        */
         break;
 
-    case PPUSTATUS:
-        // READ ONLY
-        printf("PPUSTATUS is read only\n");
-        // exit(1);
-        break;
-
-    case OAMADDR:
-        // Set OAM address register
+    case 0x0003: // OAMADDR
         ppu.oamaddr = data;
         break;
 
-    case OAMDATA:
-        // Write data to OAM at current address, then increment
-        ppu.oam[ppu.oamaddr] = data;
-        ppu.oamaddr++; // Auto-increment (wraps at 256)
+    case 0x0004: // OAMDATA
+        ppu.oam[ppu.oamaddr++] = data;
         break;
 
-    case PPUSCROLL:
-        // PPUSCROLL: Two writes via shared w latch
-        // First write (w=0): Horizontal scroll
-        //   t: ........ ...HGFED = d: HGFED...
-        //   x:               CBA = d: .....CBA
-        //   w:                   = 1
-        // Second write (w=1): Vertical scroll
-        //   t: .CBA..HG FED..... = d: HGFEDCBA
-        //   w:                   = 0
+    case 0x0005: // PPUSCROLL
         if (ppu.w == 0) {
-            // First write: horizontal scroll
-            uint16_t old_t = ppu.t;
-            uint8_t old_x = ppu.x;
-            ppu.t = (ppu.t & 0xFFE0) | (data >> 3); // Coarse X
-            ppu.x = data & 0x07;                    // Fine X
+            ppu.t = (ppu.t & 0xFFE0) | (data >> 3);
+            ppu.x = data & 0x07;
             ppu.w = 1;
-            if (debug_frame_count < 3) {
-                printf("[PPUSCROLL] Frame %d: X write data=%02x, t: "
-                       "%04x->%04x, x: %d->%d\n",
-                       debug_frame_count, data, old_t, ppu.t, old_x, ppu.x);
-            }
         } else {
-            // Second write: vertical scroll
-            uint16_t old_t = ppu.t;
-            ppu.t = (ppu.t & 0x8FFF) | ((data & 0x07) << 12); // Fine Y
-            ppu.t = (ppu.t & 0xFC1F) | ((data & 0xF8) << 2);  // Coarse Y
+            ppu.t = (ppu.t & 0x8FFF) | ((uint16_t)(data & 0x07) << 12);
+            ppu.t = (ppu.t & 0xFC1F) | ((uint16_t)(data & 0xF8) << 2);
             ppu.w = 0;
-            if (debug_frame_count < 3) {
-                printf(
-                    "[PPUSCROLL] Frame %d: Y write data=%02x, t: %04x->%04x\n",
-                    debug_frame_count, data, old_t, ppu.t);
-            }
         }
         break;
 
-    case PPUADDR:
-        // PPUADDR: Two writes via shared w latch
-        // First write (w=0): High byte
-        //   t: ..FEDCBA ........ = d: ..FEDCBA
-        //   t: .X...... ........ = 0
-        //   w:                   = 1
-        // Second write (w=1): Low byte
-        //   t: ........ HGFEDCBA = d: HGFEDCBA
-        //   v                    = t
-        //   w:                   = 0
+    case 0x0006: // PPUADDR
         if (ppu.w == 0) {
-            // First write: high byte
-            ppu.t = (ppu.t & 0x00FF) | ((data & 0x3F) << 8);
-            if (debug_frame_count < 3) {
-                printf("[PPUADDR] Frame %d: Hi write data=%02x, t=%04x, w→1\n",
-                       debug_frame_count, data, ppu.t);
-            }
+            ppu.t = (ppu.t & 0x00FF) | ((uint16_t)(data & 0x3F) << 8);
             ppu.w = 1;
         } else {
-            // Second write: low byte
             ppu.t = (ppu.t & 0xFF00) | data;
-            ppu.v = ppu.t; // Copy t to v
+            ppu.v = ppu.t;
             ppu.w = 0;
-            if (debug_frame_count < 3) {
-                printf("[PPUADDR] Frame %d: Lo write data=%02x, t=%04x, v←t, "
-                       "w→0\n",
-                       debug_frame_count, data, ppu.t);
-            }
-        }
-        // Keep legacy ppuaddr for compatibility (until we remove it)
-        if (ppu.ppuaddr_latch == 0) {
-            ppu.ppuaddr = (data << 8);
-            ppu.ppuaddr_latch = 1;
-        } else {
-            ppu.ppuaddr |= data;
-            ppu.ppuaddr_latch = 0;
         }
         break;
 
-    case PPUDATA:
-        ppu_write(ppu.ppuaddr, data);
-        // auto increment based on ctrl register
-        ppu.ppuaddr += (ppu.ppuctrl.vram_addr_increment) ? 32 : 1;
+    case 0x0007: // PPUDATA
+        ppu_write(ppu.v & 0x3FFF, data);
+        ppu.v += ppu.ppuctrl.vram_addr_increment ? 32 : 1;
+        break;
+
+    default:
         break;
     }
 }
 
-// Helper: Get color from palette index
-static uint32_t get_palette_color(uint8_t palette_index) {
-    return NES_PALETTE[palette_index & 0x3F];
+// ---------------------------------------------------------------------------
+// Helper
+// ---------------------------------------------------------------------------
+
+static int rendering_enabled(void) {
+    return ppu.ppumask.bg_render_enable || ppu.ppumask.sprite_render_enable;
 }
 
-// Fetch background tile data during the 8-dot tile cycle
-// These functions are called at specific dots to fetch tile data in advance
+// ---------------------------------------------------------------------------
+// Background tile fetch pipeline
+// Called at specific dots within each 8-dot sub-cycle.
+// ---------------------------------------------------------------------------
+
 static void fetch_nametable_byte(void) {
-    // Fetch tile index from nametable using current v register
     uint16_t addr = 0x2000 | (ppu.v & 0x0FFF);
     ppu.bg_next_tile_id = ppu.nametable[nametable_mirror(addr)];
 }
 
 static void fetch_attribute_byte(void) {
-    // Fetch attribute byte using coarse X/Y from v register
-    uint16_t addr = 0x23C0 | (ppu.v & 0x0C00) | ((ppu.v >> 4) & 0x38) |
-                    ((ppu.v >> 2) & 0x07);
-    uint8_t attr_byte = ppu.nametable[nametable_mirror(addr)];
-
-    // Select 2-bit palette based on position within 4x4 tile group
+    uint16_t addr = 0x23C0
+                  | (ppu.v & 0x0C00)
+                  | ((ppu.v >> 4) & 0x38)
+                  | ((ppu.v >> 2) & 0x07);
+    uint8_t attr = ppu.nametable[nametable_mirror(addr)];
     uint8_t shift = ((ppu.v >> 4) & 0x04) | (ppu.v & 0x02);
-    ppu.bg_next_tile_attr = (attr_byte >> shift) & 0x03;
+    ppu.bg_next_tile_attr = (attr >> shift) & 0x03;
 }
 
 static void fetch_pattern_low_byte(void) {
-    // Fetch low bit plane from pattern table
-    uint16_t pattern_base = ppu.ppuctrl.bg_pattern_table ? 0x1000 : 0x0000;
+    uint16_t base = ppu.ppuctrl.bg_pattern_table ? 0x1000 : 0x0000;
     uint16_t fine_y = (ppu.v >> 12) & 0x07;
-    uint16_t addr = pattern_base + (ppu.bg_next_tile_id * 16) + fine_y;
-
-    if (ppu.cart && ppu.cart->ppu_read) {
-        ppu.bg_next_tile_lsb = ppu.cart->ppu_read(ppu.cart, addr);
-    } else {
-        ppu.bg_next_tile_lsb = 0;
-    }
+    uint16_t addr = base + ((uint16_t)ppu.bg_next_tile_id << 4) + fine_y;
+    ppu.bg_next_tile_lsb = (ppu.cart && ppu.cart->ppu_read)
+                               ? ppu.cart->ppu_read(ppu.cart, addr)
+                               : 0;
 }
 
 static void fetch_pattern_high_byte(void) {
-    // Fetch high bit plane from pattern table
-    uint16_t pattern_base = ppu.ppuctrl.bg_pattern_table ? 0x1000 : 0x0000;
+    uint16_t base = ppu.ppuctrl.bg_pattern_table ? 0x1000 : 0x0000;
     uint16_t fine_y = (ppu.v >> 12) & 0x07;
-    uint16_t addr = pattern_base + (ppu.bg_next_tile_id * 16) + fine_y + 8;
+    uint16_t addr = base + ((uint16_t)ppu.bg_next_tile_id << 4) + fine_y + 8;
+    ppu.bg_next_tile_msb = (ppu.cart && ppu.cart->ppu_read)
+                               ? ppu.cart->ppu_read(ppu.cart, addr)
+                               : 0;
+}
 
-    if (ppu.cart && ppu.cart->ppu_read) {
-        ppu.bg_next_tile_msb = ppu.cart->ppu_read(ppu.cart, addr);
-    } else {
-        ppu.bg_next_tile_msb = 0;
+// Load the just-fetched tile data into the top of the shift registers.
+static void load_background_shifters(void) {
+    ppu.bg_shift_pattern_lo = (ppu.bg_shift_pattern_lo & 0xFF00) | ppu.bg_next_tile_lsb;
+    ppu.bg_shift_pattern_hi = (ppu.bg_shift_pattern_hi & 0xFF00) | ppu.bg_next_tile_msb;
+    // Attribute bits are expanded to a full byte so they can be shifted like
+    // the pattern registers (one bit per pixel for the whole 8-pixel span).
+    ppu.bg_attr_latch_lo = (ppu.bg_next_tile_attr & 0x01) ? 0xFF : 0x00;
+    ppu.bg_attr_latch_hi = (ppu.bg_next_tile_attr & 0x02) ? 0xFF : 0x00;
+}
+
+// Shift all background registers left by one. Called every dot in the active
+// rendering window so the next pixel is always at the MSB.
+static void update_shifters(void) {
+    if (ppu.ppumask.bg_render_enable) {
+        ppu.bg_shift_pattern_lo <<= 1;
+        ppu.bg_shift_pattern_hi <<= 1;
+        ppu.bg_shift_attr_lo = (ppu.bg_shift_attr_lo << 1) | ppu.bg_attr_latch_lo;
+        ppu.bg_shift_attr_hi = (ppu.bg_shift_attr_hi << 1) | ppu.bg_attr_latch_hi;
     }
 }
 
-// Background pixel rendering for sprite compositing
-// Returns palette index for the background pixel at (x, y)
-// Uses static nametable $2000 (no scrolling)
-static uint8_t render_background_pixel_level1(uint8_t x, uint8_t y) {
-    // Check if background rendering is enabled
-    if (!ppu.ppumask.bg_render_enable) {
-        // Return backdrop color palette index
-        return ppu.palette_table[0];
-    }
+// ---------------------------------------------------------------------------
+// Scroll register updates
+// ---------------------------------------------------------------------------
 
-    // Direct tile calculation (no scrolling - always shows nametable $2000
-    // top-left)
-    uint16_t tile_x = x / 8; // 0-31
-    uint16_t tile_y = y / 8; // 0-29
-
-    // Nametable address (always $2000 for Level 1)
-    uint16_t nametable_addr = 0x2000 + (tile_y * 32) + tile_x;
-    uint8_t tile_id = ppu.nametable[nametable_mirror(nametable_addr)];
-
-    // Pixel within tile (0-7)
-    uint8_t pixel_x = x % 8;
-    uint8_t pixel_y = y % 8;
-
-    // Fetch pattern data from CHR-ROM
-    uint16_t pattern_base = ppu.ppuctrl.bg_pattern_table ? 0x1000 : 0x0000;
-    uint16_t pattern_addr = pattern_base + (tile_id * 16) + pixel_y;
-
-    uint8_t plane0 = 0;
-    uint8_t plane1 = 0;
-    if (ppu.cart && ppu.cart->ppu_read) {
-        plane0 = ppu.cart->ppu_read(ppu.cart, pattern_addr);
-        plane1 = ppu.cart->ppu_read(ppu.cart, pattern_addr + 8);
-    }
-
-    // Extract 2-bit pixel color
-    uint8_t bit0 = (plane0 >> (7 - pixel_x)) & 0x01;
-    uint8_t bit1 = (plane1 >> (7 - pixel_x)) & 0x01;
-    uint8_t pixel_color = (bit1 << 1) | bit0;
-
-    // Fetch attribute byte for palette selection
-    uint16_t attr_x = tile_x / 4; // 0-7
-    uint16_t attr_y = tile_y / 4; // 0-7
-    uint16_t attr_addr = 0x23C0 + (attr_y * 8) + attr_x;
-    uint8_t attr_byte = ppu.nametable[nametable_mirror(attr_addr)];
-
-    // Extract palette index from attribute byte
-    uint8_t attr_shift = ((tile_y & 0x02) << 1) | (tile_x & 0x02);
-    uint8_t palette_index = (attr_byte >> attr_shift) & 0x03;
-
-    // Return palette index for this pixel
-    uint8_t palette_addr;
-    if (pixel_color == 0) {
-        palette_addr = 0; // Backdrop color (universal background)
+static void increment_coarse_x(void) {
+    if (!rendering_enabled()) return;
+    if ((ppu.v & 0x001F) == 31) {
+        ppu.v &= ~0x001F;
+        ppu.v ^= 0x0400; // flip horizontal nametable bit
     } else {
-        // Background palettes start at 0, each palette is 4 colors
-        palette_addr = (palette_index * 4) + pixel_color;
+        ppu.v++;
     }
-
-    return ppu.palette_table[palette_addr];
 }
 
-// Render a single background pixel using shift registers (hardware-accurate)
-static uint8_t render_background_pixel(uint8_t x, uint8_t y) {
-    (void)x; // Screen coordinates not used
-    (void)y;
-
-    if (!ppu.ppumask.bg_render_enable) {
-        // Debug: Print on first scanline to see why rendering is disabled
-        if (ppu.scanline == 0 && ppu.dot == 1) {
-            printf("DEBUG: bg_render_enable=0, PPUMASK=%02x, "
-                   "backdrop=palette[0]=%02x -> color=%08x\n",
-                   ppu.ppumask.reg, ppu.palette_table[0],
-                   NES_PALETTE[ppu.palette_table[0] & 0x3F]);
+static void increment_fine_y(void) {
+    if (!rendering_enabled()) return;
+    if ((ppu.v & 0x7000) != 0x7000) {
+        ppu.v += 0x1000; // increment fine Y
+    } else {
+        ppu.v &= ~0x7000; // fine Y = 0
+        uint16_t coarse_y = (ppu.v & 0x03E0) >> 5;
+        if (coarse_y == 29) {
+            coarse_y = 0;
+            ppu.v ^= 0x0800; // flip vertical nametable bit
+        } else if (coarse_y == 31) {
+            coarse_y = 0; // wrap in attribute area without flipping
+        } else {
+            coarse_y++;
         }
-        return ppu.palette_table[0]; // Backdrop color
+        ppu.v = (ppu.v & ~0x03E0) | (coarse_y << 5);
     }
-
-    // TEMPORARY: Disable fine X scrolling to diagnose issues
-    // Force fine_x to 0 for 8-pixel aligned scrolling only
-    uint8_t fine_x = 0; // TODO: Use ppu.x when fine X is debugged
-
-    // Select pixel from shift registers using fine X
-    // Shift registers hold 16 bits, we select bit 15-fine_x
-    uint8_t bit_select = 15 - fine_x;
-    uint8_t pixel_lo = (ppu.bg_shift_pattern_lo >> bit_select) & 0x01;
-    uint8_t pixel_hi = (ppu.bg_shift_pattern_hi >> bit_select) & 0x01;
-    uint8_t pixel_color = pixel_lo | (pixel_hi << 1);
-
-    // Select palette from attribute shift registers
-    // ISSUE: Attribute registers are 8-bit, not 16-bit like pattern registers
-    // They should also use fine_x offset, but from bit 7-fine_x
-    uint8_t attr_bit_select = 7 - fine_x;
-    uint8_t attr_lo = (ppu.bg_shift_attr_lo >> attr_bit_select) & 0x01;
-    uint8_t attr_hi = (ppu.bg_shift_attr_hi >> attr_bit_select) & 0x01;
-    uint8_t palette_index = attr_lo | (attr_hi << 1);
-
-    // Debug: Sample a pixel to see actual data
-    if (ppu.scanline == 100 && ppu.dot == 128 && pixel_color == 0) {
-        printf("DEBUG: pixel_color=%d palette[0]=%02x shift_lo=%04x "
-               "shift_hi=%04x\n",
-               pixel_color, ppu.palette_table[0], ppu.bg_shift_pattern_lo,
-               ppu.bg_shift_pattern_hi);
-    }
-
-    if (pixel_color == 0) {
-        // Transparent - use backdrop color
-        return ppu.palette_table[0];
-    }
-
-    // Get final color from palette
-    uint8_t palette_addr = (palette_index * 4) + pixel_color;
-    return ppu.palette_table[palette_addr];
 }
 
-// Evaluate sprites for current scanline
-// Finds up to 8 sprites that are visible on this scanline
-static void evaluate_sprites_for_scanline(int16_t scanline) {
+// Copy horizontal scroll bits from t into v (dot 257 of each rendered line).
+static void copy_x_from_t(void) {
+    if (!rendering_enabled()) return;
+    // v: ....A.. ...BCDEF = t: ....A.. ...BCDEF
+    ppu.v = (ppu.v & 0x7BE0) | (ppu.t & 0x041F);
+}
+
+// Copy vertical scroll bits from t into v (dots 280-304 of pre-render line).
+static void copy_y_from_t(void) {
+    if (!rendering_enabled()) return;
+    // v: .IHGFED CBA..... = t: .IHGFED CBA.....
+    ppu.v = (ppu.v & 0x041F) | (ppu.t & 0x7BE0);
+}
+
+// ---------------------------------------------------------------------------
+// Background pixel output
+// ---------------------------------------------------------------------------
+
+// Returns the raw 2-bit pixel value (0 = transparent) and sets *palette_idx
+// to the 2-bit palette select. Both outputs are needed for sprite compositing.
+static uint8_t get_bg_pixel(uint8_t *palette_idx) {
+    *palette_idx = 0;
+    if (!ppu.ppumask.bg_render_enable) return 0;
+
+    uint8_t bit = 15 - ppu.x;
+    uint8_t pixel = (((ppu.bg_shift_pattern_hi >> bit) & 1) << 1) |
+                     ((ppu.bg_shift_pattern_lo >> bit) & 1);
+
+    uint8_t attr_bit = 7 - ppu.x;
+    *palette_idx = (((ppu.bg_shift_attr_hi >> attr_bit) & 1) << 1) |
+                    ((ppu.bg_shift_attr_lo >> attr_bit) & 1);
+
+    return pixel;
+}
+
+// ---------------------------------------------------------------------------
+// Sprite evaluation and rendering
+// ---------------------------------------------------------------------------
+
+static void evaluate_sprites_for_scanline(int16_t next_scanline) {
     ppu.sprite_count = 0;
-    uint8_t sprite_height = ppu.ppuctrl.sprite_size ? 16 : 8; // 8x8 or 8x16
+    uint8_t height = ppu.ppuctrl.sprite_size ? 16 : 8;
 
-    // Scan all 64 sprites in OAM
     for (int i = 0; i < 64 && ppu.sprite_count < 8; i++) {
-        uint8_t sprite_y = ppu.oam[i * 4 + 0];
-        uint8_t tile_index = ppu.oam[i * 4 + 1];
-        uint8_t attributes = ppu.oam[i * 4 + 2];
-        uint8_t sprite_x = ppu.oam[i * 4 + 3];
+        uint8_t sy   = ppu.oam[i * 4 + 0];
+        int16_t top  = (int16_t)sy + 1;
+        int16_t bot  = top + height;
 
-        // Check if sprite is on this scanline
-        // Y position is scanline where top of sprite appears (sprite drawn on
-        // Y+1 to Y+height)
-        int16_t sprite_top = sprite_y + 1;
-        int16_t sprite_bottom = sprite_y + sprite_height;
-
-        if (scanline >= sprite_top && scanline < sprite_bottom) {
-            // Store in secondary OAM
-            ppu.secondary_oam[ppu.sprite_count].y = sprite_y;
-            ppu.secondary_oam[ppu.sprite_count].tile = tile_index;
-            ppu.secondary_oam[ppu.sprite_count].attr = attributes;
-            ppu.secondary_oam[ppu.sprite_count].x = sprite_x;
+        if (next_scanline >= top && next_scanline < bot) {
+            ppu.secondary_oam[ppu.sprite_count].y             = sy;
+            ppu.secondary_oam[ppu.sprite_count].tile          = ppu.oam[i * 4 + 1];
+            ppu.secondary_oam[ppu.sprite_count].attr          = ppu.oam[i * 4 + 2];
+            ppu.secondary_oam[ppu.sprite_count].x             = ppu.oam[i * 4 + 3];
+            ppu.secondary_oam[ppu.sprite_count].is_sprite_zero = (i == 0) ? 1 : 0;
             ppu.sprite_count++;
         }
     }
 
-    // Set sprite overflow flag if more than 8 sprites on scanline
     if (ppu.sprite_count == 8) {
-        // Check if there are more sprites
-        for (int i = 8 * 4; i < 256; i += 4) {
-            uint8_t sprite_y = ppu.oam[i];
-            int16_t sprite_top = sprite_y + 1;
-            int16_t sprite_bottom = sprite_y + sprite_height;
-            if (scanline >= sprite_top && scanline < sprite_bottom) {
+        for (int i = 8; i < 64; i++) {
+            uint8_t sy   = ppu.oam[i * 4 + 0];
+            int16_t top  = (int16_t)sy + 1;
+            int16_t bot  = top + height;
+            if (next_scanline >= top && next_scanline < bot) {
                 ppu.ppustatus.sprite_overflow = 1;
                 break;
             }
@@ -531,268 +343,260 @@ static void evaluate_sprites_for_scanline(int16_t scanline) {
     }
 }
 
-// Render sprite pixel at given screen coordinates
-static uint8_t render_sprite_pixel(uint8_t x, uint8_t y) {
-    if (!ppu.ppumask.sprite_render_enable) {
-        return 0xFF; // Sprites disabled
-    }
+// Returns the sprite pixel color (0 = transparent) and sets out_* fields for
+// compositing. Scans secondary OAM left to right (lower index = higher priority).
+static uint8_t get_sprite_pixel(uint8_t x, uint8_t scanline,
+                                uint8_t *out_palette, uint8_t *out_priority,
+                                uint8_t *out_is_sprite_zero) {
+    *out_palette = 0;
+    *out_priority = 0;
+    *out_is_sprite_zero = 0;
 
-    // Check secondary OAM for sprites at this pixel
+    if (!ppu.ppumask.sprite_render_enable) return 0;
+
+    uint8_t height = ppu.ppuctrl.sprite_size ? 16 : 8;
+
     for (int i = 0; i < ppu.sprite_count; i++) {
-        uint8_t sprite_x = ppu.secondary_oam[i].x;
-        uint8_t sprite_y = ppu.secondary_oam[i].y;
-        uint8_t tile_index = ppu.secondary_oam[i].tile;
-        uint8_t attributes = ppu.secondary_oam[i].attr;
+        uint8_t sx = ppu.secondary_oam[i].x;
+        if (x < sx || x >= (uint16_t)sx + 8) continue;
 
-        // Check if pixel is within sprite bounds
-        if (x < sprite_x || x >= sprite_x + 8) {
-            continue; // Not in this sprite's X range
+        uint8_t attr   = ppu.secondary_oam[i].attr;
+        uint8_t pixel_x = x - sx;
+        uint8_t pixel_y = (uint8_t)(scanline - (ppu.secondary_oam[i].y + 1));
+
+        if (pixel_y >= height) continue;
+
+        if (attr & 0x40) pixel_x = 7 - pixel_x;      // horizontal flip
+        if (attr & 0x80) pixel_y = height - 1 - pixel_y; // vertical flip
+
+        uint16_t tile_addr;
+        if (!ppu.ppuctrl.sprite_size) {
+            // 8x8: PPUCTRL bit 3 selects the pattern table
+            uint16_t base = ppu.ppuctrl.sprite_pattern_table ? 0x1000 : 0x0000;
+            tile_addr = base + ((uint16_t)ppu.secondary_oam[i].tile << 4) + pixel_y;
+        } else {
+            // 8x16: tile bit 0 selects the pattern table; top/bottom half
+            uint16_t base = (ppu.secondary_oam[i].tile & 0x01) ? 0x1000 : 0x0000;
+            uint8_t tile  = ppu.secondary_oam[i].tile & 0xFE;
+            if (pixel_y >= 8) { tile++; pixel_y -= 8; }
+            tile_addr = base + ((uint16_t)tile << 4) + pixel_y;
         }
 
-        // Calculate pixel position within sprite (0-7 or 0-15)
-        uint8_t pixel_x = x - sprite_x;
-        uint8_t pixel_y = y - (sprite_y + 1); // +1 because Y is scanline-1
-
-        // Validate Y coordinate is within sprite bounds
-        uint8_t sprite_height = ppu.ppuctrl.sprite_size ? 16 : 8;
-        if (pixel_y >= sprite_height) {
-            continue; // Out of bounds, skip this sprite
-        }
-
-        // Apply horizontal flip
-        if (attributes & 0x40) {
-            pixel_x = 7 - pixel_x;
-        }
-
-        // Apply vertical flip
-        if (attributes & 0x80) {
-            pixel_y = sprite_height - 1 - pixel_y;
-        }
-
-        // Get pattern table address (sprites use table from PPUCTRL bit 3)
-        uint16_t pattern_table_base =
-            ppu.ppuctrl.sprite_pattern_table ? 0x1000 : 0x0000;
-        uint16_t tile_addr = pattern_table_base + (tile_index * 16);
-
-        // Read pattern data (2 bitplanes) with NULL safety
-        uint8_t plane0 = 0;
-        uint8_t plane1 = 0;
-
+        uint8_t lo = 0, hi = 0;
         if (ppu.cart && ppu.cart->ppu_read) {
-            plane0 = ppu.cart->ppu_read(ppu.cart, tile_addr + pixel_y);
-            plane1 = ppu.cart->ppu_read(ppu.cart, tile_addr + pixel_y + 8);
+            lo = ppu.cart->ppu_read(ppu.cart, tile_addr);
+            hi = ppu.cart->ppu_read(ppu.cart, tile_addr + 8);
         }
 
-        // Extract pixel color (2 bits)
-        uint8_t bit0 = (plane0 >> (7 - pixel_x)) & 0x01;
-        uint8_t bit1 = (plane1 >> (7 - pixel_x)) & 0x01;
-        uint8_t pixel_color = (bit1 << 1) | bit0;
+        uint8_t color = (((hi >> (7 - pixel_x)) & 1) << 1) |
+                         ((lo >> (7 - pixel_x)) & 1);
 
-        // If pixel is transparent (color 0), try next sprite
-        if (pixel_color == 0) {
-            continue;
-        }
+        if (color == 0) continue; // transparent
 
-        // Get sprite palette (bits 0-1 of attributes select palette 0-3)
-        // Sprite palettes start at $3F10
-        uint8_t palette_index =
-            (attributes & 0x03) + 4; // +4 for sprite palettes
-        uint8_t palette_addr = (palette_index * 4) + pixel_color;
-        uint8_t color = ppu.palette_table[palette_addr];
-
-        // Encode sprite info in upper bits for priority handling
-        // Bit 7: 1 = sprite pixel (vs background)
-        // Bit 6: priority bit from attributes (0=front, 1=back)
-        // Bit 5: sprite 0 flag
-        return color | 0x80 | ((attributes & 0x20) << 1) |
-               ((i == 0) ? 0x20 : 0);
+        *out_palette       = (attr & 0x03) + 4; // sprite palettes 4-7
+        *out_priority      = (attr & 0x20) ? 1 : 0;
+        *out_is_sprite_zero = ppu.secondary_oam[i].is_sprite_zero;
+        return color;
     }
 
-    return 0xFF; // No sprite pixel
+    return 0; // no opaque sprite pixel
 }
 
-// Combine background and sprite pixels with priority handling
-static uint8_t combine_pixels(uint8_t bg, uint8_t sprite) {
-    // Sprite encoding: bit 7=sprite present, bit 6=priority, bit 5=sprite 0
-    // Lower 6 bits = palette index
+// ---------------------------------------------------------------------------
+// Pixel compositing
+// ---------------------------------------------------------------------------
 
-    if (sprite == 0xFF) {
-        return bg; // No sprite, use background
-    }
-
-    // Extract sprite info
-    uint8_t is_sprite = (sprite & 0x80) ? 1 : 0;
-    uint8_t priority_behind = (sprite & 0x40) ? 1 : 0;
-    uint8_t is_sprite_0 = (sprite & 0x20) ? 1 : 0;
-    uint8_t sprite_color = sprite & 0x1F; // Lower 5 bits
-
-    if (!is_sprite) {
-        return bg; // Not actually a sprite
-    }
-
-    // Sprite 0 hit detection
-    // Set when sprite 0 opaque pixel overlaps background opaque pixel
-    if (is_sprite_0 && bg != 0 && sprite_color != 0) {
+static uint32_t composite_pixel(uint8_t bg_pixel, uint8_t bg_palette,
+                                uint8_t sp_pixel, uint8_t sp_palette,
+                                uint8_t sp_priority, uint8_t sp_is_zero) {
+    // Sprite 0 hit: both pixels opaque, not in the left clip region.
+    if (sp_is_zero && bg_pixel != 0 && sp_pixel != 0 &&
+        ppu.ppumask.bg_render_enable && ppu.ppumask.sprite_render_enable) {
         ppu.ppustatus.sprite_0_hit = 1;
     }
 
-    // Handle priority
-    if (priority_behind) {
-        // Sprite behind background: only show if background is transparent
-        if (bg == 0) {
-            return sprite_color;
+    uint8_t color_idx;
+
+    if (bg_pixel == 0 && sp_pixel == 0) {
+        // Both transparent: backdrop
+        color_idx = ppu.palette_table[0];
+    } else if (bg_pixel == 0) {
+        // Background transparent, sprite visible
+        color_idx = ppu.palette_table[sp_palette * 4 + sp_pixel];
+    } else if (sp_pixel == 0) {
+        // Sprite transparent, background visible
+        color_idx = ppu.palette_table[bg_palette * 4 + bg_pixel];
+    } else {
+        // Both opaque: priority decides
+        if (sp_priority) {
+            // Sprite behind background
+            color_idx = ppu.palette_table[bg_palette * 4 + bg_pixel];
         } else {
-            return bg;
+            color_idx = ppu.palette_table[sp_palette * 4 + sp_pixel];
         }
-    } else {
-        // Sprite in front: sprite always wins
-        return sprite_color;
     }
+
+    return NES_PALETTE[color_idx & 0x3F];
 }
 
-// Increment horizontal position in v register
-// Called every 8 dots during rendering
-static void increment_coarse_x(void) {
-    if ((ppu.v & 0x001F) == 31) { // if coarse X == 31
-        ppu.v &= ~0x001F;         // coarse X = 0
-        ppu.v ^= 0x0400;          // switch horizontal nametable
-    } else {
-        ppu.v += 1; // increment coarse X
-    }
-}
+// ---------------------------------------------------------------------------
+// Main PPU clock — one dot per call
+// ---------------------------------------------------------------------------
 
-static void clock() {
-    // NES PPU timing:
-    // Scanlines -1 to 260 (262 total)
-    // -1: Pre-render scanline
-    // 0-239: Visible scanlines
-    // 240: Post-render (idle)
-    // 241-260: VBlank
+static void clock(void) {
+    // ----- Visible + pre-render scanlines (-1 to 239) ----------------------
+    if (ppu.scanline >= -1 && ppu.scanline <= 239) {
 
-    // Render visible pixels (and pre-render scanline)
-    if (ppu.scanline >= -1 && ppu.scanline < 240) {
-        // Sprite evaluation at start of scanline
-        if (ppu.dot == 1 && ppu.scanline >= 0) {
-            // Only evaluate sprites if either bg or sprite rendering is enabled
-            if (ppu.ppumask.bg_render_enable ||
-                ppu.ppumask.sprite_render_enable) {
-                evaluate_sprites_for_scanline(ppu.scanline);
+        // Pre-render scanline: clear status flags at dot 1.
+        if (ppu.scanline == -1 && ppu.dot == 1) {
+            ppu.ppustatus.vblank_started = 0;
+            ppu.ppustatus.sprite_0_hit   = 0;
+            ppu.ppustatus.sprite_overflow = 0;
+            ppu.frame_complete = 0;
+        }
+
+        // --- Background tile fetch pipeline ---------------------------------
+        // Active in two windows:
+        //   dots 2-257: fetch tiles for this scanline's pixels
+        //   dots 321-336: prefetch first two tiles of the NEXT scanline
+        if ((ppu.dot >= 2 && ppu.dot <= 257) ||
+            (ppu.dot >= 321 && ppu.dot <= 336)) {
+
+            update_shifters();
+
+            // Within each 8-dot group the fetches are staggered.
+            // Using (dot-1)%8 so that group boundaries align cleanly:
+            //   case 0: dot  1, 9, 17 ... 249, 321, 329 — load & NT fetch
+            //   case 2: dot  3, 11 ... 251, 323, 331    — AT fetch
+            //   case 4: dot  5, 13 ... 253, 325, 333    — PT lo fetch
+            //   case 6: dot  7, 15 ... 255, 327, 335    — PT hi fetch
+            //   case 7: dot  8, 16 ... 256, 328, 336    — coarse X increment
+            // Dot 1 lands on case 0 but is excluded (first pixel output uses
+            // data already in the high byte of the shift registers from the
+            // previous scanline's prefetch). Dot 321 IS included so the NT
+            // fetch for tile 0 of the next scanline reads nametable[v] while
+            // v still points to column 0 (before any coarse X increment).
+            switch ((ppu.dot - 1) & 7) {
+            case 0:
+                load_background_shifters();
+                fetch_nametable_byte();
+                break;
+            case 2:
+                fetch_attribute_byte();
+                break;
+            case 4:
+                fetch_pattern_low_byte();
+                break;
+            case 6:
+                fetch_pattern_high_byte();
+                break;
+            case 7:
+                increment_coarse_x();
+                break;
             }
         }
 
-        // Render pixels: background + sprites
+        // Dot 256: end of visible pixels — increment fine / coarse Y.
+        if (ppu.dot == 256) {
+            increment_fine_y();
+        }
+
+        // Dot 257: copy horizontal scroll position from t into v, and load
+        // the shift registers with the tile data that was just fetched.
+        if (ppu.dot == 257) {
+            load_background_shifters();
+            copy_x_from_t();
+        }
+
+        // Dots 280-304 on the pre-render scanline: copy vertical scroll bits.
+        if (ppu.scanline == -1 && ppu.dot >= 280 && ppu.dot <= 304) {
+            copy_y_from_t();
+        }
+
+        // Dot 257: evaluate sprites for the NEXT scanline.
+        if (ppu.dot == 257 && ppu.scanline >= 0) {
+            evaluate_sprites_for_scanline(ppu.scanline + 1);
+        }
+
+        // --- Pixel output (visible scanlines only, dots 1-256) --------------
         if (ppu.scanline >= 0 && ppu.dot >= 1 && ppu.dot <= 256) {
-            // Get background pixel
-            uint8_t bg_pixel =
-                render_background_pixel_level1(ppu.dot - 1, ppu.scanline);
+            uint8_t bg_pixel, bg_palette;
+            bg_pixel = get_bg_pixel(&bg_palette);
 
-            // Get sprite pixel
-            uint8_t sprite_pixel =
-                render_sprite_pixel(ppu.dot - 1, ppu.scanline);
+            uint8_t sp_pixel, sp_palette, sp_priority, sp_is_zero;
+            sp_pixel = get_sprite_pixel(ppu.dot - 1, ppu.scanline,
+                                        &sp_palette, &sp_priority, &sp_is_zero);
 
-            // Composite background and sprite
-            uint8_t final_pixel = combine_pixels(bg_pixel, sprite_pixel);
-
-            // Write to frame buffer
             if (ppu.frame_buffer) {
-                int index = ppu.scanline * 256 + (ppu.dot - 1);
-                ppu.frame_buffer[index] = get_palette_color(final_pixel);
+                int idx = ppu.scanline * 256 + (ppu.dot - 1);
+                ppu.frame_buffer[idx] = composite_pixel(bg_pixel, bg_palette,
+                                                        sp_pixel, sp_palette,
+                                                        sp_priority, sp_is_zero);
             }
         }
     }
 
-    // Scanline 241, dot 1: Enter VBlank
+    // ----- VBlank -----------------------------------------------------------
     if (ppu.scanline == 241 && ppu.dot == 1) {
-        if (debug_frame_count < 3) {
-            printf("\n===== Frame %d complete, entering VBlank =====\n\n",
-                   debug_frame_count);
-        }
         ppu.ppustatus.vblank_started = 1;
         ppu.frame_complete = 1;
-
-        // Trigger NMI if enabled in PPUCTRL (bit 7)
         if (ppu.ppuctrl.nmi) {
             ppu.nmi_triggered = 1;
-            printf("PPU: NMI triggered at scanline 241 (VBlank start)\n");
         }
     }
 
-    // Scanline -1 (pre-render), dot 1: Clear VBlank
-    if (ppu.scanline == -1 && ppu.dot == 1) {
-        ppu.ppustatus.vblank_started = 0;
-        ppu.ppustatus.sprite_0_hit = 0;
-        // ppu.ppustatus.sprite_overflow = 0;
-        ppu.frame_complete = 0;
-        // Note: nmi_triggered is NOT cleared here - CPU clears it when
-        // servicing NMI
-    }
-
-    // No scroll register operations in this version (static backgrounds only)
-
-    // Advance dot counter
+    // ----- Advance counters -------------------------------------------------
     ppu.dot++;
     if (ppu.dot > 340) {
         ppu.dot = 0;
         ppu.scanline++;
         if (ppu.scanline > 260) {
-            ppu.scanline = -1; // Reset to pre-render
-            debug_frame_count++;
+            ppu.scanline = -1;
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Lifecycle
+// ---------------------------------------------------------------------------
 
 static void connect_bus(void *bus) { ppu.bus = (struct nesbus *)bus; }
 
 static void set_framebuffer(uint32_t *fb) {
     ppu.frame_buffer = fb;
-    ppu.scanline = -1; // Start at pre-render scanline per NES hardware spec
+    ppu.scanline = -1;
     ppu.dot = 0;
     ppu.frame_complete = 0;
-
-    // Initialize backdrop color to black (NES power-on default)
-    // 0x0F = black in NES palette
-    ppu.palette_table[0] = 0x0F;
-
-    printf("PPU: Frame buffer connected at %p\n", (void *)fb);
-    printf("PPU: Backdrop color initialized to palette[0]=%02x (black)\n",
-           ppu.palette_table[0]);
+    ppu.palette_table[0] = 0x0F; // black on power-on
 }
 
 static void reset(void) {
-    ppu.ppuaddr_latch = 0;
-    // Reset loopy registers
     ppu.v = 0;
     ppu.t = 0;
     ppu.x = 0;
     ppu.w = 0;
-
-    // Reset shift registers
+    ppu.ppuaddr_latch = 0;
     ppu.bg_shift_pattern_lo = 0;
     ppu.bg_shift_pattern_hi = 0;
-    ppu.bg_shift_attr_lo = 0;
-    ppu.bg_shift_attr_hi = 0;
-
-    // Reset attribute latches
-    ppu.bg_attr_latch_lo = 0;
-    ppu.bg_attr_latch_hi = 0;
-
-    // Reset tile fetch latches
-    ppu.bg_next_tile_id = 0;
-    ppu.bg_next_tile_attr = 0;
-    ppu.bg_next_tile_lsb = 0;
-    ppu.bg_next_tile_msb = 0;
+    ppu.bg_shift_attr_lo    = 0;
+    ppu.bg_shift_attr_hi    = 0;
+    ppu.bg_attr_latch_lo    = 0;
+    ppu.bg_attr_latch_hi    = 0;
+    ppu.bg_next_tile_id     = 0;
+    ppu.bg_next_tile_attr   = 0;
+    ppu.bg_next_tile_lsb    = 0;
+    ppu.bg_next_tile_msb    = 0;
 }
 
-struct ppu2c02 *ppu2c02_init() {
-    ppu.cpu_read = cpu_read;
-    ppu.cpu_write = cpu_write;
-    ppu.ppu_read = ppu_read;
-    ppu.ppu_write = ppu_write;
-    ppu.clock = clock;
-    ppu.connect_bus = connect_bus;
-    ppu.reset = reset;
+struct ppu2c02 *ppu2c02_init(void) {
+    ppu.cpu_read          = cpu_read;
+    ppu.cpu_write         = cpu_write;
+    ppu.ppu_read          = ppu_read;
+    ppu.ppu_write         = ppu_write;
+    ppu.clock             = clock;
+    ppu.connect_bus       = connect_bus;
+    ppu.reset             = reset;
     ppu.connect_cartridge = connect_cartridge;
-    ppu.set_framebuffer = set_framebuffer;
-
+    ppu.set_framebuffer   = set_framebuffer;
     return &ppu;
 }
