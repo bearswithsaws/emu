@@ -22,14 +22,26 @@ static uint16_t nametable_mirror(uint16_t addr) {
     addr = 0x2000 + ((addr - 0x2000) % 0x1000);
     uint8_t nt = (addr >> 10) & 0x03;
 
-    if (ppu.cart->hdr->flags6.mirroring == 0) {
-        // Horizontal mirroring: $2000=$2400, $2800=$2C00
-        // Nametables 0&1 share first 1 KB; 2&3 share second 1 KB.
+    // Use the mapper's dynamic mirroring field so bankswitching mappers
+    // (e.g. MMC1) can change it at runtime without touching the ROM header.
+    uint8_t mode = ppu.cart->map ? ppu.cart->map->mirroring
+                                 : (ppu.cart->hdr->flags6.mirroring ? MIRROR_VERTICAL
+                                                                     : MIRROR_HORIZONTAL);
+    switch (mode) {
+    case MIRROR_HORIZONTAL:
+        // $2000=$2400, $2800=$2C00 — NTs 0&1 share low 1 KB; 2&3 share high 1 KB
         return (nt <= 1) ? (addr & 0x03FF) : (0x0400 | (addr & 0x03FF));
-    } else {
-        // Vertical mirroring: $2000=$2800, $2400=$2C00
-        // Nametables 0&2 share first 1 KB; 1&3 share second 1 KB.
+    case MIRROR_VERTICAL:
+        // $2000=$2800, $2400=$2C00 — NTs 0&2 share low 1 KB; 1&3 share high 1 KB
         return (nt == 0 || nt == 2) ? (addr & 0x03FF) : (0x0400 | (addr & 0x03FF));
+    case MIRROR_SINGLE_LO:
+        // All four nametables map to the first 1 KB
+        return addr & 0x03FF;
+    case MIRROR_SINGLE_HI:
+        // All four nametables map to the second 1 KB
+        return 0x0400 | (addr & 0x03FF);
+    default:
+        return (addr - 0x2000) % 0x800;
     }
 }
 

@@ -15,6 +15,11 @@ struct mapper *mapper_init(struct nes_cartridge *cartridge) {
     map.num_prg_rom = cartridge->hdr->prg_rom_size;
     map.num_chr_rom = cartridge->hdr->chr_rom_size;
 
+    // Default mirroring from ROM header (mappers that support dynamic mirroring
+    // will overwrite this field at runtime via their write handlers).
+    map.mirroring = cartridge->hdr->flags6.mirroring ? MIRROR_VERTICAL
+                                                      : MIRROR_HORIZONTAL;
+
     switch (map.mapper_id) {
     case 0:
         map.cpu_read = mapper_000_cpu_read;
@@ -27,6 +32,7 @@ struct mapper *mapper_init(struct nes_cartridge *cartridge) {
         map.cpu_write = mapper_001_cpu_write;
         map.ppu_read = mapper_001_ppu_read;
         map.ppu_write = mapper_001_ppu_write;
+        mapper_001_init(&map);
         break;
     case 2:
         map.cpu_read = mapper_002_cpu_read;
