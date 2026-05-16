@@ -1,6 +1,6 @@
 #include "nes_input.h"
+#include "debug.h"
 #include <SDL2/SDL.h>
-#include <stdio.h>
 
 // Global pointer to NES controller (for callback access)
 static struct controller *g_controller1 = NULL;
@@ -62,7 +62,7 @@ static void nes_input_handler(int sdl_keycode, int is_pressed, void *userdata) {
 
 void nes_input_init(struct controller *ctrl) {
     g_controller1 = ctrl;
-    printf("NES input initialized\n");
+    LOG_DEBUG("NES input initialized\n");
 }
 
 input_callback_t nes_get_input_handler(void) { return nes_input_handler; }
