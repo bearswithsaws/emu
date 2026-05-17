@@ -14,6 +14,14 @@ target_include_directories(test_apu PRIVATE
     "${PROJECT_BINARY_DIR}"
 )
 
+add_executable(test_mapper_001 test_mapper_001.c)
+target_link_libraries(test_mapper_001 PRIVATE lib6502)
+target_include_directories(test_mapper_001 PRIVATE
+    "${PROJECT_SOURCE_DIR}/arch/6502"
+    "${PROJECT_BINARY_DIR}"
+)
+
 enable_testing()
 add_test(NAME ppu_clock COMMAND test_ppu_clock)
 add_test(NAME apu COMMAND test_apu)
+add_test(NAME mapper_001 COMMAND test_mapper_001)

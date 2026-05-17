@@ -250,21 +250,24 @@ Offset  Size  Description
 
 #### Mapper 001 - MMC1 ([arch/6502/mapper_001.c](arch/6502/mapper_001.c))
 
-**Status:** 🚧 50% Implemented (241 lines, needs testing)
+**Status:** ✅ Complete (2026-05-17) — all bank switching modes implemented, tested, and bug-fixed
 
-**Currently Implemented:**
+**Implemented:**
 - ✅ 5-write shift register with serial interface ($8000-$FFFF)
-- ✅ Reset detection (consecutive writes)
+- ✅ Reset on bit-7 write (forces PRG mode 3)
 - ✅ All 4 internal registers (control, CHR0, CHR1, PRG)
-- ✅ All 3 PRG bank modes (32KB, fix first, fix last)
-- ✅ CHR bank switching (4KB and 8KB modes)
-- ✅ Programmable mirroring (H/V/single-screen)
-- ✅ PRG-RAM enable/disable
+- ✅ PRG mode 0/1: 32KB window (bug fixed 2026-05-17 — was using 16KB stride)
+- ✅ PRG mode 2: fix first bank at $8000, switchable at $C000
+- ✅ PRG mode 3: switchable at $8000, fix last bank at $C000 (power-up default)
+- ✅ CHR 8KB banking (bit 0 of register ignored per spec)
+- ✅ CHR 4KB banking (two independent banks)
+- ✅ CHR-RAM banking applied on both read and write paths (bug fixed 2026-05-17)
+- ✅ Programmable mirroring (H/V/single-screen-lo/single-screen-hi)
+- ✅ PRG-RAM at $6000-$7FFF with enable/disable via prg_bank bit 4
+- ✅ 11 unit tests, 23 assertions — all passing
 
-**Not Yet Tested:**
-- ❌ Real game compatibility verification
-- ❌ Edge cases and timing
-- ❌ PRG-RAM save functionality
+**Remaining:**
+- ⚠️ Real game compatibility not yet verified (needs ROM testing)
 
 **Specifications:**
 - PRG-ROM: Up to 256KB (16KB or 32KB banking)
@@ -481,12 +484,9 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
   - ✅ Window close handling
   - ⚠️ Old gui.c/gui.h removed, replaced with modular display library
 
-- **Mapper 001 (MMC1)** (~50% complete)
-  - ✅ Serial write interface (5-write shift register)
-  - ✅ Register structure
-  - ❌ PRG bank switching (16KB/32KB modes)
-  - ❌ CHR bank switching (4KB/8KB modes)
-  - ❌ Mirroring control
+- **Mapper 001 (MMC1)** ✅ Complete (2026-05-17)
+  - All PRG and CHR bank switching modes implemented and unit-tested
+  - Two bugs fixed: 32KB PRG stride and CHR-RAM read banking
 
 - **Frame Timing** (100% complete)
   - ✅ 60 Hz frame rate via PPU
@@ -507,7 +507,7 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
   - PPU_RENDERING_PIPELINE.md
   - PPU_IMPLEMENTATION_COMPARISON.md
   - BUGFIXES_APPLIED.md
-- ✅ Unit tests: PPU clock tests (13 tests, 65 assertions — 5 new sprite tests added 2026-05-17), APU unit tests (8 tests, 72 assertions)
+- ✅ Unit tests: PPU clock (13 tests, 65 assertions), Mapper 001 (11 tests, 23 assertions — added 2026-05-17), APU (8 tests, 72 assertions)
 - ✅ Documentation (CLAUDE.md updated 2026-05-17)
 
 ---
@@ -521,7 +521,7 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
 - ~~**Coarse X increment timing off by one cycle**~~ ✅ **Fixed 2025-11-12** - Eliminated 8-pixel viewport offset
 
 ### High Priority (Remaining)
-1. **Mapper 001 (MMC1) incomplete** - 50% done, needs bank switching logic to run 680+ games (Metroid, Zelda, Mega Man 2)
+1. **Mapper 001 real-game testing** - Implementation complete; needs ROM compatibility verification with Metroid, Zelda, Mega Man 2
 
 ### Medium Priority
 1. **Global static variables** - Only one emulator instance possible
@@ -640,6 +640,21 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
 
 **Status:** Mapper 0 NROM games are now **fully playable** (background + sprites + audio). Next priority: Mapper 1 (MMC1) to unlock 680+ games.
 
+### 2026-05-17 Session: Mapper 001 (MMC1) Completion
+
+**Discovered CLAUDE.md was severely out of date again** — Mapper 001 was already ~95% implemented; docs claimed 50%.
+
+**Bugs fixed in `arch/6502/mapper_001.c`:**
+- **PRG 32KB mode stride**: `bank * 0x4000` → `bank * 0x8000`. The 32KB bank index selects pairs of 16KB banks; the old code was using the wrong stride, mapping to the wrong half of the ROM.
+- **CHR-RAM ppu_read ignored banking**: The read path used a flat `addr & 0x1FFF` when `chr_ram_allocated=1`, ignoring chr_bank_0/chr_bank_1. Fixed to apply the same bank selection as ppu_read CHR-ROM and ppu_write paths. Also unified both paths (ROM and RAM) into a single code path.
+
+**Tests added** (`tests/test_mapper_001.c` — 11 tests, 23 assertions, all passing):
+- Power-up state, all 4 PRG modes, CHR 8KB and 4KB modes, CHR-RAM read/write banking, PRG-RAM enable/disable, shift register reset, dynamic mirroring.
+
+**Total test suite: 32 tests, 160 assertions — all passing.**
+
+**Status:** Mapper 1 (MMC1) is now fully implemented. Next: verify with real MMC1 ROMs, then add Mappers 2 and 3.
+
 ---
 
 ## Future Work
@@ -653,11 +668,10 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
   - 5 new unit tests passing
 - [X] ~~Integrate GUI event loop with emulation~~ ✅ **90% complete**
 - [X] ~~Add keyboard input mapping~~ ✅ **80% complete**
-- [🚧] **Complete Mapper 1 (MMC1)** (50% complete) - **HIGHEST PRIORITY NEXT**
-  - Implement PRG bank switching (16KB/32KB modes)
-  - Implement CHR bank switching (4KB/8KB modes)
-  - Implement programmable mirroring control
-  - Test with MMC1 games (Metroid, Zelda, Mega Man 2)
+- [X] ~~Complete Mapper 1 (MMC1)~~ ✅ Complete (2026-05-17)
+  - All PRG/CHR bank switching modes implemented and unit-tested
+  - Bugs fixed: 32KB PRG stride, CHR-RAM read banking
+  - Next: verify with real MMC1 ROMs
 
 ### Phase 2: Audio & Additional Mappers
 - [X] ~~Implement APU pulse channels~~ ✅ Complete (2026-05-17)
