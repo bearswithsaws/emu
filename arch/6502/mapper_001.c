@@ -93,8 +93,10 @@ uint8_t mapper_001_cpu_read(struct mapper *map, uint16_t addr) {
     uint8_t  n      = map->num_prg_rom;
 
     if (ctx->prg_mode <= 1) {
-        uint8_t bank = (ctx->prg_bank >> 1) & 0x0F;
-        offset = ((bank % n) * 0x4000) + (addr & 0x7FFF);
+        /* 32KB window: bit 0 of prg_bank is ignored; select a pair of 16KB banks. */
+        uint8_t bank32   = (ctx->prg_bank >> 1) & 0x0F;
+        uint8_t num_32k  = (n / 2) ? (n / 2) : 1;
+        offset = (((bank32 % num_32k) * 2) * 0x4000) + (addr & 0x7FFF);
     } else if (ctx->prg_mode == 2) {
         if (addr <= 0xBFFF) {
             offset = addr & 0x3FFF;
@@ -133,23 +135,20 @@ uint8_t mapper_001_ppu_read(struct mapper *map, uint16_t addr) {
     if (!map->cartridge->chr_rom) return 0;
 
     uint32_t offset = 0;
+    uint8_t n = map->num_chr_rom ? map->num_chr_rom : 1;
 
-    if (map->num_chr_rom == 0 || map->cartridge->chr_ram_allocated) {
-        offset = addr & 0x1FFF;
+    if (ctx->chr_mode == 0) {
+        /* 8KB window: bit 0 of chr_bank_0 is ignored. */
+        uint8_t bank = (ctx->chr_bank_0 >> 1) & 0x1F;
+        offset = ((bank % n) * 0x2000) + (addr & 0x1FFF);
     } else {
-        uint8_t n = map->num_chr_rom;
-
-        if (ctx->chr_mode == 0) {
-            uint8_t bank = (ctx->chr_bank_0 >> 1) & 0x1F;
-            offset = ((bank % n) * 0x2000) + (addr & 0x1FFF);
+        /* 4KB window: two independently switchable 4KB banks. */
+        if (addr <= 0x0FFF) {
+            uint8_t bank = ctx->chr_bank_0 & 0x1F;
+            offset = ((bank % (n * 2)) * 0x1000) + (addr & 0x0FFF);
         } else {
-            if (addr <= 0x0FFF) {
-                uint8_t bank = ctx->chr_bank_0 & 0x1F;
-                offset = ((bank % (n * 2)) * 0x1000) + (addr & 0x0FFF);
-            } else {
-                uint8_t bank = ctx->chr_bank_1 & 0x1F;
-                offset = ((bank % (n * 2)) * 0x1000) + (addr & 0x0FFF);
-            }
+            uint8_t bank = ctx->chr_bank_1 & 0x1F;
+            offset = ((bank % (n * 2)) * 0x1000) + (addr & 0x0FFF);
         }
     }
 
@@ -163,7 +162,23 @@ void mapper_001_ppu_write(struct mapper *map, uint16_t addr, uint8_t data) {
     if (!map || !map->cartridge) return;
     if (!map->cartridge->chr_ram_allocated) return;
 
-    uint32_t offset = addr & 0x1FFF;
+    struct mmc1_ctx *ctx = map->ctx;
+    uint8_t n = map->num_chr_rom ? map->num_chr_rom : 1;
+    uint32_t offset;
+
+    if (ctx->chr_mode == 0) {
+        uint8_t bank = (ctx->chr_bank_0 >> 1) & 0x1F;
+        offset = ((bank % n) * 0x2000) + (addr & 0x1FFF);
+    } else {
+        if (addr <= 0x0FFF) {
+            uint8_t bank = ctx->chr_bank_0 & 0x1F;
+            offset = ((bank % (n * 2)) * 0x1000) + (addr & 0x0FFF);
+        } else {
+            uint8_t bank = ctx->chr_bank_1 & 0x1F;
+            offset = ((bank % (n * 2)) * 0x1000) + (addr & 0x0FFF);
+        }
+    }
+
     if (map->cartridge->chr_rom && offset < map->cartridge->chr_rom_len)
         map->cartridge->chr_rom[offset] = data;
 }
