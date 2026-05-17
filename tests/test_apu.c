@@ -359,20 +359,20 @@ static void test_mixer(void) {
     struct apu2a03 apu;
     apu_init(&apu, stub_cpu_read);
 
+    float drain_buf[APU_RING_SIZE];
+
     /* All channels silent → output should be 0 */
     apu_write(&apu, 0x4015, 0x00); /* disable all */
-    apu.sample_count = 0;
+    apu_ring_reset(&apu);
     run_cycles(&apu, 100);
 
     /* Check that all samples are ~0.0 */
-    float *buf;
-    int n = apu_get_samples(&apu, &buf);
+    int n = apu_drain_samples(&apu, drain_buf, APU_RING_SIZE);
     int all_zero = 1;
     for (int i = 0; i < n; i++) {
-        if (buf[i] > 0.001f) { all_zero = 0; break; }
+        if (drain_buf[i] > 0.001f) { all_zero = 0; break; }
     }
     ASSERT(all_zero, "all channels silent → mixer output ~0.0");
-    apu_clear_samples(&apu);
 
     /* Verify the mixer formula directly for known channel values.
      * pulse_out = 95.88 / (8128.0/15 + 100) ≈ 0.1494
@@ -400,18 +400,17 @@ static void test_mixer(void) {
     /* Disable sweep muting: shift=0, negate=0, enable=0 */
     apu.pulse1.sweep.enable = 0;
     apu.pulse1.sweep.shift = 0;
-    apu.sample_count = 0;
+    apu_ring_reset(&apu);
     /* Run a small number of cycles, enough for at least one sample.
      * cycles_per_sample ≈ 1789773/44100 ≈ 40.6, so 50 cycles → at least 1 sample. */
     run_cycles(&apu, 50);
 
-    n = apu_get_samples(&apu, &buf);
+    n = apu_drain_samples(&apu, drain_buf, APU_RING_SIZE);
     int found_nonzero = 0;
     for (int i = 0; i < n; i++) {
-        if (buf[i] > 0.001f) { found_nonzero = 1; break; }
+        if (drain_buf[i] > 0.001f) { found_nonzero = 1; break; }
     }
     ASSERT(found_nonzero, "pulse1 at max volume produces non-zero mixer output");
-    apu_clear_samples(&apu);
 }
 
 /* ---------------------------------------------------------------------------

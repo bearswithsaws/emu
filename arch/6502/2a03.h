@@ -2,10 +2,11 @@
 #define __2A03_H__
 
 #include <stdbool.h>
+#include <stdatomic.h>
 #include <stdint.h>
 
-/* Maximum audio samples buffered per frame (44100/60 + margin) */
-#define APU_SAMPLE_BUFFER_SIZE 1024
+/* SPSC ring buffer capacity (power-of-2; ~93 ms at 44100 Hz) */
+#define APU_RING_SIZE 4096
 
 /* NTSC CPU clock rate */
 #define APU_CPU_HZ 1789773.0
@@ -116,9 +117,10 @@ struct apu2a03 {
     float hp2_prev_out;
     float lp_prev;
 
-    /* Per-frame sample buffer (float32, mono, -1.0 to 1.0 after filtering) */
-    float sample_buf[APU_SAMPLE_BUFFER_SIZE];
-    int sample_count;
+    /* SPSC ring buffer — written by main thread, drained by SDL audio callback */
+    float ring_buf[APU_RING_SIZE];
+    _Atomic int ring_write; /* producer index (main thread) */
+    _Atomic int ring_read;  /* consumer index (audio thread) */
 
     bool irq_pending; /* frame counter or DMC IRQ (ORed) */
 
@@ -134,7 +136,18 @@ void    apu_clock(struct apu2a03 *apu);
 void    apu_write(struct apu2a03 *apu, uint16_t addr, uint8_t data);
 uint8_t apu_read(struct apu2a03 *apu, uint16_t addr);
 bool    apu_irq_pending(struct apu2a03 *apu);
-int     apu_get_samples(struct apu2a03 *apu, float **buf_out);
-void    apu_clear_samples(struct apu2a03 *apu);
+
+/* SDL audio callback — pass as want.callback to SDL_OpenAudioDevice */
+void apu_audio_callback(void *userdata, uint8_t *stream, int len);
+
+/* Drain up to max samples from the ring into buf; returns count drained.
+ * For testing and non-callback use only — not thread-safe with the callback. */
+int  apu_drain_samples(struct apu2a03 *apu, float *buf, int max);
+
+/* Number of samples currently in the ring (safe to call from main thread). */
+int  apu_ring_available(struct apu2a03 *apu);
+
+/* Discard all pending samples — call only when no audio thread is running. */
+void apu_ring_reset(struct apu2a03 *apu);
 
 #endif /* __2A03_H__ */
