@@ -550,6 +550,14 @@ static void clock(void) {
             evaluate_sprites_for_scanline(ppu.scanline + 1);
         }
 
+        // Dot 260: clock the mapper's scanline IRQ counter (if present).
+        // Fired after the last visible pixel and before the next scanline's
+        // bg-tile prefetch, matching the real hardware's sprite-fetch A12 edge.
+        if (ppu.dot == 260 && rendering_enabled() &&
+            ppu.cart && ppu.cart->map && ppu.cart->map->scanline) {
+            ppu.cart->map->scanline(ppu.cart->map);
+        }
+
         // --- Pixel output (visible scanlines only, dots 1-256) --------------
         if (ppu.scanline >= 0 && ppu.dot >= 1 && ppu.dot <= 256) {
             uint8_t bg_pixel, bg_palette;
