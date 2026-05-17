@@ -5,6 +5,7 @@
 
 #include "2c02.h"
 #include "6502.h"
+#include "2a03.h"
 #include "cartridge.h"
 #include "controller.h"
 
@@ -26,6 +27,7 @@ struct nesbus {
     struct nes_cartridge *cart;
     struct controller *controller1;
     struct controller *controller2;
+    struct apu2a03 *apu;
     uint16_t dma_halt_cycles;
 };
 

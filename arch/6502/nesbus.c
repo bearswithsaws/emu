@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "nesbus.h"
+#include "2a03.h"
 #include "debug.h"
 
 static struct nesbus bus = {0};
@@ -18,6 +19,9 @@ static uint8_t ram[NES_RAM_SIZE] = {0};
 // Controllers
 static struct controller ctrl1 = {0};
 static struct controller ctrl2 = {0};
+
+// APU
+static struct apu2a03 apu_chip = {0};
 
 static uint8_t read(uint16_t addr) {
     uint8_t data;
@@ -41,8 +45,7 @@ static uint8_t read(uint16_t addr) {
         // Controller 2 read
         data = controller_read(&ctrl2);
     } else if ((addr >= 0x4000) && (addr <= 0x4015)) {
-        // APU/other I/O read
-        data = 0; // Open bus for now
+        data = apu_read(&apu_chip, addr);
     } else {
         // remainder of reads like cartridge and open bus?
         data = bus.cart->cpu_read(bus.cart, addr);
@@ -77,11 +80,9 @@ static void write(uint16_t addr, uint8_t data) {
         // printf("Controller strobe write: 0x%02X (buttons=0x%02X)\n", data,
         // ctrl1.buttons);
     } else if ((addr >= 0x4000) && (addr <= 0x4015)) {
-        // APU/other I/O write
-        // Ignore for now
+        apu_write(&apu_chip, addr, data);
     } else if (addr == 0x4017) {
-        // APU frame counter
-        // Ignore for now
+        apu_write(&apu_chip, addr, data);
     } else {
         // remainder of reads like cartridge and open bus?
         bus.cart->cpu_write(bus.cart, addr, data);
@@ -115,6 +116,10 @@ struct nesbus *nesbus_init(struct cpu6502 *cpu, struct ppu2c02 *ppu) {
     controller_init(&ctrl2);
     bus.controller1 = &ctrl1;
     bus.controller2 = &ctrl2;
+
+    // Initialize APU (pass the static read function for DMC memory reads)
+    apu_init(&apu_chip, read);
+    bus.apu = &apu_chip;
 
     return &bus;
 }

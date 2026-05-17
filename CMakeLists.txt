@@ -25,6 +25,7 @@ add_subdirectory(lib)
 add_subdirectory(arch)
 
 # Tests
+enable_testing()
 add_subdirectory(tests)
 
 # Build configuration
