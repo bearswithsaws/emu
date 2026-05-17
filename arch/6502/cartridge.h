@@ -74,9 +74,9 @@ struct nes_cartridge {
     uint8_t *trainer;
     uint16_t trainer_len;
     uint8_t *prg_rom;
-    uint16_t prg_rom_len;
+    uint32_t prg_rom_len;  // up to 4 MB (iNES max)
     uint8_t *chr_rom;
-    uint16_t chr_rom_len;
+    uint32_t chr_rom_len;  // up to 2 MB (iNES max)
     uint8_t chr_ram_allocated;  // 1 if chr_rom is malloc'd CHR-RAM, 0 if from file
     uint8_t *pc_inst_rom;
     uint8_t *pc_prom;

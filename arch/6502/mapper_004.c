@@ -74,32 +74,32 @@ static void clock_irq(struct mapper *map, uint16_t addr) {
 
 // Returns the 1 KB CHR bank index for the given PPU address (0-$1FFF).
 // Handles the chr_invert mode and the 2 KB alignment of R0/R1.
-static uint8_t resolve_chr_bank(uint16_t addr, uint8_t num_1kb) {
+static uint16_t resolve_chr_bank(uint16_t addr, uint16_t num_1kb) {
     uint8_t slot = (addr >> 10) & 0x07;  // 0-7: which 1 KB window
 
     if (!mmc3.chr_invert) {
         // Standard: R0/R1 select 2 KB pairs at $0000-$0FFF; R2-R5 at $1000-$1FFF
         switch (slot) {
-        case 0: return (mmc3.reg[0] & 0xFE) % num_1kb;
-        case 1: return (mmc3.reg[0] | 0x01) % num_1kb;
-        case 2: return (mmc3.reg[1] & 0xFE) % num_1kb;
-        case 3: return (mmc3.reg[1] | 0x01) % num_1kb;
-        case 4: return mmc3.reg[2] % num_1kb;
-        case 5: return mmc3.reg[3] % num_1kb;
-        case 6: return mmc3.reg[4] % num_1kb;
-        case 7: return mmc3.reg[5] % num_1kb;
+        case 0: return (uint16_t)(mmc3.reg[0] & 0xFE) % num_1kb;
+        case 1: return (uint16_t)(mmc3.reg[0] | 0x01) % num_1kb;
+        case 2: return (uint16_t)(mmc3.reg[1] & 0xFE) % num_1kb;
+        case 3: return (uint16_t)(mmc3.reg[1] | 0x01) % num_1kb;
+        case 4: return (uint16_t)mmc3.reg[2] % num_1kb;
+        case 5: return (uint16_t)mmc3.reg[3] % num_1kb;
+        case 6: return (uint16_t)mmc3.reg[4] % num_1kb;
+        case 7: return (uint16_t)mmc3.reg[5] % num_1kb;
         }
     } else {
         // Inverted: R2-R5 at $0000-$0FFF; R0/R1 select 2 KB pairs at $1000-$1FFF
         switch (slot) {
-        case 0: return mmc3.reg[2] % num_1kb;
-        case 1: return mmc3.reg[3] % num_1kb;
-        case 2: return mmc3.reg[4] % num_1kb;
-        case 3: return mmc3.reg[5] % num_1kb;
-        case 4: return (mmc3.reg[0] & 0xFE) % num_1kb;
-        case 5: return (mmc3.reg[0] | 0x01) % num_1kb;
-        case 6: return (mmc3.reg[1] & 0xFE) % num_1kb;
-        case 7: return (mmc3.reg[1] | 0x01) % num_1kb;
+        case 0: return (uint16_t)mmc3.reg[2] % num_1kb;
+        case 1: return (uint16_t)mmc3.reg[3] % num_1kb;
+        case 2: return (uint16_t)mmc3.reg[4] % num_1kb;
+        case 3: return (uint16_t)mmc3.reg[5] % num_1kb;
+        case 4: return (uint16_t)(mmc3.reg[0] & 0xFE) % num_1kb;
+        case 5: return (uint16_t)(mmc3.reg[0] | 0x01) % num_1kb;
+        case 6: return (uint16_t)(mmc3.reg[1] & 0xFE) % num_1kb;
+        case 7: return (uint16_t)(mmc3.reg[1] | 0x01) % num_1kb;
         }
     }
     return 0;
@@ -119,8 +119,8 @@ uint8_t mapper_004_cpu_read(struct mapper *map, uint16_t addr) {
 
     // Four 8 KB PRG windows: $8000 / $A000 / $C000 / $E000
     // Number of 8 KB banks in ROM (each iNES PRG bank = 16 KB = two 8 KB banks)
-    uint8_t  num_8kb = map->num_prg_rom * 2;
-    uint8_t  bank;
+    uint16_t num_8kb = map->num_prg_rom * 2;
+    uint16_t bank;
     uint32_t offset;
 
     if (addr <= 0x9FFF) {
@@ -207,8 +207,8 @@ uint8_t mapper_004_ppu_read(struct mapper *map, uint16_t addr) {
         return map->cartridge->chr_rom[addr & 0x1FFF];
     }
 
-    uint8_t  num_1kb = map->num_chr_rom * 8;  // iNES CHR bank = 8 KB = 8 × 1 KB
-    uint8_t  bank    = resolve_chr_bank(addr, num_1kb);
+    uint16_t num_1kb = (uint16_t)map->num_chr_rom * 8;  // iNES CHR bank = 8 KB = 8 × 1 KB
+    uint16_t bank    = resolve_chr_bank(addr, num_1kb);
     uint32_t offset  = (uint32_t)bank * 0x0400 + (addr & 0x03FF);
 
     if (offset < map->cartridge->chr_rom_len) {
