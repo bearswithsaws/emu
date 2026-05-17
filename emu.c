@@ -9,6 +9,7 @@
 #include "2a03.h"
 #include "cartridge.h"
 #include "display.h"
+#include "ui.h"
 #include "emu_config.h"
 #include "nes_input.h"
 #include "nesbus.h"
@@ -18,6 +19,7 @@
 static struct nesbus *bus;
 static struct cpu6502 *cpu;
 static struct ppu2c02 *ppu;
+static struct ui_context *ui;
 static SDL_AudioDeviceID audio_dev = 0;
 
 static void print_usage(const char *prog_name) {
@@ -74,6 +76,8 @@ int main(int argc, char *argv[]) {
     ppu->connect_cartridge(cartridge);
     nes_input_init(bus->controller1, bus->controller2);
     ppu->set_framebuffer(display_get_framebuffer(display));
+
+    ui = ui_init(display);
 
     /* Open SDL2 audio after the bus (and APU) are initialised so we can
      * calibrate cycles_per_sample to the actual device frequency.
@@ -175,7 +179,7 @@ int main(int argc, char *argv[]) {
             }
         }
 
-        display_render_frame(display);
+        ui_render_frame(ui, display);
     }
 
     printf("Emulation stopped. Total frames: %u, Total ticks: %lu\n",
@@ -184,6 +188,7 @@ int main(int argc, char *argv[]) {
     if (audio_dev != 0) {
         SDL_CloseAudioDevice(audio_dev);
     }
+    ui_shutdown(ui);
     display_cleanup(display);
 
     // TODO: Add proper cleanup for cartridge, bus, cpu, ppu
