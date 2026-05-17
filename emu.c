@@ -76,7 +76,7 @@ int main(int argc, char *argv[]) {
     ppu->connect_cartridge(cartridge);
 
     // Initialize NES input handler
-    nes_input_init(bus->controller1);
+    nes_input_init(bus->controller1, bus->controller2);
 
     // Connect PPU to display frame buffer for rendering
     ppu->set_framebuffer(display_get_framebuffer(display));
