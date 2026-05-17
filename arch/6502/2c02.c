@@ -236,10 +236,11 @@ static void fetch_pattern_high_byte(void) {
 static void load_background_shifters(void) {
     ppu.bg_shift_pattern_lo = (ppu.bg_shift_pattern_lo & 0xFF00) | ppu.bg_next_tile_lsb;
     ppu.bg_shift_pattern_hi = (ppu.bg_shift_pattern_hi & 0xFF00) | ppu.bg_next_tile_msb;
-    // Attribute bits are expanded to a full byte so they can be shifted like
-    // the pattern registers (one bit per pixel for the whole 8-pixel span).
-    ppu.bg_attr_latch_lo = (ppu.bg_next_tile_attr & 0x01) ? 0xFF : 0x00;
-    ppu.bg_attr_latch_hi = (ppu.bg_next_tile_attr & 0x02) ? 0xFF : 0x00;
+    // Store as 0 or 1 so that update_shifters() shifts in one bit per dot.
+    // Storing 0xFF caused (reg << 1) | 0xFF to set all bits immediately,
+    // making palette transitions fire fine_x pixels early with non-zero scroll.
+    ppu.bg_attr_latch_lo = (ppu.bg_next_tile_attr & 0x01) ? 1 : 0;
+    ppu.bg_attr_latch_hi = (ppu.bg_next_tile_attr & 0x02) ? 1 : 0;
 }
 
 // Shift all background registers left by one. Called every dot in the active
