@@ -9,20 +9,24 @@
  * Provides NES-specific keyboard → controller mapping for use with the
  * generic display library.
  *
- * Keyboard mapping:
+ * Player 1 (controller 1):
  * - Arrow keys → D-pad
- * - Z → A button
- * - X → B button
- * - Enter → Start
- * - Right Shift → Select
+ * - Z → A, X → B
+ * - Enter → Start, Right Shift → Select
+ *
+ * Player 2 (controller 2):
+ * - WASD → D-pad
+ * - D → A, F → B
+ * - Tab → Start, Q → Select
  */
 
 /**
  * Initialize NES input system
  *
- * @param ctrl - Pointer to NES controller structure to update
+ * @param ctrl1 - Pointer to player 1 controller structure
+ * @param ctrl2 - Pointer to player 2 controller structure
  */
-void nes_input_init(struct controller *ctrl);
+void nes_input_init(struct controller *ctrl1, struct controller *ctrl2);
 
 /**
  * Get the NES input callback
