@@ -536,6 +536,252 @@ static void test_frame_timing(void) {
 }
 
 // ---------------------------------------------------------------------------
+// Sprite tests
+// ---------------------------------------------------------------------------
+
+/*
+ * test_sprite_basic_render
+ *
+ * A single 8x8 sprite (OAM index 0) placed at screen position (16, 16).
+ * The sprite tile has all pixels = colour index 1 in sprite palette 0.
+ * After one frame the framebuffer at (16, 16) must match the sprite colour,
+ * and a pixel outside the sprite must be the backdrop colour.
+ */
+static void test_sprite_basic_render(void) {
+    printf("\n[test_sprite_basic_render]\n");
+
+    memset(fake_chr, 0, sizeof(fake_chr));
+    /* Tile 1: lo-plane all 1s, hi-plane all 0s → pixel colour = 1 */
+    uint8_t solid[8] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+    write_tile(1, solid);
+
+    struct ppu2c02 *ppu = ppu2c02_init();
+    static uint32_t fb[256 * 240];
+    memset(fb, 0, sizeof(fb));
+    ppu->connect_cartridge(&fake_cart);
+    ppu->set_framebuffer(fb);
+    ppu->reset();
+
+    /* OAM[0]: Y=15 → appears on scanline 16; tile 1; attr=0 (palette 0, front); X=16 */
+    ppu->oam[0] = 15;
+    ppu->oam[1] = 1;
+    ppu->oam[2] = 0;
+    ppu->oam[3] = 16;
+
+    /* Sprite palette 0 colour 1 = 0x16 (blue). palette_table[4*4+1] = palette_table[17] */
+    ppu->palette_table[4 * 4 + 1] = 0x16;
+
+    /* Reset PPUCTRL: sprite_pattern_table=0, 8x8 sprites, no NMI */
+    ppu->cpu_write(0x2000, 0x00);
+    /* Enable sprite rendering (bit 4) and show sprites in left column (bit 2) */
+    ppu->cpu_write(0x2001, 0x14);
+
+    run_to_frame_start(ppu);
+    for (int i = 0; i < 89342; i++) ppu->clock();
+
+    uint32_t expected = NES_PALETTE[0x16 & 0x3F];
+    ASSERT(fb[16 * 256 + 16] == expected, "sprite pixel at (16,16) correct colour");
+    ASSERT(fb[16 * 256 + 24] != expected, "pixel 8 cols right of sprite is not sprite colour");
+}
+
+/*
+ * test_sprite_priority_behind_bg
+ *
+ * A sprite with priority bit set (attr bit 5 = 1) must appear BEHIND opaque
+ * background pixels.  Place a solid-colour background tile at the same
+ * position; the composited pixel must be the BG colour, not the sprite colour.
+ */
+static void test_sprite_priority_behind_bg(void) {
+    printf("\n[test_sprite_priority_behind_bg]\n");
+
+    memset(fake_chr, 0, sizeof(fake_chr));
+    uint8_t solid[8] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+    write_tile(1, solid);
+
+    struct ppu2c02 *ppu = ppu2c02_init();
+    static uint32_t fb[256 * 240];
+    memset(fb, 0, sizeof(fb));
+    ppu->connect_cartridge(&fake_cart);
+    ppu->set_framebuffer(fb);
+    ppu->reset();
+
+    /* Background: tile 1 at nametable position (2,2) → screen cols 16-23, rows 16-23 */
+    ppu->cpu_write(0x2006, 0x20);
+    ppu->cpu_write(0x2006, 0x42); /* nametable address $2042 = row 2 col 2 */
+    ppu->cpu_write(0x2007, 0x01);
+
+    /* BG palette 0 colour 1 = 0x16 (blue) */
+    ppu->palette_table[1] = 0x16;
+
+    /* Sprite: tile 1, attr=0x21 (priority=behind, palette 1), at (16, 16) */
+    ppu->oam[0] = 15;
+    ppu->oam[1] = 1;
+    ppu->oam[2] = 0x21; /* bit 5=priority behind BG, bits 0:1=palette 1 */
+    ppu->oam[3] = 16;
+
+    /* Sprite palette 1 colour 1 = 0x25 (red) */
+    ppu->palette_table[4 * 4 + 5] = 0x25;
+
+    /* Enable BG + sprite rendering, show both in left 8 columns */
+    ppu->cpu_write(0x2000, 0x08);
+    ppu->cpu_write(0x2001, 0x1E);
+    ppu->cpu_write(0x2005, 0x00);
+    ppu->cpu_write(0x2005, 0x00);
+
+    run_to_frame_start(ppu);
+    for (int i = 0; i < 89342; i++) ppu->clock();
+
+    uint32_t bg_colour  = NES_PALETTE[0x16 & 0x3F];
+    uint32_t sp_colour  = NES_PALETTE[0x25 & 0x3F];
+    uint32_t px = fb[16 * 256 + 16];
+    ASSERT(px == bg_colour, "priority-behind sprite hidden by opaque BG");
+    ASSERT(px != sp_colour, "sprite colour absent when sprite is behind BG");
+}
+
+/*
+ * test_sprite_horizontal_flip
+ *
+ * Tile 2 has only the leftmost pixel set (lo-plane = 0x80).  Without flip the
+ * opaque pixel is at the sprite's leftmost column; with horizontal flip it
+ * moves to the rightmost column.
+ */
+static void test_sprite_horizontal_flip(void) {
+    printf("\n[test_sprite_horizontal_flip]\n");
+
+    memset(fake_chr, 0, sizeof(fake_chr));
+    /* Tile 2: only bit 7 of lo-plane set → pixel colour 1 at pixel_x=0 only */
+    uint8_t left_px[8] = {0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80};
+    write_tile(2, left_px);
+
+    struct ppu2c02 *ppu = ppu2c02_init();
+    static uint32_t fb[256 * 240];
+    memset(fb, 0, sizeof(fb));
+    ppu->connect_cartridge(&fake_cart);
+    ppu->set_framebuffer(fb);
+    ppu->reset();
+
+    /* Sprite: tile 2, attr=0x40 (H-flip), at screen (32, 32) */
+    ppu->oam[0] = 31; /* Y=31 → scanline 32 */
+    ppu->oam[1] = 2;
+    ppu->oam[2] = 0x40; /* horizontal flip */
+    ppu->oam[3] = 32;
+
+    ppu->palette_table[4 * 4 + 1] = 0x16;
+    ppu->cpu_write(0x2000, 0x00); /* sprite_pattern_table=0 */
+    ppu->cpu_write(0x2001, 0x14);
+
+    run_to_frame_start(ppu);
+    for (int i = 0; i < 89342; i++) ppu->clock();
+
+    uint32_t sp_colour  = NES_PALETTE[0x16 & 0x3F];
+    uint32_t backdrop   = NES_PALETTE[ppu->palette_table[0] & 0x3F];
+
+    /* With H-flip, pixel_x=0 maps to the rightmost column of the sprite (col 39) */
+    ASSERT(fb[32 * 256 + 39] == sp_colour, "H-flip: opaque pixel at rightmost sprite column");
+    ASSERT(fb[32 * 256 + 32] == backdrop,  "H-flip: leftmost sprite column is transparent");
+}
+
+/*
+ * test_sprite_vertical_flip
+ *
+ * Tile 3 has only the top row set (lo-plane[0] = 0xFF, rest 0x00).  Without
+ * flip the opaque row is at pixel_y=0 (screen row = sprite Y+1).  With V-flip
+ * pixel_y=0 maps to the bottom row of the 8-pixel sprite (pixel_y=7).
+ */
+static void test_sprite_vertical_flip(void) {
+    printf("\n[test_sprite_vertical_flip]\n");
+
+    memset(fake_chr, 0, sizeof(fake_chr));
+    uint8_t top_row[8] = {0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+    write_tile(3, top_row);
+
+    struct ppu2c02 *ppu = ppu2c02_init();
+    static uint32_t fb[256 * 240];
+    memset(fb, 0, sizeof(fb));
+    ppu->connect_cartridge(&fake_cart);
+    ppu->set_framebuffer(fb);
+    ppu->reset();
+
+    /* Sprite: tile 3, attr=0x80 (V-flip), at screen (48, 48) */
+    ppu->oam[0] = 47;
+    ppu->oam[1] = 3;
+    ppu->oam[2] = 0x80; /* vertical flip */
+    ppu->oam[3] = 48;
+
+    ppu->palette_table[4 * 4 + 1] = 0x16;
+    ppu->cpu_write(0x2000, 0x00); /* sprite_pattern_table=0 */
+    ppu->cpu_write(0x2001, 0x14);
+
+    run_to_frame_start(ppu);
+    for (int i = 0; i < 89342; i++) ppu->clock();
+
+    uint32_t sp_colour = NES_PALETTE[0x16 & 0x3F];
+    uint32_t backdrop  = NES_PALETTE[ppu->palette_table[0] & 0x3F];
+
+    /* V-flip: tile row 0 maps to sprite bottom (screen row 48+7=55) */
+    ASSERT(fb[55 * 256 + 48] == sp_colour, "V-flip: opaque row at bottom of sprite");
+    ASSERT(fb[48 * 256 + 48] == backdrop,  "V-flip: top of sprite is transparent");
+}
+
+/*
+ * test_sprite_zero_hit
+ *
+ * Sprite 0 must set ppustatus.sprite_0_hit when it overlaps an opaque
+ * background pixel.  Check the flag inside VBlank before the pre-render
+ * scanline clears it.
+ */
+static void test_sprite_zero_hit(void) {
+    printf("\n[test_sprite_zero_hit]\n");
+
+    memset(fake_chr, 0, sizeof(fake_chr));
+    uint8_t solid[8] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+    write_tile(1, solid);
+
+    struct ppu2c02 *ppu = ppu2c02_init();
+    static uint32_t fb[256 * 240];
+    memset(fb, 0, sizeof(fb));
+    ppu->connect_cartridge(&fake_cart);
+    ppu->set_framebuffer(fb);
+    ppu->reset();
+
+    /* Background: tile 1 at nametable[1,1] (col 1, row 1 → screen x=8, y=8) */
+    ppu->cpu_write(0x2006, 0x20);
+    ppu->cpu_write(0x2006, 0x21); /* $2021 = nametable row 1 col 1 */
+    ppu->cpu_write(0x2007, 0x01);
+    ppu->palette_table[1] = 0x16;
+
+    /* Sprite 0: tile 1 at screen (8, 8) → overlaps the BG tile */
+    ppu->oam[0] = 7;  /* Y=7 → scanline 8 */
+    ppu->oam[1] = 1;
+    ppu->oam[2] = 0;
+    ppu->oam[3] = 8;  /* X=8 (outside left-column clip) */
+    ppu->palette_table[4 * 4 + 1] = 0x25;
+
+    ppu->cpu_write(0x2000, 0x00); /* sprite_pattern_table=0, bg_pattern_table=0 */
+    ppu->cpu_write(0x2001, 0x1E); /* all render enables */
+    ppu->cpu_write(0x2005, 0x00);
+    ppu->cpu_write(0x2005, 0x00);
+
+    /* Run frame dot by dot; sample sprite_0_hit when frame_complete fires
+     * (scanline 241 dot 1) — before the pre-render scanline clears the flag. */
+    uint8_t hit_at_vblank = 0;
+    for (int i = 0; i < 89342 * 2; i++) {
+        ppu->clock();
+        if (ppu->frame_complete) {
+            hit_at_vblank = ppu->ppustatus.sprite_0_hit;
+            break;
+        }
+    }
+    ASSERT(hit_at_vblank == 1, "sprite_0_hit set when sprite 0 overlaps opaque BG");
+
+    /* Run to pre-render dot 1; flag must be cleared. */
+    while (!(ppu->scanline == -1 && ppu->dot == 0)) ppu->clock();
+    ppu->clock(); /* dot 0 */
+    ppu->clock(); /* dot 1 — clears flags */
+    ASSERT(ppu->ppustatus.sprite_0_hit == 0, "sprite_0_hit cleared at pre-render dot 1");
+}
+
+// ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
 
@@ -550,6 +796,11 @@ int main(void) {
     test_attr_latch_fine_x_regression();
     test_ppudata_read_buffer();
     test_frame_timing();
+    test_sprite_basic_render();
+    test_sprite_priority_behind_bg();
+    test_sprite_horizontal_flip();
+    test_sprite_vertical_flip();
+    test_sprite_zero_hit();
 
     printf("\n=== Results: %d passed, %d failed ===\n", test_pass, test_fail);
     return test_fail ? 1 : 0;

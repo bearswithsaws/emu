@@ -141,7 +141,11 @@ int main(int argc, char *argv[]) {
                 ppu->clock();
                 ppu->clock();
 
-                cpu->clock();
+                if (bus->dma_halt_cycles > 0) {
+                    bus->dma_halt_cycles--;
+                } else {
+                    cpu->clock();
+                }
                 apu_clock(bus->apu);
 
                 if (apu_irq_pending(bus->apu)) {

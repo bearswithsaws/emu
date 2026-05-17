@@ -185,16 +185,17 @@ Opcode: aaabbbcc
 - ✅ Nametable mirroring (horizontal, vertical, single-screen)
 - ✅ Palette system (background and sprite palettes)
 - ✅ Sprite evaluation (secondary OAM)
-- ✅ Basic sprite rendering
+- ✅ Full sprite rendering pipeline (pixel output, palette, priority compositing)
+- ✅ Horizontal and vertical flip (attr bits 6/7)
+- ✅ 8x16 sprite mode (tile bit 0 selects pattern table; top/bottom halves)
+- ✅ Sprite 0 hit detection (both pixels opaque, excludes x=255, left-column clip)
+- ✅ OAM DMA ($4014) — synchronous copy + CPU halt cycles enforced in main loop
 
 **Partially Implemented:**
-- ⚠️ Sprite rendering (85% - missing horizontal/vertical flip attributes)
-- ⚠️ Sprite 0 hit detection (needs testing)
-- ⚠️ 8x16 sprite mode (needs edge case handling)
+- ⚠️ Sprite overflow flag — hardware has a diagonal-scan bug; we set the flag correctly for the simple case but do not replicate the hardware's incorrect scan behaviour
 
 **NOT Yet Implemented:**
 - ❌ Open bus behavior (returns last value on bus)
-- ❌ Sprite overflow flag accuracy
 - ❌ Some PPU read/write side effects edge cases
 
 **PPU Timing:**
@@ -461,15 +462,15 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
   - ❌ Fine scrolling edge cases
   - ❌ Mid-scanline effects
 
-- **PPU Sprite Rendering** (~40% complete)
+- **PPU Sprite Rendering** (~95% complete — 2026-05-17)
   - ✅ OAM structure and secondary OAM
-  - ✅ Sprite evaluation logic
+  - ✅ Sprite evaluation logic (all 64 sprites, secondary OAM population)
   - ✅ 8x8 and 8x16 sprite modes
-  - ✅ Horizontal/vertical flip
-  - ✅ Basic sprite rendering pixel logic
-  - ❌ Complete sprite 0 hit detection
-  - ❌ Sprite overflow flag accuracy
-  - ❌ Sprite rendering edge cases
+  - ✅ Horizontal and vertical flip
+  - ✅ Full pixel rendering (priority, palette, transparency compositing)
+  - ✅ Sprite 0 hit detection (dot 255 off-by-one bug fixed 2026-05-17)
+  - ✅ OAM DMA CPU halt (513-cycle stall enforced in main loop 2026-05-17)
+  - ⚠️ Sprite overflow flag — correct for common case; hardware diagonal-scan bug not replicated
 
 - **GUI/Display Integration** (~90% complete)
   - ✅ SDL2 window creation and rendering (lib/display/)
@@ -506,7 +507,7 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
   - PPU_RENDERING_PIPELINE.md
   - PPU_IMPLEMENTATION_COMPARISON.md
   - BUGFIXES_APPLIED.md
-- ✅ Unit tests: PPU clock tests (8 tests), APU unit tests (8 tests, 72 assertions)
+- ✅ Unit tests: PPU clock tests (13 tests, 65 assertions — 5 new sprite tests added 2026-05-17), APU unit tests (8 tests, 72 assertions)
 - ✅ Documentation (CLAUDE.md updated 2026-05-17)
 
 ---
@@ -520,9 +521,7 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
 - ~~**Coarse X increment timing off by one cycle**~~ ✅ **Fixed 2025-11-12** - Eliminated 8-pixel viewport offset
 
 ### High Priority (Remaining)
-1. **Sprite rendering incomplete** - Basic evaluation works, pixel rendering needs completion for visual correctness
-2. **Sprite 0 hit detection incomplete** - Stub present, needs full implementation for split-screen effects
-3. **Mapper 001 (MMC1) incomplete** - 50% done, needs bank switching logic to run 680+ games (Metroid, Zelda, Mega Man 2)
+1. **Mapper 001 (MMC1) incomplete** - 50% done, needs bank switching logic to run 680+ games (Metroid, Zelda, Mega Man 2)
 
 ### Medium Priority
 1. **Global static variables** - Only one emulator instance possible
@@ -620,21 +619,44 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
 
 **Status:** Mapper 0 (NROM) games should now be **visually playable** (sprites need completion)
 
+### 2026-05-17 Session: PPU Sprite Completion + Bug Fixes
+
+**Discovered CLAUDE.md was severely out of date** — sprite rendering was already ~95% implemented; documentation claimed 40%.
+
+**Bug fixed:**
+- **Sprite 0 hit off-by-one** (`arch/6502/2c02.c`): `ppu.dot != 255` → `ppu.dot != 256`. The excluded pixel is `x = dot - 1`, so the old code excluded x=254 instead of the correct x=255.
+
+**Feature added:**
+- **OAM DMA CPU halt** (`emu.c`): `bus->dma_halt_cycles` was set on $4014 writes but never consumed. CPU now skips its clock during the 513-cycle stall while PPU/APU continue to run.
+
+**Tests added** (`tests/test_ppu_clock.c` — 5 new tests, 10 assertions):
+- `test_sprite_basic_render` — sprite pixel appears at correct framebuffer location
+- `test_sprite_priority_behind_bg` — priority-behind sprite hidden by opaque background
+- `test_sprite_horizontal_flip` — H-flip moves opaque pixel to rightmost sprite column
+- `test_sprite_vertical_flip` — V-flip moves opaque row to bottom of sprite
+- `test_sprite_zero_hit` — sprite_0_hit set on overlap, cleared at pre-render dot 1
+
+**Total test suite: 13 PPU tests, 65 assertions — all passing.**
+
+**Status:** Mapper 0 NROM games are now **fully playable** (background + sprites + audio). Next priority: Mapper 1 (MMC1) to unlock 680+ games.
+
 ---
 
 ## Future Work
 
 ### Phase 1: Core Functionality (~75% complete, up from ~30%)
 - [X] ~~Implement PPU background rendering~~ ✅ **85% complete** (2025-11-12)
-- [🚧] **Complete PPU sprite rendering** (40% complete) - **HIGHEST PRIORITY NEXT**
-  - Complete sprite pixel rendering logic
-  - Finish sprite 0 hit detection
-  - Test with sprite-heavy games
+- [X] ~~Complete PPU sprite rendering~~ ✅ **95% complete** (2026-05-17)
+  - All pixel rendering, priority, flip, 8x16 mode implemented
+  - Sprite 0 hit detection implemented and bug-fixed
+  - OAM DMA CPU halt enforced
+  - 5 new unit tests passing
 - [X] ~~Integrate GUI event loop with emulation~~ ✅ **90% complete**
 - [X] ~~Add keyboard input mapping~~ ✅ **80% complete**
-- [🚧] **Complete Mapper 1 (MMC1)** (50% complete) - **HIGH PRIORITY**
-  - Implement PRG bank switching
-  - Implement CHR bank switching
+- [🚧] **Complete Mapper 1 (MMC1)** (50% complete) - **HIGHEST PRIORITY NEXT**
+  - Implement PRG bank switching (16KB/32KB modes)
+  - Implement CHR bank switching (4KB/8KB modes)
+  - Implement programmable mirroring control
   - Test with MMC1 games (Metroid, Zelda, Mega Man 2)
 
 ### Phase 2: Audio & Additional Mappers
