@@ -136,21 +136,23 @@ This is a Nintendo Entertainment System (NES) emulator written in C using SDL2 f
 
 ### 6502 CPU ([arch/6502/6502.c](arch/6502/6502.c))
 
-**Implementation Status:** ~95% complete
+**Implementation Status:** ~99% complete (nestest passes — 2026-05-17)
 
 **Features:**
 - All 56 legal opcodes implemented
+- All commonly-used illegal/undocumented opcodes with correct addressing modes
 - 13 addressing modes (Implied, Accumulator, Immediate, Zero Page, Zero Page X/Y, Relative, Absolute, Absolute X/Y, Indirect, Indexed Indirect, Indirect Indexed)
 - Cycle-accurate timing with page boundary detection
 - Stack operations (256-byte stack at $0100-$01FF)
 - Status register: NV-BDIZC flags
 - Interrupt support (NMI fully functional, IRQ implemented)
+- Passes nestest.nes (all official + illegal opcode tests) in 26,563 CPU cycles
 
 **Instruction Dispatch:**
-The CPU uses a 3D lookup table `instructions[c][a][b]` based on opcode bit pattern:
+The CPU uses a 3D lookup table `instruction_table[c][a][b]` based on opcode bit pattern:
 ```
 Opcode: aaabbbcc
-- cc (bits 0-1): Instruction group
+- cc (bits 0-1): Instruction group (0-3, where 3 = illegal cc)
 - bbb (bits 2-4): Addressing mode/variant
 - aaa (bits 5-7): Operation type
 ```
@@ -546,7 +548,7 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
   - PPU_RENDERING_PIPELINE.md
   - PPU_IMPLEMENTATION_COMPARISON.md
   - BUGFIXES_APPLIED.md
-- ✅ Unit tests: PPU clock (13 tests, 65 assertions), Mapper 001 (11 tests, 23 assertions), Mapper 002 (6 tests, 10 assertions), Mapper 003 (6 tests, 11 assertions), Mapper 004 (10 tests, 19 assertions), APU (8 tests, 72 assertions) — **6 test suites, 200 assertions total, all passing**
+- ✅ Unit tests: PPU clock (13 tests, 65 assertions), Mapper 001 (11 tests, 23 assertions), Mapper 002 (6 tests, 10 assertions), Mapper 003 (6 tests, 11 assertions), Mapper 004 (10 tests, 19 assertions), APU (8 tests, 72 assertions), CPU nestest integration test — **7 test suites, all passing**
 - ✅ Documentation (CLAUDE.md updated 2026-05-17)
 
 ---
@@ -711,6 +713,30 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
 **Total test suite: 32 tests, 160 assertions — all passing.**
 
 **Status:** Mapper 1 (MMC1) is now fully implemented. Next: verify with real MMC1 ROMs, then add Mappers 2 and 3.
+
+### 2026-05-17 Session: nestest CPU Integration Test (Issue #62)
+
+**All official and illegal opcode tests pass via nestest.nes automation mode.**
+
+**Root cause of test failures — multi-byte illegal NOP addressing modes:**
+All illegal NOP opcodes that consume operand bytes ($04, $0C, $14, $1C, $34, $3C, $44, $54, $5C, $64, $74, $7C, $80, $89, $82, $C2, $E2, $D4, $DC, $F4, $FC, $9C) had `&IMP` (implied/1-byte) addressing mode in the instruction table. This meant operand bytes were not consumed by the PC, and were instead executed as the next instruction, corrupting control flow. Fixed by using correct addressing modes: `&ZPG`, `&ABS`, `&ABX`, `&ZPX`, or `&IMM` as appropriate.
+
+**Test architecture** (`tests/test_cpu_nestest.c`):
+- Flat 64KB `mem[65536]` — no SDL2, PPU, or APU
+- PRG-ROM loaded at $8000 and mirrored to $C000
+- CPU reset, then PC forced to $C000 (automation entry point)
+- Runs until `cpu->PC < 0x0100` (nestest signals done by entering zero-page execution)
+- Results: `mem[$00]` (last failure), `mem[$10]` (official tests), `mem[$11]` (illegal tests); all $00 = PASS
+- Progress printed on writes to $10/$11 (first write skipped — initialization)
+- Completes in 26,563 CPU cycles
+
+**Files modified:**
+- `arch/6502/6502.c` — fixed addressing modes for all multi-byte illegal NOPs; expanded table to `[4][8][8]` with cc=3 illegal op entries
+- `tests/test_cpu_nestest.c` — new integration test
+- `tests/CMakeLists.txt` — added `test_cpu_nestest` target and `cpu_nestest` CTest entry
+- `tests/roms/nestest.nes` — ROM added (Kevin Horton's gold-standard CPU test)
+
+**Total test suite: 7 tests (6 suites + cpu_nestest), all passing.**
 
 ---
 
