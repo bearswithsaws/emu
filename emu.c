@@ -86,7 +86,8 @@ int main(int argc, char *argv[]) {
         want.format   = AUDIO_F32SYS;
         want.channels = 1;
         want.samples  = 512;   /* small device buffer = low hardware latency */
-        want.callback = NULL;
+        want.callback = apu_audio_callback;
+        want.userdata = bus->apu;
         audio_dev = SDL_OpenAudioDevice(NULL, 0, &want, &have,
                                         SDL_AUDIO_ALLOW_FREQUENCY_CHANGE);
         if (audio_dev == 0) {
@@ -120,7 +121,7 @@ int main(int argc, char *argv[]) {
         cpu->clock();
         apu_clock(bus->apu);
     }
-    apu_clear_samples(bus->apu);
+    apu_ring_reset(bus->apu);
     printf("CPU initialization complete.\n");
 
     printf("Starting emulation loop...\n");
@@ -155,27 +156,14 @@ int main(int argc, char *argv[]) {
                 tick_count++;
             }
 
-            /* Flush one frame of audio samples to the SDL queue.
-             *
-             * Timing strategy: vsync drives frame pacing (primary). The SDL
-             * queue is a secondary safety valve — if we are somehow running
-             * faster than audio consumption (e.g. vsync not active), we clear
-             * the queue rather than letting latency build up. This produces an
-             * occasional click but prevents the half-second drift that would
-             * accumulate with SDL_Delay-based throttling on platforms where
-             * SDL_Delay(1) sleeps 10-15 ms instead of 1 ms. */
+            /* Backpressure: block until the audio callback has drained enough
+             * of the ring buffer that we're no longer running ahead of
+             * real-time. The audio hardware consumes at a fixed 44100 Hz rate,
+             * so this naturally throttles the emulator to ~60 Hz without any
+             * fixed SDL_Delay. Only active when audio is open. */
             if (audio_dev != 0) {
-                float *samples;
-                int n = apu_get_samples(bus->apu, &samples);
-                if (n > 0) {
-                    uint32_t frame_bytes = (uint32_t)(n * sizeof(float));
-                    /* Safety valve: >3 frames queued means we're running well
-                     * ahead of audio. Clear and restart to kill latency. */
-                    if (SDL_GetQueuedAudioSize(audio_dev) > frame_bytes * 3) {
-                        SDL_ClearQueuedAudio(audio_dev);
-                    }
-                    SDL_QueueAudio(audio_dev, samples, frame_bytes);
-                    apu_clear_samples(bus->apu);
+                while (apu_ring_available(bus->apu) > APU_RING_SIZE * 3 / 4) {
+                    SDL_Delay(1);
                 }
             }
 

@@ -253,7 +253,7 @@ void apu_reset(struct apu2a03 *apu) {
     apu->dmc.irq_pending = false;
     apu->irq_pending = false;
     apu->sample_cycles = 0.0f;
-    apu->sample_count = 0;
+    apu_ring_reset(apu);
     /* Noise LFSR stays as-is per hardware; frame counter reset like power-on */
     apu->frame.mode = false;
     apu->frame.irq_inhibit = false;
@@ -405,9 +405,14 @@ void apu_clock(struct apu2a03 *apu) {
         /* LP at 14 kHz: β ≈ 0.87497 */
         apu->lp_prev = apu->lp_prev + 0.87497f * (hp2_out - apu->lp_prev);
 
-        if (apu->sample_count < APU_SAMPLE_BUFFER_SIZE) {
-            apu->sample_buf[apu->sample_count++] = apu->lp_prev;
+        int w = atomic_load_explicit(&apu->ring_write, memory_order_relaxed);
+        int next_w = (w + 1) & (APU_RING_SIZE - 1);
+        int r = atomic_load_explicit(&apu->ring_read, memory_order_acquire);
+        if (next_w != r) {
+            apu->ring_buf[w] = apu->lp_prev;
+            atomic_store_explicit(&apu->ring_write, next_w, memory_order_release);
         }
+        /* When full, drop the sample — backpressure is handled in the main loop */
     }
 }
 
@@ -596,11 +601,43 @@ bool apu_irq_pending(struct apu2a03 *apu) {
     return pending;
 }
 
-int apu_get_samples(struct apu2a03 *apu, float **buf_out) {
-    *buf_out = apu->sample_buf;
-    return apu->sample_count;
+void apu_audio_callback(void *userdata, uint8_t *stream, int len) {
+    struct apu2a03 *apu = (struct apu2a03 *)userdata;
+    float *out = (float *)(void *)stream;
+    int n = len / (int)sizeof(float);
+    for (int i = 0; i < n; i++) {
+        int r = atomic_load_explicit(&apu->ring_read, memory_order_relaxed);
+        int w = atomic_load_explicit(&apu->ring_write, memory_order_acquire);
+        if (r != w) {
+            out[i] = apu->ring_buf[r];
+            atomic_store_explicit(&apu->ring_read, (r + 1) & (APU_RING_SIZE - 1),
+                                  memory_order_release);
+        } else {
+            out[i] = 0.0f; /* underrun: output silence */
+        }
+    }
 }
 
-void apu_clear_samples(struct apu2a03 *apu) {
-    apu->sample_count = 0;
+int apu_drain_samples(struct apu2a03 *apu, float *buf, int max) {
+    int count = 0;
+    while (count < max) {
+        int r = atomic_load_explicit(&apu->ring_read, memory_order_relaxed);
+        int w = atomic_load_explicit(&apu->ring_write, memory_order_acquire);
+        if (r == w) break;
+        buf[count++] = apu->ring_buf[r];
+        atomic_store_explicit(&apu->ring_read, (r + 1) & (APU_RING_SIZE - 1),
+                              memory_order_release);
+    }
+    return count;
+}
+
+int apu_ring_available(struct apu2a03 *apu) {
+    int w = atomic_load_explicit(&apu->ring_write, memory_order_acquire);
+    int r = atomic_load_explicit(&apu->ring_read, memory_order_relaxed);
+    return (w - r + APU_RING_SIZE) & (APU_RING_SIZE - 1);
+}
+
+void apu_ring_reset(struct apu2a03 *apu) {
+    int w = atomic_load_explicit(&apu->ring_write, memory_order_acquire);
+    atomic_store_explicit(&apu->ring_read, w, memory_order_release);
 }
