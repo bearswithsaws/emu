@@ -333,6 +333,143 @@ static void test_background_pixel_output(void) {
 }
 
 /*
+ * attr_test_setup — shared setup for the two attribute-latch tests.
+ *
+ * Tile layout:
+ *   CHR tile 1: all pixels = colour index 1 (lo-plane 0xFF, hi-plane 0x00)
+ *
+ * Nametable (row 0):
+ *   coarse_x=1 → tile 1   (palette determined by attr bits 1:0)
+ *   coarse_x=2 → tile 1   (palette determined by attr bits 3:2)
+ *
+ * Attribute table byte at $23C0:
+ *   bits 1:0 = 0  → palette 0 for coarse_x ∈ {0,1}
+ *   bits 3:2 = 1  → palette 1 for coarse_x ∈ {2,3}
+ *   value = 0x04
+ *
+ * Palette:
+ *   palette[1] = 0x16  (palette 0, colour index 1 → medium blue)
+ *   palette[5] = 0x25  (palette 1, colour index 1 → medium red)
+ *
+ * Rendering starts at coarse_x=1 with the supplied fine_x (0 or 4).
+ * Returns the PPU pointer; the caller owns the framebuffer.
+ */
+static struct ppu2c02 *attr_test_setup(uint32_t *fb, uint8_t fine_x_val) {
+    memset(fake_chr, 0, sizeof(fake_chr));
+    /* Tile 1: lo plane all 1s → every pixel = colour index 01 */
+    uint8_t solid_lo[8] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
+    write_tile(1, solid_lo);
+
+    struct ppu2c02 *ppu = ppu2c02_init();
+    ppu->connect_cartridge(&fake_cart);
+    ppu->set_framebuffer(fb);
+    ppu->reset();
+
+    /* Write tile 1 into nametable positions (1,0) and (2,0) */
+    ppu->cpu_write(0x2006, 0x20); ppu->cpu_write(0x2006, 0x01);
+    ppu->cpu_write(0x2007, 0x01);  /* nametable[1] = tile 1 */
+    ppu->cpu_write(0x2006, 0x20); ppu->cpu_write(0x2006, 0x02);
+    ppu->cpu_write(0x2007, 0x01);  /* nametable[2] = tile 1 */
+
+    /* Attribute byte at $23C0: bits 1:0=0 (pal 0), bits 3:2=1 (pal 1) */
+    ppu->cpu_write(0x2006, 0x23); ppu->cpu_write(0x2006, 0xC0);
+    ppu->cpu_write(0x2007, 0x04);
+
+    /* Palette 0 colour 1 = 0x16 (blue), palette 1 colour 1 = 0x25 (red) */
+    ppu->cpu_write(0x2006, 0x3F); ppu->cpu_write(0x2006, 0x01);
+    ppu->cpu_write(0x2007, 0x16);
+    ppu->cpu_write(0x2006, 0x3F); ppu->cpu_write(0x2006, 0x05);
+    ppu->cpu_write(0x2007, 0x25);
+
+    /* Reset scroll: nametable 0, coarse_x=1, fine_x=fine_x_val, Y=0 */
+    ppu->cpu_write(0x2000, 0x08);
+    /* First PPUSCROLL write encodes coarse_x and fine_x:
+     * data = (coarse_x << 3) | fine_x */
+    ppu->cpu_write(0x2005, (uint8_t)((1 << 3) | fine_x_val));
+    ppu->cpu_write(0x2005, 0x00);  /* Y = 0 */
+
+    /* Enable BG rendering globally and in the leftmost 8 columns */
+    ppu->cpu_write(0x2001, 0x0A);
+
+    /* Run to the start of a new frame so t→v copies take effect,
+     * then run one full frame to fill the framebuffer. */
+    run_to_frame_start(ppu);
+    for (int i = 0; i < 89342; i++) ppu->clock();
+
+    return ppu;
+}
+
+/*
+ * test_attr_latch_no_fine_x
+ *
+ * Baseline: with fine_x=0 the palette transition must occur exactly at the
+ * 8-pixel tile boundary.  Scroll starts at coarse_x=1 so:
+ *   screen cols  0– 7: tile coarse_x=1 → palette 0 → NES_PALETTE[0x16]
+ *   screen cols  8–15: tile coarse_x=2 → palette 1 → NES_PALETTE[0x25]
+ */
+static void test_attr_latch_no_fine_x(void) {
+    printf("\n[test_attr_latch_no_fine_x]\n");
+
+    static uint32_t fb[256 * 240];
+    memset(fb, 0, sizeof(fb));
+    attr_test_setup(fb, 0);
+
+    uint32_t pal0_col = NES_PALETTE[0x16 & 0x3F];
+    uint32_t pal1_col = NES_PALETTE[0x25 & 0x3F];
+
+    /* Cols 0–7 must use palette 0 */
+    for (int col = 0; col < 8; col++) {
+        uint32_t px = fb[0 * 256 + col];
+        ASSERT(px == pal0_col, "fine_x=0: col 0-7 uses palette 0 colour");
+    }
+    /* Cols 8–15 must use palette 1 */
+    for (int col = 8; col < 16; col++) {
+        uint32_t px = fb[0 * 256 + col];
+        ASSERT(px == pal1_col, "fine_x=0: col 8-15 uses palette 1 colour");
+    }
+}
+
+/*
+ * test_attr_latch_fine_x_regression
+ *
+ * Regression test for the bg_attr_latch 0xFF bug (issue #36).
+ *
+ * With fine_x=4 the tile boundary shifts: cols 0–3 are the tail of
+ * coarse_x=1 (palette 0) and cols 4–11 are coarse_x=2 (palette 1).
+ *
+ * Before the fix, bg_attr_latch_lo was stored as 0xFF.  On the first call to
+ * update_shifters() after loading tile coarse_x=2's attribute, the expression
+ * (0x00 << 1) | 0xFF = 0xFF set all bits immediately, making palette 1 appear
+ * at screen column 1 instead of column 4.
+ *
+ * With the fix (latch stored as 0 or 1), only 1 bit is fed per dot, so the
+ * transition happens at the correct visual tile boundary.
+ */
+static void test_attr_latch_fine_x_regression(void) {
+    printf("\n[test_attr_latch_fine_x_regression]\n");
+
+    static uint32_t fb[256 * 240];
+    memset(fb, 0, sizeof(fb));
+    attr_test_setup(fb, 4);  /* fine_x = 4 */
+
+    uint32_t pal0_col = NES_PALETTE[0x16 & 0x3F];
+    uint32_t pal1_col = NES_PALETTE[0x25 & 0x3F];
+
+    /* Cols 0–3 are pixels 4–7 of tile coarse_x=1: must use palette 0 */
+    for (int col = 0; col < 4; col++) {
+        uint32_t px = fb[0 * 256 + col];
+        ASSERT(px == pal0_col,
+               "fine_x=4: col 0-3 (tail of tile cx=1) uses palette 0 colour");
+    }
+    /* Cols 4–11 are pixels 0–7 of tile coarse_x=2: must use palette 1 */
+    for (int col = 4; col < 12; col++) {
+        uint32_t px = fb[0 * 256 + col];
+        ASSERT(px == pal1_col,
+               "fine_x=4: col 4-11 (tile cx=2) uses palette 1 colour");
+    }
+}
+
+/*
  * test_ppudata_read_buffer
  *
  * Reads from $0000-$3EFF via PPUDATA must be delayed by one read (buffered).
@@ -409,6 +546,8 @@ int main(void) {
     test_scroll_register_writes();
     test_nametable_palette_access();
     test_background_pixel_output();
+    test_attr_latch_no_fine_x();
+    test_attr_latch_fine_x_regression();
     test_ppudata_read_buffer();
     test_frame_timing();
 
