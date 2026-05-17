@@ -2,8 +2,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include <SDL2/SDL.h>
+
 #include "2c02.h"
 #include "6502.h"
+#include "apu.h"
 #include "cartridge.h"
 #include "display.h"
 #include "emu_config.h"
@@ -15,6 +18,7 @@
 static struct nesbus *bus;
 static struct cpu6502 *cpu;
 static struct ppu2c02 *ppu;
+static SDL_AudioDeviceID audio_dev = 0;
 
 static void print_usage(const char *prog_name) {
     printf("Usage: %s <rom_file.nes>\n", prog_name);
@@ -55,6 +59,22 @@ int main(int argc, char *argv[]) {
     if (!display) {
         fprintf(stderr, "Error: Failed to initialize display\n");
         return EXIT_FAILURE;
+    }
+
+    /* Open SDL2 audio device in queue mode */
+    {
+        SDL_AudioSpec want = {0}, have = {0};
+        want.freq     = 44100;
+        want.format   = AUDIO_F32SYS;
+        want.channels = 1;
+        want.samples  = 1024;
+        want.callback = NULL;
+        audio_dev = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
+        if (audio_dev == 0) {
+            fprintf(stderr, "Warning: SDL audio init failed: %s\n", SDL_GetError());
+        } else {
+            SDL_PauseAudioDevice(audio_dev, 0);
+        }
     }
 
     // Load the ROM
@@ -130,11 +150,31 @@ int main(int argc, char *argv[]) {
                 // CPU clock
                 cpu->clock();
 
-                // Temporary: Write random value for nestest compatibility
-                // TODO: Remove this when proper controller input is implemented
-                // cpu->write(0xd2, (uint8_t)(tick_count & 0xff));
+                // APU clock (once per CPU cycle)
+                apu_clock(bus->apu);
+
+                // Check APU IRQ
+                if (apu_irq_pending(bus->apu)) {
+                    cpu->irq();
+                }
 
                 tick_count++;
+            }
+
+            /* Flush audio samples to SDL */
+            if (audio_dev != 0) {
+                float *samples;
+                int n = apu_get_samples(bus->apu, &samples);
+                if (n > 0) {
+                    /* Throttle: if queue has more than 2 frames buffered, wait */
+                    uint32_t queued;
+                    while ((queued = SDL_GetQueuedAudioSize(audio_dev)) >
+                           (uint32_t)(2 * n * (int)sizeof(float))) {
+                        SDL_Delay(1);
+                    }
+                    SDL_QueueAudio(audio_dev, samples, (uint32_t)(n * sizeof(float)));
+                    apu_clear_samples(bus->apu);
+                }
             }
 
             frame_count++;
@@ -154,6 +194,9 @@ int main(int argc, char *argv[]) {
            frame_count, tick_count);
 
     // Cleanup
+    if (audio_dev != 0) {
+        SDL_CloseAudioDevice(audio_dev);
+    }
     display_cleanup(display);
 
     // TODO: Add proper cleanup for cartridge, bus, cpu, ppu
