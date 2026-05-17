@@ -3,13 +3,20 @@
 // PRG-ROM: up to 512 KB banked in four 8 KB windows ($8000/$A000/$C000/$E000).
 //          R6/R7 are switchable; the other two are fixed to the last two banks.
 //          PRG mode bit swaps which fixed/switchable bank occupies $8000/$C000.
-// CHR-ROM: up to 256 KB banked in eight 1 KB windows ($0000-$1FFF).
+// CHR-ROM: up to 2 MB banked in eight 1 KB windows ($0000-$1FFF).
 //          R0/R1 each select aligned 2 KB pairs; R2-R5 each select 1 KB pages.
 //          CHR inversion bit swaps which registers drive the low/high 4 KB.
 // PRG-RAM: 8 KB at $6000-$7FFF (write-protect bits are accepted but ignored).
-// IRQ:     Scanline counter driven by rising edges of PPU A12.  Counter
-//          decrements (or reloads from latch) on each edge; fires IRQ when it
-//          reaches zero and IRQ enable is set.
+// IRQ:     Scanline counter clocked once per scanline via the PPU scanline
+//          callback (mapper->scanline, called at dot 260).  Counter decrements
+//          (or reloads from latch) each tick; fires IRQ when it reaches zero
+//          and IRQ enable is set.
+//
+// NOTE: The real hardware counts PPU A12 rising edges.  Our PPU fetches sprite
+// CHR data inline during pixel output rather than in the proper sprite-fetch
+// window (dots 257-320), which causes A12 to toggle dozens of times per
+// scanline instead of once.  We therefore use a PPU scanline callback rather
+// than A12 edge detection — this is the standard approach in most emulators.
 
 #include "mapper_004.h"
 #include <string.h>
@@ -25,12 +32,9 @@ struct mmc3_state {
 
     // Scanline IRQ
     uint8_t irq_latch;    // value reloaded into counter
-    uint8_t irq_counter;  // decrements on A12 rising edge
+    uint8_t irq_counter;  // decrements once per visible scanline
     uint8_t irq_reload;   // pending reload flag (set by $C001 write)
     uint8_t irq_enabled;  // IRQ fires only when this is set
-
-    // A12 edge detection
-    uint8_t last_a12;
 };
 
 static struct mmc3_state mmc3 = {0};
@@ -43,29 +47,20 @@ void mapper_004_init(struct mapper *map) {
 }
 
 // ---------------------------------------------------------------------------
-// IRQ scanline counter
+// IRQ scanline counter — called once per scanline by the PPU (dot 260)
 // ---------------------------------------------------------------------------
 
-// Called on every PPU address presentation (ppu_read / ppu_write).
-// The MMC3 watches PPU A12: rising edge clocks the scanline counter.
-static void clock_irq(struct mapper *map, uint16_t addr) {
-    uint8_t a12 = (addr >> 12) & 0x01;
-
-    if (!mmc3.last_a12 && a12) {
-        // Rising edge detected
-        if (mmc3.irq_counter == 0 || mmc3.irq_reload) {
-            mmc3.irq_counter = mmc3.irq_latch;
-            mmc3.irq_reload  = 0;
-        } else {
-            mmc3.irq_counter--;
-        }
-
-        if (mmc3.irq_counter == 0 && mmc3.irq_enabled) {
-            map->irq_pending = 1;
-        }
+void mapper_004_scanline(struct mapper *map) {
+    if (mmc3.irq_counter == 0 || mmc3.irq_reload) {
+        mmc3.irq_counter = mmc3.irq_latch;
+        mmc3.irq_reload  = 0;
+    } else {
+        mmc3.irq_counter--;
     }
 
-    mmc3.last_a12 = a12;
+    if (mmc3.irq_counter == 0 && mmc3.irq_enabled) {
+        map->irq_pending = 1;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -198,8 +193,6 @@ void mapper_004_cpu_write(struct mapper *map, uint16_t addr, uint8_t data) {
 uint8_t mapper_004_ppu_read(struct mapper *map, uint16_t addr) {
     if (addr > 0x1FFF) return 0;
 
-    clock_irq(map, addr);
-
     if (!map->cartridge->chr_rom) return 0;
 
     // CHR-RAM: single 8 KB bank, no banking
@@ -220,8 +213,6 @@ uint8_t mapper_004_ppu_read(struct mapper *map, uint16_t addr) {
 void mapper_004_ppu_write(struct mapper *map, uint16_t addr, uint8_t data) {
     if (!map || !map->cartridge) return;
     if (addr > 0x1FFF) return;
-
-    clock_irq(map, addr);
 
     // Only CHR-RAM carts accept PPU writes
     if (!map->cartridge->chr_ram_allocated) return;
