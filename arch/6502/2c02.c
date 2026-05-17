@@ -29,11 +29,13 @@ static uint16_t nametable_mirror(uint16_t addr) {
                                                                      : MIRROR_HORIZONTAL);
     switch (mode) {
     case MIRROR_HORIZONTAL:
-        // $2000=$2800, $2400=$2C00 — NTs 0&2 share low 1 KB; 1&3 share high 1 KB
-        return (nt == 0 || nt == 2) ? (addr & 0x03FF) : (0x0400 | (addr & 0x03FF));
-    case MIRROR_VERTICAL:
-        // $2000=$2400, $2800=$2C00 — NTs 0&1 share low 1 KB; 2&3 share high 1 KB
+        // $2000=$2400, $2800=$2C00 — NTs 0&1 share physical 0; 2&3 share physical 1
+        // Layout: [A][A] / [B][B] — used by vertically-scrolling games
         return (nt <= 1) ? (addr & 0x03FF) : (0x0400 | (addr & 0x03FF));
+    case MIRROR_VERTICAL:
+        // $2000=$2800, $2400=$2C00 — NTs 0&2 share physical 0; 1&3 share physical 1
+        // Layout: [A][B] / [A][B] — used by horizontally-scrolling games
+        return (nt == 0 || nt == 2) ? (addr & 0x03FF) : (0x0400 | (addr & 0x03FF));
     case MIRROR_SINGLE_LO:
         // All four nametables map to the first 1 KB
         return addr & 0x03FF;
