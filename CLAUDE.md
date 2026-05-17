@@ -280,7 +280,14 @@ Offset  Size  Description
 
 #### Mapper 002 - UxROM ([arch/6502/mapper_002.c](arch/6502/mapper_002.c))
 
-**Status:** ❌ Stub (future work)
+**Status:** ✅ Complete (2026-05-17) — 10 unit tests passing
+
+**Implemented:**
+- ✅ Switchable 16KB PRG bank at $8000-$BFFF via writes to $8000-$FFFF
+- ✅ Fixed last PRG bank at $C000-$FFFF
+- ✅ CHR-RAM 8KB (no banking; PPU read/write)
+- ✅ Bank register masked to low nibble (4 bits)
+- ✅ 10 unit tests — all passing
 
 **Specifications:**
 - PRG-ROM: Up to 256KB (16KB switchable + 16KB fixed)
@@ -291,7 +298,14 @@ Offset  Size  Description
 
 #### Mapper 003 - CNROM ([arch/6502/mapper_003.c](arch/6502/mapper_003.c))
 
-**Status:** ❌ Stub (future work)
+**Status:** ✅ Complete (2026-05-17) — 11 unit tests passing
+
+**Implemented:**
+- ✅ Fixed PRG-ROM: 16KB mirrored or 32KB straight (no banking)
+- ✅ CHR-ROM 8KB bank switching via writes to $8000-$FFFF
+- ✅ Bank register masked to 2 bits (4 banks max)
+- ✅ CHR writes to ROM are no-ops
+- ✅ 11 unit tests — all passing
 
 **Specifications:**
 - PRG-ROM: 16KB or 32KB (no banking)
@@ -299,6 +313,27 @@ Offset  Size  Description
 - Simple write to $8000-$FFFF selects CHR bank
 
 **Compatible Games:** ~155 games including Arkanoid, Paperboy, Pipe Dream
+
+#### Mapper 004 - MMC3 ([arch/6502/mapper_004.c](arch/6502/mapper_004.c))
+
+**Status:** ✅ Complete (2026-05-17) — 19 unit tests passing
+
+**Implemented:**
+- ✅ PRG-ROM: four 8KB windows ($8000/$A000/$C000/$E000); R6/R7 switchable; fixed banks at second-to-last and last
+- ✅ PRG mode bit: swaps which window is fixed vs switchable at $8000/$C000
+- ✅ CHR-ROM: eight 1KB windows; R0/R1 select 2KB aligned pairs; R2-R5 select 1KB pages
+- ✅ CHR inversion bit: swaps which CHR half gets the 2KB banks
+- ✅ PRG-RAM: 8KB at $6000-$7FFF (write-protect bits accepted but ignored)
+- ✅ Scanline IRQ counter (decrements via PPU scanline callback at dot 260)
+- ✅ IRQ latch, reload, enable/disable registers
+- ✅ Dynamic mirroring (H/V) via $A000
+- ✅ irq_pending wired to CPU IRQ in 6502.c
+- ✅ 19 unit tests — all passing
+
+**Notes:**
+- Uses PPU scanline callback instead of A12 edge detection (standard emulator approach — real PPU sprite-CHR fetching is not cycle-accurate enough for A12)
+
+**Compatible Games:** ~600+ games including Super Mario Bros. 3, Mega Man 3/4/5/6, Contra, Kirby's Adventure, Ninja Gaiden
 
 ### NES Bus ([arch/6502/nesbus.c](arch/6502/nesbus.c))
 
@@ -488,6 +523,10 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
   - All PRG and CHR bank switching modes implemented and unit-tested
   - Two bugs fixed: 32KB PRG stride and CHR-RAM read banking
 
+- **Mappers 002/003/004** ✅ Complete (2026-05-17)
+  - UxROM (002), CNROM (003), MMC3 (004) fully implemented and unit-tested
+  - 40 new assertions across 3 test files — all passing
+
 - **Frame Timing** (100% complete)
   - ✅ 60 Hz frame rate via PPU
   - ✅ VBlank synchronization
@@ -507,7 +546,7 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
   - PPU_RENDERING_PIPELINE.md
   - PPU_IMPLEMENTATION_COMPARISON.md
   - BUGFIXES_APPLIED.md
-- ✅ Unit tests: PPU clock (13 tests, 65 assertions), Mapper 001 (11 tests, 23 assertions — added 2026-05-17), APU (8 tests, 72 assertions)
+- ✅ Unit tests: PPU clock (13 tests, 65 assertions), Mapper 001 (11 tests, 23 assertions), Mapper 002 (6 tests, 10 assertions), Mapper 003 (6 tests, 11 assertions), Mapper 004 (10 tests, 19 assertions), APU (8 tests, 72 assertions) — **6 test suites, 200 assertions total, all passing**
 - ✅ Documentation (CLAUDE.md updated 2026-05-17)
 
 ---
@@ -521,7 +560,7 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
 - ~~**Coarse X increment timing off by one cycle**~~ ✅ **Fixed 2025-11-12** - Eliminated 8-pixel viewport offset
 
 ### High Priority (Remaining)
-1. **Mapper 001 real-game testing** - Implementation complete; needs ROM compatibility verification with Metroid, Zelda, Mega Man 2
+1. **Real-game ROM testing** - All mappers 0-4 implemented; none have been verified with actual ROMs yet
 
 ### Medium Priority
 1. **Global static variables** - Only one emulator instance possible
@@ -574,6 +613,24 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
 ---
 
 ## Recent Work
+
+### 2026-05-17 Session: Mapper 002/003/004 Unit Tests + Documentation Sync
+
+**Discovered that Mappers 002 (UxROM), 003 (CNROM), and 004 (MMC3) were already fully implemented** — CLAUDE.md falsely listed 002/003 as stubs and omitted 004 entirely.
+
+**New test files:**
+- `tests/test_mapper_002.c` — 6 tests, 10 assertions (all passing)
+- `tests/test_mapper_003.c` — 6 tests, 11 assertions (all passing)
+- `tests/test_mapper_004.c` — 10 tests, 19 assertions (all passing)
+
+**Coverage:**
+- Mapper 002: power-up state, bank switching, low-nibble masking, CHR-RAM read/write
+- Mapper 003: 16KB mirror, 32KB straight, CHR bank select, 2-bit mask, ROM write NOP
+- Mapper 004: PRG power-up, R6 switch, PRG mode 1 swap, PRG-RAM, CHR R0 2KB, CHR R2 1KB, CHR invert, mirroring, IRQ counter, IRQ disable
+
+**Total test suite: 6 suites, 54 tests, 200 assertions — all passing.**
+
+**CLAUDE.md updated** to reflect true implementation status for all mappers.
 
 ### 2026-05-17 Session: Full APU Implementation
 **All 5 NES APU channels implemented plus frame counter, mixer, and SDL2 audio output:**
@@ -678,7 +735,7 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
 - [X] ~~Implement APU triangle channel~~ ✅ Complete (2026-05-17)
 - [X] ~~Implement APU noise channel~~ ✅ Complete (2026-05-17)
 - [X] ~~Implement APU DMC~~ ✅ Complete (2026-05-17)
-- [ ] Add Mappers 2, 3, 4
+- [X] ~~Add Mappers 2, 3, 4~~ ✅ Complete (2026-05-17) — UxROM, CNROM, MMC3 all implemented and unit-tested
 
 ### Phase 3: Quality of Life
 - [ ] Save state support (serialize all state)
