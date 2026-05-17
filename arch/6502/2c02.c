@@ -429,7 +429,7 @@ static uint32_t composite_pixel(uint8_t bg_pixel, uint8_t bg_palette,
     // Sprite 0 hit: both pixels opaque, dot not 255, not in clipped left column.
     if (sp_is_zero && bg_pixel != 0 && sp_pixel != 0 &&
         ppu.ppumask.bg_render_enable && ppu.ppumask.sprite_render_enable &&
-        ppu.dot != 255 &&
+        ppu.dot != 256 &&  /* x=255 (dot 256) cannot trigger sprite 0 hit */
         !(ppu.dot <= 8 && (!ppu.ppumask.bg_enable || !ppu.ppumask.sprite_enable))) {
         ppu.ppustatus.sprite_0_hit = 1;
     }
