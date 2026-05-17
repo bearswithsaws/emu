@@ -109,7 +109,14 @@ struct apu2a03 {
     float sample_cycles;      /* cycles accumulated */
     float cycles_per_sample;  /* APU_CPU_HZ / APU_SAMPLE_RATE */
 
-    /* Per-frame sample buffer (float32, mono, 0.0 to ~1.0) */
+    /* NES hardware audio filter state (two high-pass, one low-pass) */
+    float hp1_prev_in;
+    float hp1_prev_out;
+    float hp2_prev_in;
+    float hp2_prev_out;
+    float lp_prev;
+
+    /* Per-frame sample buffer (float32, mono, -1.0 to 1.0 after filtering) */
     float sample_buf[APU_SAMPLE_BUFFER_SIZE];
     int sample_count;
 

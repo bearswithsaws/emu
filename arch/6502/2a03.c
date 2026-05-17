@@ -384,8 +384,29 @@ void apu_clock(struct apu2a03 *apu) {
     if (apu->sample_cycles >= apu->cycles_per_sample) {
         apu->sample_cycles -= apu->cycles_per_sample;
         float s = mixer_output(apu);
+
+        /* NES hardware audio filters (applied at the output sample rate):
+         *   HP1: ~90 Hz  — removes DC bias from channel enable/disable pops
+         *   HP2: ~440 Hz — second high-pass stage matching hardware
+         *   LP:  ~14 kHz — softens sharp pulse/noise transients
+         * Coefficients for 44100 Hz output:
+         *   hp_alpha = exp(-2π * fc / 44100)
+         *   lp_beta  = 1 - exp(-2π * fc / 44100) */
+        /* HP1 at 90 Hz: α ≈ 0.98724 */
+        float hp1_out = 0.98724f * (apu->hp1_prev_out + s - apu->hp1_prev_in);
+        apu->hp1_prev_in  = s;
+        apu->hp1_prev_out = hp1_out;
+
+        /* HP2 at 440 Hz: α ≈ 0.93897 */
+        float hp2_out = 0.93897f * (apu->hp2_prev_out + hp1_out - apu->hp2_prev_in);
+        apu->hp2_prev_in  = hp1_out;
+        apu->hp2_prev_out = hp2_out;
+
+        /* LP at 14 kHz: β ≈ 0.87497 */
+        apu->lp_prev = apu->lp_prev + 0.87497f * (hp2_out - apu->lp_prev);
+
         if (apu->sample_count < APU_SAMPLE_BUFFER_SIZE) {
-            apu->sample_buf[apu->sample_count++] = s;
+            apu->sample_buf[apu->sample_count++] = apu->lp_prev;
         }
     }
 }
