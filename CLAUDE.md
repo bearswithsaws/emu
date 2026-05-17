@@ -361,7 +361,7 @@ Offset  Size  Description
 ```bash
 sudo apt-get update
 sudo apt-get install build-essential cmake
-sudo apt-get install libsdl2-dev libsdl2-ttf-dev
+sudo apt-get install libsdl2-dev
 ```
 
 **Windows (via MSYS2/MinGW):**
@@ -369,7 +369,6 @@ sudo apt-get install libsdl2-dev libsdl2-ttf-dev
 pacman -S mingw-w64-x86_64-gcc
 pacman -S mingw-w64-x86_64-cmake
 pacman -S mingw-w64-x86_64-SDL2
-pacman -S mingw-w64-x86_64-SDL2_ttf
 ```
 
 ### Building
