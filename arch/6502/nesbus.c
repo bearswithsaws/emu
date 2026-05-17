@@ -6,7 +6,7 @@
 #include <string.h>
 
 #include "nesbus.h"
-#include "apu.h"
+#include "2a03.h"
 #include "debug.h"
 
 static struct nesbus bus = {0};

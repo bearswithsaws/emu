@@ -1,6 +1,6 @@
 /* NES APU (2A03) implementation */
 
-#include "apu.h"
+#include "2a03.h"
 
 #include <string.h>
 

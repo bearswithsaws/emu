@@ -12,7 +12,7 @@
 #include <string.h>
 #include <math.h>
 
-#include "apu.h"
+#include "2a03.h"
 
 /* ---------------------------------------------------------------------------
  * Test framework

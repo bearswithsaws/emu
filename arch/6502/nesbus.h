@@ -5,7 +5,7 @@
 
 #include "2c02.h"
 #include "6502.h"
-#include "apu.h"
+#include "2a03.h"
 #include "cartridge.h"
 #include "controller.h"
 

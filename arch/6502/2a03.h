@@ -1,5 +1,5 @@
-#ifndef __APU_H__
-#define __APU_H__
+#ifndef __2A03_H__
+#define __2A03_H__
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -130,4 +130,4 @@ bool    apu_irq_pending(struct apu2a03 *apu);
 int     apu_get_samples(struct apu2a03 *apu, float **buf_out);
 void    apu_clear_samples(struct apu2a03 *apu);
 
-#endif /* __APU_H__ */
+#endif /* __2A03_H__ */
