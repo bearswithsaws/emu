@@ -1,4 +1,4 @@
-[![Build Status](https://api.travis-ci.org/bearswithsaws/emu.svg?branch=master)](https://travis-ci.org/bearswithsaws/emu)
+[![CI](https://github.com/bearswithsaws/emu/actions/workflows/ci.yml/badge.svg)](https://github.com/bearswithsaws/emu/actions/workflows/ci.yml)
 
 # emu
 Just a basic NES emulator
