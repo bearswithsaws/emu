@@ -31,6 +31,6 @@ struct nesbus {
     uint16_t dma_halt_cycles;
 };
 
-struct nesbus *nesbus_init();
+struct nesbus *nesbus_init(struct cpu6502 *cpu, struct ppu2c02 *ppu);
 
 #endif /* __NESBUS_H__ */

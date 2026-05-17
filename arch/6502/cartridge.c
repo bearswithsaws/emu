@@ -1,12 +1,6 @@
-#include <errno.h>
-#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <unistd.h>
 
 #include "cartridge.h"
 #include "debug.h"
@@ -83,51 +77,49 @@ static void cpu_write(struct nes_cartridge *cart, uint16_t addr, uint8_t data) {
 }
 
 struct nes_cartridge *load_rom(const char *filename) {
-    int ret = 0;
-    int fd;
-    struct stat sb;
-    void *cartridge_data;
-    struct nes_cartridge *cartridge;
+    FILE *f = NULL;
+    long file_size;
+    void *rom_data = NULL;
+    struct nes_cartridge *cartridge = NULL;
 
-    cartridge = (struct nes_cartridge *)malloc(sizeof(struct nes_cartridge));
-    if (!cartridge) {
-        ret = -errno;
-        goto out;
-    }
-
-    memset(cartridge, 0, sizeof(struct nes_cartridge));
+    cartridge = calloc(1, sizeof(struct nes_cartridge));
+    if (!cartridge)
+        goto fail;
 
     cartridge->cpu_read = cpu_read;
     cartridge->cpu_write = cpu_write;
     cartridge->ppu_read = ppu_read;
     cartridge->ppu_write = ppu_write;
 
-    fd = open(filename, O_RDONLY);
-    if (fd < 0) {
-        ret = -errno;
-        goto out;
+    f = fopen(filename, "rb");
+    if (!f) {
+        fprintf(stderr, "Cannot open ROM: %s\n", filename);
+        goto fail;
     }
 
-    cartridge->fd = fd;
+    if (fseek(f, 0, SEEK_END) != 0)
+        goto fail;
+    file_size = ftell(f);
+    if (file_size <= 0)
+        goto fail;
+    rewind(f);
 
-    ret = fstat(fd, &sb);
-    if (ret < 0) {
-        ret = -errno;
-        goto out;
+    rom_data = malloc((size_t)file_size);
+    if (!rom_data)
+        goto fail;
+
+    if (fread(rom_data, 1, (size_t)file_size, f) != (size_t)file_size) {
+        fprintf(stderr, "Failed to read ROM: %s\n", filename);
+        goto fail;
     }
+    fclose(f);
+    f = NULL;
 
-    cartridge_data = mmap(NULL, sb.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
-    if (cartridge_data == MAP_FAILED) {
-        ret = -errno;
-        goto out;
-    }
-
-    cartridge->hdr = (struct nes_cartridge_hdr *)cartridge_data;
+    cartridge->hdr = (struct nes_cartridge_hdr *)rom_data;
 
     if (cartridge->hdr->magic != NES_MAGIC) {
         fprintf(stderr, "%s is not a valid NES cartridge\n", filename);
-        ret = -1;
-        goto out;
+        goto fail;
     }
 
     if (cartridge->hdr->flags6.trainer) {
@@ -139,58 +131,38 @@ struct nes_cartridge *load_rom(const char *filename) {
     cartridge->prg_rom = cartridge->raw_data +
                          sizeof(struct nes_cartridge_hdr) +
                          cartridge->trainer_len;
-
     cartridge->prg_rom_len = cartridge->hdr->prg_rom_size * 0x4000;
 
-    // Handle CHR-ROM vs CHR-RAM
     if (cartridge->hdr->chr_rom_size > 0) {
-        // Has CHR-ROM: point to ROM data in cartridge file
         cartridge->chr_rom = cartridge->raw_data +
                              sizeof(struct nes_cartridge_hdr) +
                              cartridge->trainer_len + cartridge->prg_rom_len;
         cartridge->chr_rom_len = cartridge->hdr->chr_rom_size * 0x2000;
         cartridge->chr_ram_allocated = 0;
     } else {
-        // No CHR-ROM: allocate 8KB CHR-RAM (games can use this as RAM)
-        cartridge->chr_rom_len = 0x2000;  // 8KB CHR-RAM
-        cartridge->chr_rom = (uint8_t *)malloc(cartridge->chr_rom_len);
-        if (cartridge->chr_rom) {
-            memset(cartridge->chr_rom, 0, cartridge->chr_rom_len);
-            cartridge->chr_ram_allocated = 1;
-            LOG_CART("Allocated 8KB CHR-RAM for cartridge (chr_rom_size=0)\n");
-        } else {
-            fprintf(stderr, "ERROR: Failed to allocate CHR-RAM\n");
-            ret = -ENOMEM;
-            goto out;
-        }
+        cartridge->chr_rom_len = 0x2000;
+        cartridge->chr_rom = calloc(1, cartridge->chr_rom_len);
+        if (!cartridge->chr_rom)
+            goto fail;
+        cartridge->chr_ram_allocated = 1;
+        LOG_CART("Allocated 8KB CHR-RAM for cartridge (chr_rom_size=0)\n");
     }
 
     cartridge->mapper_id = MAPPER_ADDR(cartridge->hdr->flags7.mapper_upper,
                                        cartridge->hdr->flags6.mapper_lower);
-
-    // Initialize and connect the mapper. The proper mapper will be determined
-    // inside the mapper_init function
     cartridge->map = mapper_init(cartridge);
 
-out:
-    if (ret < 0) {
-        if (cartridge) {
-            // Free CHR-RAM if we allocated it
-            if (cartridge->chr_ram_allocated && cartridge->chr_rom) {
-                free(cartridge->chr_rom);
-            }
-        }
-
-        if (cartridge_data != MAP_FAILED) {
-            munmap(cartridge_data, sb.st_size);
-        }
-
-        if (fd >= 0) {
-            close(fd);
-        }
-        free(cartridge);
-        cartridge = NULL;
-    }
-
     return cartridge;
+
+fail:
+    if (f) fclose(f);
+    if (cartridge) {
+        if (cartridge->chr_ram_allocated && cartridge->chr_rom)
+            free(cartridge->chr_rom);
+        free(cartridge);
+    }
+    /* rom_data is referenced via cartridge->raw_data only after hdr is set;
+     * free it here to cover all failure paths. */
+    free(rom_data);
+    return NULL;
 }
