@@ -57,60 +57,38 @@ void ui_render_frame(struct ui_context *ui, struct display_context *display) {
         static_cast<SDL_Renderer *>(display_get_renderer(display));
     SDL_Texture *game_tex =
         static_cast<SDL_Texture *>(display_get_screen_texture(display));
+    int gw = display_get_width(display);
+    int gh = display_get_height(display);
 
     /* Upload the NES framebuffer to the GPU texture. */
     display_upload_framebuffer(display);
 
-    /* Begin ImGui frame. */
+    /* Begin ImGui frame — panels/menus declared here overlay the game. */
     ImGui_ImplSDLRenderer2_NewFrame();
     ImGui_ImplSDL2_NewFrame();
     ImGui::NewFrame();
-
-    /* Full-window dockspace so panels can be docked anywhere. */
-    ImGuiViewport *vp = ImGui::GetMainViewport();
-    ImGui::SetNextWindowPos(vp->Pos);
-    ImGui::SetNextWindowSize(vp->Size);
-    ImGui::SetNextWindowViewport(vp->ID);
-    ImGuiWindowFlags ds_flags =
-        ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar |
-        ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize |
-        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus |
-        ImGuiWindowFlags_NoNavFocus | ImGuiWindowFlags_NoBackground;
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
-    ImGui::Begin("##dockspace_root", nullptr, ds_flags);
-    ImGui::PopStyleVar(2);
-    ImGui::DockSpace(ImGui::GetID("MainDockSpace"),
-                     ImVec2(0, 0),
-                     ImGuiDockNodeFlags_PassthruCentralNode);
-    ImGui::End();
-
-    /* Game viewport window. */
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-    ImGui::Begin("Game", nullptr,
-                 ImGuiWindowFlags_NoScrollbar |
-                 ImGuiWindowFlags_NoScrollWithMouse);
-    ImVec2 avail = ImGui::GetContentRegionAvail();
-    int    gw    = display_get_width(display);
-    int    gh    = display_get_height(display);
-
-    /* Scale the 256×240 viewport to fit while preserving aspect ratio. */
-    float scale = std::min(avail.x / (float)gw, avail.y / (float)gh);
-    ImVec2 img_size(gw * scale, gh * scale);
-    ImVec2 cursor((avail.x - img_size.x) * 0.5f,
-                  (avail.y - img_size.y) * 0.5f);
-    ImGui::SetCursorPos(cursor);
-    ImGui::Image((ImTextureID)(intptr_t)game_tex, img_size);
-    ImGui::End();
-    ImGui::PopStyleVar();
 
     if (ui && ui->show_demo) {
         ImGui::ShowDemoWindow(&ui->show_demo);
     }
 
-    /* Render ImGui draw data via SDL_Renderer. */
     ImGui::Render();
+
+    /* Render the game texture scaled to fill the window (letterboxed if
+     * the window aspect ratio differs from 256:240). */
     SDL_RenderClear(renderer);
+    int win_w = 0, win_h = 0;
+    SDL_GetRendererOutputSize(renderer, &win_w, &win_h);
+    float scale = std::min((float)win_w / gw, (float)win_h / gh);
+    SDL_Rect dst = {
+        (int)((win_w - gw * scale) * 0.5f),
+        (int)((win_h - gh * scale) * 0.5f),
+        (int)(gw * scale),
+        (int)(gh * scale)
+    };
+    SDL_RenderCopy(renderer, game_tex, nullptr, &dst);
+
+    /* Draw ImGui on top of the game (menu bar, panels, etc. go here). */
     ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData(), renderer);
     SDL_RenderPresent(renderer);
 }
