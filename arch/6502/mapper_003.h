@@ -13,4 +13,6 @@ uint8_t mapper_003_ppu_read(struct mapper *map, uint16_t addr);
 
 void mapper_003_ppu_write(struct mapper *map, uint16_t addr, uint8_t data);
 
+void mapper_003_init(struct mapper *map);
+
 #endif /* __MAPPER_003_H__ */

@@ -19,31 +19,33 @@
 // than A12 edge detection — this is the standard approach in most emulators.
 
 #include "mapper_004.h"
+#include <stdlib.h>
 #include <string.h>
 
-struct mmc3_state {
+struct mmc3_ctx {
     // Bank select register ($8000 even write)
-    uint8_t bank_select;  // which of R0-R7 the next $8001 write targets
-    uint8_t prg_mode;     // 0: R6 at $8000, fixed at $C000; 1: swapped
-    uint8_t chr_invert;   // 0: R0/R1 low, R2-R5 high; 1: swapped
+    uint8_t bank_select;
+    uint8_t prg_mode;
+    uint8_t chr_invert;
 
     // Bankable registers R0-R7
     uint8_t reg[8];
 
     // Scanline IRQ
-    uint8_t irq_latch;    // value reloaded into counter
-    uint8_t irq_counter;  // decrements once per visible scanline
-    uint8_t irq_reload;   // pending reload flag (set by $C001 write)
-    uint8_t irq_enabled;  // IRQ fires only when this is set
+    uint8_t irq_latch;
+    uint8_t irq_counter;
+    uint8_t irq_reload;
+    uint8_t irq_enabled;
+
+    // 8 KB battery-backed WRAM at $6000-$7FFF
+    uint8_t prg_ram[0x2000];
 };
 
-static struct mmc3_state mmc3 = {0};
-static uint8_t prg_ram[0x2000] = {0};  // 8 KB battery-backed WRAM
-
 void mapper_004_init(struct mapper *map) {
-    (void)map;  // mirroring is seeded from ROM header by mapper.c
-    memset(&mmc3, 0, sizeof(mmc3));
-    memset(prg_ram, 0, sizeof(prg_ram));
+    struct mmc3_ctx *ctx = calloc(1, sizeof(struct mmc3_ctx));
+    if (!ctx) return;
+    // mirroring is seeded from ROM header by mapper.c
+    map->ctx = ctx;
 }
 
 // ---------------------------------------------------------------------------
@@ -51,14 +53,16 @@ void mapper_004_init(struct mapper *map) {
 // ---------------------------------------------------------------------------
 
 void mapper_004_scanline(struct mapper *map) {
-    if (mmc3.irq_counter == 0 || mmc3.irq_reload) {
-        mmc3.irq_counter = mmc3.irq_latch;
-        mmc3.irq_reload  = 0;
+    struct mmc3_ctx *ctx = map->ctx;
+
+    if (ctx->irq_counter == 0 || ctx->irq_reload) {
+        ctx->irq_counter = ctx->irq_latch;
+        ctx->irq_reload  = 0;
     } else {
-        mmc3.irq_counter--;
+        ctx->irq_counter--;
     }
 
-    if (mmc3.irq_counter == 0 && mmc3.irq_enabled) {
+    if (ctx->irq_counter == 0 && ctx->irq_enabled) {
         map->irq_pending = 1;
     }
 }
@@ -67,34 +71,31 @@ void mapper_004_scanline(struct mapper *map) {
 // CHR banking helper
 // ---------------------------------------------------------------------------
 
-// Returns the 1 KB CHR bank index for the given PPU address (0-$1FFF).
-// Handles the chr_invert mode and the 2 KB alignment of R0/R1.
-static uint16_t resolve_chr_bank(uint16_t addr, uint16_t num_1kb) {
-    uint8_t slot = (addr >> 10) & 0x07;  // 0-7: which 1 KB window
+static uint16_t resolve_chr_bank(struct mmc3_ctx *ctx, uint16_t addr,
+                                 uint16_t num_1kb) {
+    uint8_t slot = (addr >> 10) & 0x07;
 
-    if (!mmc3.chr_invert) {
-        // Standard: R0/R1 select 2 KB pairs at $0000-$0FFF; R2-R5 at $1000-$1FFF
+    if (!ctx->chr_invert) {
         switch (slot) {
-        case 0: return (uint16_t)(mmc3.reg[0] & 0xFE) % num_1kb;
-        case 1: return (uint16_t)(mmc3.reg[0] | 0x01) % num_1kb;
-        case 2: return (uint16_t)(mmc3.reg[1] & 0xFE) % num_1kb;
-        case 3: return (uint16_t)(mmc3.reg[1] | 0x01) % num_1kb;
-        case 4: return (uint16_t)mmc3.reg[2] % num_1kb;
-        case 5: return (uint16_t)mmc3.reg[3] % num_1kb;
-        case 6: return (uint16_t)mmc3.reg[4] % num_1kb;
-        case 7: return (uint16_t)mmc3.reg[5] % num_1kb;
+        case 0: return (uint16_t)(ctx->reg[0] & 0xFE) % num_1kb;
+        case 1: return (uint16_t)(ctx->reg[0] | 0x01) % num_1kb;
+        case 2: return (uint16_t)(ctx->reg[1] & 0xFE) % num_1kb;
+        case 3: return (uint16_t)(ctx->reg[1] | 0x01) % num_1kb;
+        case 4: return (uint16_t)ctx->reg[2] % num_1kb;
+        case 5: return (uint16_t)ctx->reg[3] % num_1kb;
+        case 6: return (uint16_t)ctx->reg[4] % num_1kb;
+        case 7: return (uint16_t)ctx->reg[5] % num_1kb;
         }
     } else {
-        // Inverted: R2-R5 at $0000-$0FFF; R0/R1 select 2 KB pairs at $1000-$1FFF
         switch (slot) {
-        case 0: return (uint16_t)mmc3.reg[2] % num_1kb;
-        case 1: return (uint16_t)mmc3.reg[3] % num_1kb;
-        case 2: return (uint16_t)mmc3.reg[4] % num_1kb;
-        case 3: return (uint16_t)mmc3.reg[5] % num_1kb;
-        case 4: return (uint16_t)(mmc3.reg[0] & 0xFE) % num_1kb;
-        case 5: return (uint16_t)(mmc3.reg[0] | 0x01) % num_1kb;
-        case 6: return (uint16_t)(mmc3.reg[1] & 0xFE) % num_1kb;
-        case 7: return (uint16_t)(mmc3.reg[1] | 0x01) % num_1kb;
+        case 0: return (uint16_t)ctx->reg[2] % num_1kb;
+        case 1: return (uint16_t)ctx->reg[3] % num_1kb;
+        case 2: return (uint16_t)ctx->reg[4] % num_1kb;
+        case 3: return (uint16_t)ctx->reg[5] % num_1kb;
+        case 4: return (uint16_t)(ctx->reg[0] & 0xFE) % num_1kb;
+        case 5: return (uint16_t)(ctx->reg[0] | 0x01) % num_1kb;
+        case 6: return (uint16_t)(ctx->reg[1] & 0xFE) % num_1kb;
+        case 7: return (uint16_t)(ctx->reg[1] | 0x01) % num_1kb;
         }
     }
     return 0;
@@ -105,43 +106,35 @@ static uint16_t resolve_chr_bank(uint16_t addr, uint16_t num_1kb) {
 // ---------------------------------------------------------------------------
 
 uint8_t mapper_004_cpu_read(struct mapper *map, uint16_t addr) {
-    // PRG-RAM at $6000-$7FFF
-    if (addr >= 0x6000 && addr <= 0x7FFF) {
-        return prg_ram[addr & 0x1FFF];
-    }
+    struct mmc3_ctx *ctx = map->ctx;
+
+    if (addr >= 0x6000 && addr <= 0x7FFF)
+        return ctx->prg_ram[addr & 0x1FFF];
 
     if (addr < 0x8000) return 0;
 
-    // Four 8 KB PRG windows: $8000 / $A000 / $C000 / $E000
-    // Number of 8 KB banks in ROM (each iNES PRG bank = 16 KB = two 8 KB banks)
     uint16_t num_8kb = map->num_prg_rom * 2;
     uint16_t bank;
-    uint32_t offset;
 
     if (addr <= 0x9FFF) {
-        // $8000: R6 in mode 0; fixed second-to-last in mode 1
-        bank = mmc3.prg_mode ? (num_8kb - 2)
-                             : (mmc3.reg[6] % num_8kb);
+        bank = ctx->prg_mode ? (num_8kb - 2) : (ctx->reg[6] % num_8kb);
     } else if (addr <= 0xBFFF) {
-        // $A000: always R7
-        bank = mmc3.reg[7] % num_8kb;
+        bank = ctx->reg[7] % num_8kb;
     } else if (addr <= 0xDFFF) {
-        // $C000: fixed second-to-last in mode 0; R6 in mode 1
-        bank = mmc3.prg_mode ? (mmc3.reg[6] % num_8kb)
-                             : (num_8kb - 2);
+        bank = ctx->prg_mode ? (ctx->reg[6] % num_8kb) : (num_8kb - 2);
     } else {
-        // $E000: always last bank
         bank = num_8kb - 1;
     }
 
-    offset = (uint32_t)bank * 0x2000 + (addr & 0x1FFF);
+    uint32_t offset = (uint32_t)bank * 0x2000 + (addr & 0x1FFF);
     return map->cartridge->prg_rom[offset];
 }
 
 void mapper_004_cpu_write(struct mapper *map, uint16_t addr, uint8_t data) {
-    // PRG-RAM at $6000-$7FFF
+    struct mmc3_ctx *ctx = map->ctx;
+
     if (addr >= 0x6000 && addr <= 0x7FFF) {
-        prg_ram[addr & 0x1FFF] = data;
+        ctx->prg_ram[addr & 0x1FFF] = data;
         return;
     }
 
@@ -151,37 +144,29 @@ void mapper_004_cpu_write(struct mapper *map, uint16_t addr, uint8_t data) {
 
     if (addr <= 0x9FFF) {
         if (!odd) {
-            // $8000 (even) — Bank Select
-            mmc3.bank_select = data & 0x07;
-            mmc3.prg_mode    = (data >> 6) & 0x01;
-            mmc3.chr_invert  = (data >> 7) & 0x01;
+            ctx->bank_select = data & 0x07;
+            ctx->prg_mode    = (data >> 6) & 0x01;
+            ctx->chr_invert  = (data >> 7) & 0x01;
         } else {
-            // $8001 (odd) — Bank Data: write to selected R0-R7
-            mmc3.reg[mmc3.bank_select] = data;
+            ctx->reg[ctx->bank_select] = data;
         }
     } else if (addr <= 0xBFFF) {
-        if (!odd) {
-            // $A000 (even) — Mirroring (ignored on 4-screen carts)
+        if (!odd)
             map->mirroring = (data & 0x01) ? MIRROR_HORIZONTAL : MIRROR_VERTICAL;
-        }
-        // $A001 (odd) — PRG-RAM Protect (accept but ignore for compatibility)
+        // $A001: PRG-RAM protect — accepted but ignored
     } else if (addr <= 0xDFFF) {
         if (!odd) {
-            // $C000 (even) — IRQ Latch
-            mmc3.irq_latch = data;
+            ctx->irq_latch = data;
         } else {
-            // $C001 (odd) — IRQ Reload: zero counter + request reload on next A12
-            mmc3.irq_counter = 0;
-            mmc3.irq_reload  = 1;
+            ctx->irq_counter = 0;
+            ctx->irq_reload  = 1;
         }
     } else {
         if (!odd) {
-            // $E000 (even) — IRQ Disable + Acknowledge
-            mmc3.irq_enabled = 0;
+            ctx->irq_enabled = 0;
             map->irq_pending = 0;
         } else {
-            // $E001 (odd) — IRQ Enable
-            mmc3.irq_enabled = 1;
+            ctx->irq_enabled = 1;
         }
     }
 }
@@ -191,33 +176,28 @@ void mapper_004_cpu_write(struct mapper *map, uint16_t addr, uint8_t data) {
 // ---------------------------------------------------------------------------
 
 uint8_t mapper_004_ppu_read(struct mapper *map, uint16_t addr) {
-    if (addr > 0x1FFF) return 0;
+    struct mmc3_ctx *ctx = map->ctx;
 
+    if (addr > 0x1FFF) return 0;
     if (!map->cartridge->chr_rom) return 0;
 
-    // CHR-RAM: single 8 KB bank, no banking
-    if (map->num_chr_rom == 0 || map->cartridge->chr_ram_allocated) {
+    if (map->num_chr_rom == 0 || map->cartridge->chr_ram_allocated)
         return map->cartridge->chr_rom[addr & 0x1FFF];
-    }
 
-    uint16_t num_1kb = (uint16_t)map->num_chr_rom * 8;  // iNES CHR bank = 8 KB = 8 × 1 KB
-    uint16_t bank    = resolve_chr_bank(addr, num_1kb);
+    uint16_t num_1kb = (uint16_t)map->num_chr_rom * 8;
+    uint16_t bank    = resolve_chr_bank(ctx, addr, num_1kb);
     uint32_t offset  = (uint32_t)bank * 0x0400 + (addr & 0x03FF);
 
-    if (offset < map->cartridge->chr_rom_len) {
+    if (offset < map->cartridge->chr_rom_len)
         return map->cartridge->chr_rom[offset];
-    }
     return 0;
 }
 
 void mapper_004_ppu_write(struct mapper *map, uint16_t addr, uint8_t data) {
     if (!map || !map->cartridge) return;
     if (addr > 0x1FFF) return;
-
-    // Only CHR-RAM carts accept PPU writes
     if (!map->cartridge->chr_ram_allocated) return;
 
-    if (map->cartridge->chr_rom) {
+    if (map->cartridge->chr_rom)
         map->cartridge->chr_rom[addr & 0x1FFF] = data;
-    }
 }
