@@ -400,10 +400,17 @@ void ui_render_frame(struct ui_context *ui, struct display_context *display) {
             render_menu_view(ui, display);
             render_menu_help(ui);
 
-            /* FPS counter right-aligned in the menu bar */
+            /* FPS counter right-aligned in the menu bar, with speed annotation
+             * when running at a non-default multiplier. */
             if (ui->show_fps) {
-                char buf[24];
-                snprintf(buf, sizeof(buf), "%.1f FPS", ui->fps);
+                char buf[40];
+                if (ui->speed_multiplier < 0.0f)
+                    snprintf(buf, sizeof(buf), "%.1f FPS [>>]", ui->fps);
+                else if (ui->speed_multiplier != 1.0f)
+                    snprintf(buf, sizeof(buf), "%.1f FPS [%.0f%%]",
+                             ui->fps, ui->speed_multiplier * 100.0f);
+                else
+                    snprintf(buf, sizeof(buf), "%.1f FPS", ui->fps);
                 float tw = ImGui::CalcTextSize(buf).x +
                            ImGui::GetStyle().ItemSpacing.x * 2.0f;
                 ImGui::SetCursorPosX(ImGui::GetWindowWidth() - tw);

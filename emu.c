@@ -181,6 +181,12 @@ int main(int argc, char *argv[]) {
             break;
         }
 
+        /* Tab held = uncapped fast-forward; otherwise use the menu selection. */
+        const uint8_t *kb = SDL_GetKeyboardState(NULL);
+        float effective_speed = kb[SDL_SCANCODE_TAB]
+                                    ? -1.0f
+                                    : ui_get_speed_multiplier(ui);
+
         if (!display_is_paused(display)) {
             ppu->frame_complete = 0;
 
@@ -203,15 +209,19 @@ int main(int argc, char *argv[]) {
                 tick_count++;
             }
 
-            /* Backpressure: block until the audio callback has drained enough
-             * of the ring buffer that we're no longer running ahead of
-             * real-time. The audio hardware consumes at a fixed 44100 Hz rate,
-             * so this naturally throttles the emulator to ~60 Hz without any
-             * fixed SDL_Delay. Only active when audio is open. */
-            if (audio_dev != 0) {
+            /* Speed throttle:
+             *   ≤100%  — audio backpressure locks us to real-time.
+             *   >100% or uncapped/Tab — no throttle; run as fast as possible.
+             *   50%    — extra per-frame delay on top of backpressure to halve
+             *            the frame rate (~33 ms/frame → ~30 fps). */
+            if (audio_dev != 0 && effective_speed > 0.0f &&
+                effective_speed <= 1.0f) {
                 while (apu_ring_available(bus->apu) > APU_RING_SIZE * 3 / 4) {
                     SDL_Delay(1);
                 }
+            }
+            if (effective_speed > 0.0f && effective_speed < 1.0f) {
+                SDL_Delay((uint32_t)(16.0f / effective_speed) - 16u);
             }
 
             frame_count++;
