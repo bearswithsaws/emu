@@ -57,8 +57,16 @@ target_include_directories(test_mapper_066 PRIVATE
 )
 
 add_executable(test_mapper_007 test_mapper_007.c)
+
+add_executable(test_mapper_009 test_mapper_009.c)
 target_link_libraries(test_mapper_007 PRIVATE lib6502)
 target_include_directories(test_mapper_007 PRIVATE
+    "${PROJECT_SOURCE_DIR}/arch/6502"
+    "${PROJECT_BINARY_DIR}"
+)
+
+target_link_libraries(test_mapper_009 PRIVATE lib6502)
+target_include_directories(test_mapper_009 PRIVATE
     "${PROJECT_SOURCE_DIR}/arch/6502"
     "${PROJECT_BINARY_DIR}"
 )
@@ -81,6 +89,7 @@ add_test(NAME mapper_002   COMMAND test_mapper_002)
 add_test(NAME mapper_003   COMMAND test_mapper_003)
 add_test(NAME mapper_004   COMMAND test_mapper_004)
 add_test(NAME mapper_007   COMMAND test_mapper_007)
+add_test(NAME mapper_009   COMMAND test_mapper_009)
 add_test(NAME mapper_011   COMMAND test_mapper_011)
 add_test(NAME mapper_066   COMMAND test_mapper_066)
 add_test(NAME cpu_nestest  COMMAND test_cpu_nestest)
