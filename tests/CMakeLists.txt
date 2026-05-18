@@ -81,6 +81,13 @@ target_compile_definitions(test_cpu_nestest PRIVATE
     NESTEST_ROM_PATH="${CMAKE_SOURCE_DIR}/tests/roms/nestest.nes"
 )
 
+add_executable(test_disasm test_disasm.c)
+target_link_libraries(test_disasm PRIVATE lib6502)
+target_include_directories(test_disasm PRIVATE
+    "${PROJECT_SOURCE_DIR}/arch/6502"
+    "${PROJECT_BINARY_DIR}"
+)
+
 enable_testing()
 add_test(NAME ppu_clock    COMMAND test_ppu_clock)
 add_test(NAME apu          COMMAND test_apu)
@@ -93,3 +100,4 @@ add_test(NAME mapper_009   COMMAND test_mapper_009)
 add_test(NAME mapper_011   COMMAND test_mapper_011)
 add_test(NAME mapper_066   COMMAND test_mapper_066)
 add_test(NAME cpu_nestest  COMMAND test_cpu_nestest)
+add_test(NAME disasm       COMMAND test_disasm)

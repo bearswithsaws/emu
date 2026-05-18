@@ -16,6 +16,7 @@
 
 #include "debug.h"
 #include "savestate.h"
+#include "disasm.h"
 
 static struct nesbus *bus;
 static struct cpu6502 *cpu;
@@ -24,6 +25,40 @@ static struct ui_context *ui;
 static SDL_AudioDeviceID audio_dev = 0;
 static struct nes_cartridge *cartridge_global = NULL;
 static struct display_context *display_global = NULL;
+static uint64_t tick_count_global = 0;
+
+/* Run one NES clock tick: 3 PPU cycles + 1 CPU cycle + 1 APU cycle. */
+static void emu_tick(void) {
+    ppu->clock();
+    ppu->clock();
+    ppu->clock();
+    if (bus->dma_halt_cycles > 0) {
+        bus->dma_halt_cycles--;
+    } else {
+        cpu->clock();
+    }
+    apu_clock(bus->apu);
+    if (apu_irq_pending(bus->apu)) {
+        cpu->irq();
+    }
+    tick_count_global++;
+}
+
+/* Step exactly one CPU instruction (finishes any partial instruction first). */
+static void emu_step_one(void) {
+    /* Complete any partially-executed instruction (multi-cycle). */
+    while (cpu->cycles > 0) emu_tick();
+    /* Fetch and execute exactly one instruction. */
+    do { emu_tick(); } while (cpu->cycles > 0);
+}
+
+/* Step over: run instructions until PC reaches target. */
+static void emu_step_over(uint16_t target) {
+    for (int guard = 0; guard < 100000; guard++) {
+        emu_step_one();
+        if (cpu->PC == target) break;
+    }
+}
 
 static void emu_soft_reset(void *userdata) {
     (void)userdata;
@@ -76,7 +111,6 @@ static void emu_load_rom(const char *path, void *userdata) {
 int main(int argc, char *argv[]) {
     struct display_context *display;
     uint8_t buf[0x100];
-    uint64_t tick_count = 0;
     uint32_t frame_count = 0;
 
     printf("NES Emulator version %d.%d\n", emu_VERSION_MAJOR,
@@ -110,6 +144,7 @@ int main(int argc, char *argv[]) {
         .userdata       = NULL,
     };
     ui = ui_init(display, &ui_cbs);
+    ui_set_debug_context(ui, cpu, ppu, bus);
 
     /* Open SDL2 audio after the bus (and APU) are initialised so we can
      * calibrate cycles_per_sample to the actual device frequency. */
@@ -186,54 +221,57 @@ int main(int argc, char *argv[]) {
                                     ? -1.0f
                                     : ui_get_speed_multiplier(ui);
 
-        if (cartridge_global != NULL && !display_is_paused(display)) {
-            ppu->frame_complete = 0;
-
-            while (!ppu->frame_complete) {
-                ppu->clock();
-                ppu->clock();
-                ppu->clock();
-
-                if (bus->dma_halt_cycles > 0) {
-                    bus->dma_halt_cycles--;
-                } else {
-                    cpu->clock();
-                }
-                apu_clock(bus->apu);
-
-                if (apu_irq_pending(bus->apu)) {
-                    cpu->irq();
-                }
-
-                tick_count++;
+        if (cartridge_global != NULL) {
+            /* --- Debugger step controls (processed while paused) --- */
+            uint16_t step_over_target;
+            if (ui_debugger_consume_step(ui)) {
+                emu_step_one();
+                display_set_paused(display, 1);
+            } else if (ui_debugger_consume_step_over(ui, &step_over_target)) {
+                emu_step_over(step_over_target);
+                display_set_paused(display, 1);
             }
 
-            if (audio_dev != 0 && effective_speed > 0.0f &&
-                effective_speed <= 1.0f) {
-                while (apu_ring_available(bus->apu) > APU_RING_SIZE * 3 / 4) {
-                    SDL_Delay(1);
+            /* --- Normal frame emulation (only when running) --- */
+            if (!display_is_paused(display)) {
+                ppu->frame_complete = 0;
+
+                while (!ppu->frame_complete) {
+                    emu_tick();
+
+                    /* Breakpoint check: pause if PC matches any breakpoint. */
+                    if (ui_debugger_is_breakpoint(ui, cpu->PC)) {
+                        display_set_paused(display, 1);
+                    }
                 }
-            }
-            if (effective_speed > 0.0f && effective_speed < 1.0f) {
-                SDL_Delay((uint32_t)(16.0f / effective_speed) - 16u);
-            }
 
-            frame_count++;
+                if (audio_dev != 0 && effective_speed > 0.0f &&
+                    effective_speed <= 1.0f) {
+                    while (apu_ring_available(bus->apu) > APU_RING_SIZE * 3 / 4) {
+                        SDL_Delay(1);
+                    }
+                }
+                if (effective_speed > 0.0f && effective_speed < 1.0f) {
+                    SDL_Delay((uint32_t)(16.0f / effective_speed) - 16u);
+                }
 
-            if (frame_count % 60 == 0) {
-                printf("Frame: %u, Ticks: %llu, PC: 0x%04X\n", frame_count,
-                       (unsigned long long)tick_count, cpu->PC);
+                frame_count++;
+                if (frame_count % 60 == 0) {
+                    printf("Frame: %u, Ticks: %llu, PC: 0x%04X\n", frame_count,
+                           (unsigned long long)tick_count_global, cpu->PC);
+                }
             }
         } else if (cartridge_global == NULL) {
             /* No ROM loaded — yield the CPU so we don't spin at 100%. */
             SDL_Delay(16);
         }
 
+        ui_debugger_update_cycles(ui, tick_count_global);
         ui_render_frame(ui, display);
     }
 
     printf("Emulation stopped. Total frames: %u, Total ticks: %llu\n",
-           frame_count, (unsigned long long)tick_count);
+           frame_count, (unsigned long long)tick_count_global);
 
     if (audio_dev != 0) {
         SDL_CloseAudioDevice(audio_dev);
