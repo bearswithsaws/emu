@@ -221,8 +221,8 @@ int main(int argc, char *argv[]) {
             frame_count++;
 
             if (frame_count % 60 == 0) {
-                printf("Frame: %u, Ticks: %lu, PC: 0x%04X\n", frame_count,
-                       tick_count, cpu->PC);
+                printf("Frame: %u, Ticks: %llu, PC: 0x%04X\n", frame_count,
+                       (unsigned long long)tick_count, cpu->PC);
             }
         } else if (cartridge_global == NULL) {
             /* No ROM loaded — yield the CPU so we don't spin at 100%. */
@@ -232,8 +232,8 @@ int main(int argc, char *argv[]) {
         ui_render_frame(ui, display);
     }
 
-    printf("Emulation stopped. Total frames: %u, Total ticks: %lu\n",
-           frame_count, tick_count);
+    printf("Emulation stopped. Total frames: %u, Total ticks: %llu\n",
+           frame_count, (unsigned long long)tick_count);
 
     if (audio_dev != 0) {
         SDL_CloseAudioDevice(audio_dev);
