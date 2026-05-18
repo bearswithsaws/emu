@@ -11,9 +11,6 @@
 
 static struct nesbus bus = {0};
 
-// 2 kilobytes ram fir the NES
-#define NES_RAM_SIZE (2 * 1024)
-
 static uint8_t ram[NES_RAM_SIZE] = {0};
 
 // Controllers
@@ -125,3 +122,6 @@ struct nesbus *nesbus_init(struct cpu6502 *cpu, struct ppu2c02 *ppu) {
 
     return &bus;
 }
+
+void nesbus_get_ram(uint8_t *buf) { memcpy(buf, ram, NES_RAM_SIZE); }
+void nesbus_set_ram(const uint8_t *buf) { memcpy(ram, buf, NES_RAM_SIZE); }

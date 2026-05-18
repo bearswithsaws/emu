@@ -34,6 +34,7 @@ void mapper_007_ppu_write(struct mapper *map, uint16_t addr, uint8_t data) {
 }
 
 void mapper_007_init(struct mapper *map) {
-    map->ctx = calloc(1, sizeof(uint8_t));
+    map->ctx      = calloc(1, sizeof(uint8_t));
+    map->ctx_size = sizeof(uint8_t);
     map->mirroring = MIRROR_SINGLE_LO;
 }

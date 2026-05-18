@@ -35,7 +35,8 @@ struct mapper {
     uint8_t mirroring;          // one of MIRROR_* above; updated dynamically by mapper
     uint8_t irq_pending;        // set by mapper to request a CPU IRQ; cleared by cpu.irq()
     fp_mapper_scanline scanline; // PPU scanline hook — NULL if unused
-    void *ctx;                  // per-mapper private state (allocated by mapper init)
+    void    *ctx;               // per-mapper private state (allocated by mapper init)
+    uint32_t ctx_size;          // sizeof(*ctx), set by mapper init; 0 if no ctx
 };
 
 struct mapper *mapper_init(struct nes_cartridge *cartridge);
