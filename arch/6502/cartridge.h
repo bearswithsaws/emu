@@ -93,6 +93,8 @@ typedef void (*fp_connect_cartridge)(struct nes_cartridge *cartridge);
 
 struct nes_cartridge *load_rom(const char *filename);
 
+void cartridge_free(struct nes_cartridge *cartridge);
+
 void cartridge_info(struct nes_cartridge *cartridge);
 
 #endif /* __CARTRIDGE_H__ */

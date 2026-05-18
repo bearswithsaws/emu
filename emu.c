@@ -234,7 +234,7 @@ int main(int argc, char *argv[]) {
     ui_shutdown(ui);
     display_cleanup(display);
 
-    // TODO: Add proper cleanup for cartridge, bus, cpu, ppu
+    cartridge_free(cartridge);
 
     return EXIT_SUCCESS;
 }

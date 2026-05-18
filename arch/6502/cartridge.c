@@ -76,6 +76,17 @@ static void cpu_write(struct nes_cartridge *cart, uint16_t addr, uint8_t data) {
     cart->map->cpu_write(cart->map, addr, data);
 }
 
+void cartridge_free(struct nes_cartridge *cart) {
+    if (!cart)
+        return;
+    if (cart->map && cart->map->ctx)
+        free(cart->map->ctx);
+    if (cart->chr_ram_allocated && cart->chr_rom)
+        free(cart->chr_rom);
+    free(cart->raw_data);
+    free(cart);
+}
+
 struct nes_cartridge *load_rom(const char *filename) {
     FILE *f = NULL;
     long file_size;
