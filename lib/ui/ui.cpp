@@ -324,7 +324,7 @@ static void render_about_popup() {
         ImGui::Text("CPU:     MOS 6502 / 2A03");
         ImGui::Text("PPU:     Ricoh 2C02");
         ImGui::Text("APU:     2A03 (all 5 channels)");
-        ImGui::Text("Mappers: 0, 1, 2, 3, 4");
+        ImGui::Text("Mappers: 0, 1, 2, 3, 4, 7, 11, 66");
         ImGui::Spacing();
         if (ImGui::Button("Close", ImVec2(120, 0)))
             ImGui::CloseCurrentPopup();

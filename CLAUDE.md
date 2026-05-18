@@ -26,7 +26,7 @@ This is a Nintendo Entertainment System (NES) emulator written in C using SDL2 f
 ### Design Goals
 - Cycle-accurate CPU emulation
 - Scanline-accurate PPU rendering
-- Support for common mappers (starting with Mapper 0, 1, 2, 3)
+- Support for common mappers (0, 1, 2, 3, 4, 7, 11, 66 implemented)
 - Cross-platform support (Linux and Windows)
 - Maintainable, well-documented code
 
@@ -337,6 +337,57 @@ Offset  Size  Description
 
 **Compatible Games:** ~600+ games including Super Mario Bros. 3, Mega Man 3/4/5/6, Contra, Kirby's Adventure, Ninja Gaiden
 
+#### Mapper 007 - AxROM ([arch/6502/mapper_007.c](arch/6502/mapper_007.c))
+
+**Status:** ✅ Complete (2026-05-18) — 7 unit tests, 13 assertions passing
+
+**Implemented:**
+- ✅ Switchable 32KB PRG bank at $8000-$FFFF (bits 0-2 of register)
+- ✅ CHR-RAM 8KB (PPU read/write)
+- ✅ Single-screen mirroring via bit 4 (0 = MIRROR_SINGLE_LO, 1 = MIRROR_SINGLE_HI)
+
+**Specifications:**
+- PRG-ROM: Up to 256KB (32KB switchable)
+- CHR-RAM: 8KB (no banking)
+- Single-screen mirroring switchable mid-game
+
+**Compatible Games:** ~75 games including Battletoads, Marble Madness, Wizards & Warriors
+
+#### Mapper 011 - Color Dreams ([arch/6502/mapper_011.c](arch/6502/mapper_011.c))
+
+**Status:** ✅ Complete (2026-05-18) — 6 unit tests, 12 assertions passing
+
+**Implemented:**
+- ✅ Switchable 32KB PRG bank (bits 0-1 of register)
+- ✅ Switchable 8KB CHR bank (bits 4-7 of register)
+- ✅ Both banks selected by single write to $8000-$FFFF
+- ✅ Fixed mirroring (set by iNES header)
+
+**Specifications:**
+- PRG-ROM: Up to 128KB (32KB switchable)
+- CHR-ROM: Up to 128KB (8KB switchable)
+- Single register controls both PRG and CHR banks
+
+**Compatible Games:** ~28 unlicensed games including Bible Adventures, Spiritual Warfare
+
+#### Mapper 066 - GxROM ([arch/6502/mapper_066.c](arch/6502/mapper_066.c))
+
+**Status:** ✅ Complete (2026-05-18) — 6 unit tests, 11 assertions passing
+
+**Implemented:**
+- ✅ Switchable 32KB PRG bank (bits 4-5 of register)
+- ✅ Switchable 8KB CHR bank (bits 0-1 of register)
+- ✅ Both banks selected by single write to $8000-$FFFF
+- ✅ CHR writes to ROM are no-ops
+- ✅ Fixed mirroring (set by iNES header)
+
+**Specifications:**
+- PRG-ROM: Up to 128KB (32KB switchable)
+- CHR-ROM: Up to 32KB (8KB switchable)
+- Single register controls both PRG and CHR banks
+
+**Compatible Games:** ~17 games including Gumshoe, Dragon Power, Super Mario Bros. + Duck Hunt
+
 ### NES Bus ([arch/6502/nesbus.c](arch/6502/nesbus.c))
 
 **Implementation Status:** ~85% complete
@@ -348,8 +399,8 @@ Offset  Size  Description
 - Cartridge routing ($4020-$FFFF)
 - APU register routing ($4000-$4017)
 
-**Not Implemented:**
-- DMA transfer ($4014)
+**Implemented:**
+- OAM DMA ($4014) — synchronous 256-byte copy + 513-cycle CPU halt enforced in main loop
 
 ---
 
@@ -525,6 +576,11 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
     - View: Scale 1×–4×, Fullscreen (F11), Show FPS Overlay, Toggle Menubar (F1)
     - Help: Controls Reference popup, About popup (version from emu_config.h)
   - ✅ Window scale/fullscreen/title control (display helpers added to lib/display/)
+  - ✅ **ROM launcher splash screen** (2026-05-18, issues #50/#102) — shown when no ROM is loaded; "Drop a .nes file here / Open ROM… / Recent ROMs"; disappears on load
+  - ✅ **Drag-and-drop** (2026-05-18) — SDL_DROPFILE captured in event hook, ROM loaded on next frame
+  - ✅ **Speed control** (2026-05-18, issue #58) — 50%/100%/200%/Uncapped via Emulation menu; Tab held = uncapped fast-forward
+  - ✅ **Optional ROM argument** (2026-05-18, issue #102) — emulator starts in idle state if no ROM path given; idle loop yields 16 ms/frame
+  - ✅ **Windows build** (2026-05-18, issue #102) — -mwindows suppresses console; SDL2.dll + libwinpthread-1.dll copied next to exe at build time
   - ⚠️ Old gui.c/gui.h removed, replaced with modular display library
 
 - **Mapper 001 (MMC1)** ✅ Complete (2026-05-17)
@@ -534,6 +590,12 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
 - **Mappers 002/003/004** ✅ Complete (2026-05-17)
   - UxROM (002), CNROM (003), MMC3 (004) fully implemented and unit-tested
   - 40 new assertions across 3 test files — all passing
+
+- **Mappers 007/011/066** ✅ Complete (2026-05-18)
+  - AxROM (007): 32KB switchable PRG, CHR-RAM, single-screen mirroring switch
+  - Color Dreams (011): 32KB PRG + 8KB CHR both banked via single register write
+  - GxROM (066): 32KB PRG + 8KB CHR both banked via single register write
+  - 36 new assertions across 3 test files — all passing
 
 - **Frame Timing** (100% complete)
   - ✅ 60 Hz frame rate via PPU
@@ -554,8 +616,8 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
   - PPU_RENDERING_PIPELINE.md
   - PPU_IMPLEMENTATION_COMPARISON.md
   - BUGFIXES_APPLIED.md
-- ✅ Unit tests: PPU clock (13 tests, 65 assertions), Mapper 001 (11 tests, 23 assertions), Mapper 002 (6 tests, 10 assertions), Mapper 003 (6 tests, 11 assertions), Mapper 004 (10 tests, 19 assertions), APU (8 tests, 72 assertions), CPU nestest integration test — **7 test suites, all passing**
-- ✅ Documentation (CLAUDE.md updated 2026-05-17)
+- ✅ Unit tests: PPU clock (13 tests, 65 assertions), Mapper 001 (11 tests, 23 assertions), Mapper 002 (6 tests, 10 assertions), Mapper 003 (6 tests, 11 assertions), Mapper 004 (10 tests, 19 assertions), Mapper 007 (7 tests, 13 assertions), Mapper 011 (6 tests, 12 assertions), Mapper 066 (6 tests, 11 assertions), APU (8 tests, 72 assertions), CPU nestest integration test — **10 test suites, all passing**
+- ✅ Documentation (CLAUDE.md updated 2026-05-18)
 
 ---
 
@@ -568,7 +630,7 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
 - ~~**Coarse X increment timing off by one cycle**~~ ✅ **Fixed 2025-11-12** - Eliminated 8-pixel viewport offset
 
 ### High Priority (Remaining)
-1. **Real-game ROM testing** - All mappers 0-4 implemented; none have been verified with actual ROMs yet
+1. **Real-game ROM testing** - Mappers 0-4, 7, 11, 66 implemented; none have been verified with actual ROMs yet
 
 ### Medium Priority
 1. **Global static variables** - Only one emulator instance possible
@@ -621,6 +683,56 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
 ---
 
 ## Recent Work
+
+### 2026-05-18 Session: Windows DLL Bundling (Issue #102)
+
+**Problem:** `emu.exe` launched from Explorer failed with missing `libwinpthread-1.dll` (and previously `SDL2.dll`). Static-linking pthread in emu.exe does not help because `SDL2.dll` itself carries a runtime dependency on `libwinpthread-1.dll` that Windows resolves independently.
+
+**Fix:** CMake `POST_BUILD` step loops over a list of required DLLs and copies each one alongside `emu.exe` using `find_file` to locate them in the MinGW bin path.
+
+**Files modified:**
+- `CMakeLists.txt` — MINGW block: `-mwindows -static-libgcc -static-libstdc++` linker flags; `foreach` loop copying `SDL2.dll` and `libwinpthread-1.dll` to `$<TARGET_FILE_DIR:emu>` at build time
+
+**Note:** Issue #64 (Windows release packaging) will replace this with an `ntldd`-based full dependency walk in the GitHub Actions workflow so the list never needs manual maintenance.
+
+### 2026-05-18 Session: ROM Launcher, Idle State, Drag-and-Drop (Issues #50, #102)
+
+**ROM argument is now optional.** The emulator starts in an idle splash state and works as a proper GUI application launched from Explorer or a desktop shortcut.
+
+**Features added:**
+- **No-ROM splash panel** (`lib/ui/ui.cpp`) — Dear ImGui overlay centered in the game viewport: "Drop a .nes file here / — or — / Open ROM… / Recent ROMs". Disappears the moment a ROM is loaded. Rendered via `render_no_rom_splash()`.
+- **Drag-and-drop** — `SDL_DROPFILE` events captured in `sdl_event_hook` (which now receives `ui` as userdata), path stored in `ui_context::pending_drop_path`, processed at the start of the next `ui_render_frame`.
+- **Optional ROM argument** (`emu.c`) — removed hard exit when `argc < 2`; all init runs unconditionally; ROM load + boot sequence only run if a path is given.
+- **Idle yield** — main loop sleeps 16 ms/frame when `cartridge_global == NULL` instead of spinning at 100%.
+- **nesbus null-cart guard** — `nesbus.c` read/write paths now check `bus.cart != NULL` before dereferencing, returning `0xFF` on reads when no cartridge is connected.
+
+**Files modified:** `emu.c`, `lib/ui/ui.cpp`, `lib/ui/ui.h`, `lib/display/display.c`, `arch/6502/nesbus.c`, `CMakeLists.txt`
+
+### 2026-05-18 Session: Speed Control + Tab Fast-Forward (Issue #58)
+
+**Speed menu fully wired to the emulation loop.**
+
+- **Menu selection** (`lib/ui/ui.cpp`) — `speed_multiplier` set to 0.5/1.0/2.0/-1.0 (uncapped) via Emulation → Speed sub-menu with checkmarks.
+- **Main loop** (`emu.c`) — reads `ui_get_speed_multiplier(ui)` each frame; 50% adds extra `SDL_Delay` on top of audio backpressure; >100% or -1.0 removes throttle entirely.
+- **Tab fast-forward** — holding Tab overrides the menu selection to uncapped speed for instant fast-forward without changing the persistent setting.
+
+**Files modified:** `emu.c`, `lib/ui/ui.cpp`
+
+### 2026-05-18 Session: Mappers 007, 011, 066
+
+**Three new mappers implemented and unit-tested.**
+
+**New files:**
+- `arch/6502/mapper_007.c/.h` — AxROM: 32KB switchable PRG, CHR-RAM, single-screen mirroring via bit 4
+- `arch/6502/mapper_011.c/.h` — Color Dreams: 32KB PRG + 8KB CHR both banked by single write to $8000-$FFFF
+- `arch/6502/mapper_066.c/.h` — GxROM: 32KB PRG (bits 4-5) + 8KB CHR (bits 0-1) banked by single write; CHR writes to ROM are no-ops
+- `tests/test_mapper_007.c` — 7 tests, 13 assertions (all passing)
+- `tests/test_mapper_011.c` — 6 tests, 12 assertions (all passing)
+- `tests/test_mapper_066.c` — 6 tests, 11 assertions (all passing)
+
+**Cartridge cleanup:** mapper dispatch table and `cartridge.c` updated to register all three new mappers.
+
+**Total test suite: 10 suites, all passing.**
 
 ### 2026-05-17 Session: ImGui Menu Bar (Issue #49)
 
@@ -788,12 +900,15 @@ All illegal NOP opcodes that consume operand bytes ($04, $0C, $14, $1C, $34, $3C
 - [X] ~~Implement APU noise channel~~ ✅ Complete (2026-05-17)
 - [X] ~~Implement APU DMC~~ ✅ Complete (2026-05-17)
 - [X] ~~Add Mappers 2, 3, 4~~ ✅ Complete (2026-05-17) — UxROM, CNROM, MMC3 all implemented and unit-tested
+- [X] ~~Add Mappers 7, 11, 66~~ ✅ Complete (2026-05-18) — AxROM, Color Dreams, GxROM all implemented and unit-tested
+- [ ] Add Mapper 9 (PxROM / MMC2) — Punch-Out!! (requires PPU tile-fetch hook for CHR latch)
 
 ### Phase 3: Quality of Life
 - [ ] Save state support (serialize all state)
 - [X] ~~ROM browser GUI~~ ✅ Complete (2026-05-17) — native file picker + Recent ROMs list via ImGui menu bar
+- [X] ~~ROM launcher splash / idle state~~ ✅ Complete (2026-05-18, issue #50) — shown on startup with no ROM; drag-and-drop supported
 - [X] ~~Pause/reset controls~~ ✅ Complete (2026-05-17) — wired through Emulation menu
-- [ ] Fast forward / slow motion (Speed menu items exist; core loop hookup pending)
+- [X] ~~Fast forward / slow motion~~ ✅ Complete (2026-05-18, issue #58) — Speed menu (50%/100%/200%/Uncapped) + Tab key for instant fast-forward
 - [ ] Screenshot capture
 
 ### Phase 4: Advanced Features
@@ -808,7 +923,7 @@ All illegal NOP opcodes that consume operand bytes ($04, $0C, $14, $1C, $34, $3C
 - [ ] PPU open bus behavior
 - [ ] Sprite overflow flag accuracy
 - [ ] APU sweep unit edge cases
-- [ ] More mappers (5, 7, 9, 11, etc.)
+- [ ] More mappers (5, 9, etc.)
 - [ ] Pass test ROM suites (blargg's tests, etc.)
 
 ---
@@ -844,5 +959,5 @@ TODO: Add contribution guidelines
 
 ---
 
-**Last Updated:** 2025-11-12
+**Last Updated:** 2026-05-18
 **Emulator Version:** 0.1.0 (pre-alpha)
