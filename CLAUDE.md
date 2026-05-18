@@ -26,7 +26,7 @@ This is a Nintendo Entertainment System (NES) emulator written in C using SDL2 f
 ### Design Goals
 - Cycle-accurate CPU emulation
 - Scanline-accurate PPU rendering
-- Support for common mappers (0, 1, 2, 3, 4, 7, 11, 66 implemented)
+- Support for common mappers (0, 1, 2, 3, 4, 7, 9, 11, 66 implemented)
 - Cross-platform support (Linux and Windows)
 - Maintainable, well-documented code
 
@@ -388,6 +388,27 @@ Offset  Size  Description
 
 **Compatible Games:** ~17 games including Gumshoe, Dragon Power, Super Mario Bros. + Duck Hunt
 
+#### Mapper 009 - PxROM / MMC2 ([arch/6502/mapper_009.c](arch/6502/mapper_009.c))
+
+**Status:** ✅ Complete (2026-05-18) — 10 unit tests, 24 assertions passing
+
+**Implemented:**
+- ✅ Switchable 8KB PRG bank at $8000-$9FFF (4-bit register via $A000-$AFFF)
+- ✅ Fixed last three 8KB PRG banks at $A000-$BFFF, $C000-$DFFF, $E000-$FFFF
+- ✅ Two 4KB CHR windows each driven by a FD/FE latch
+- ✅ Four CHR bank registers (lo/FD, lo/FE, hi/FD, hi/FE) selectable via $B000-$EFFF
+- ✅ CHR latch triggers: reads at $0FD0-$0FDF → latch0=FD, $0FE0-$0FEF → latch0=FE, $1FD0-$1FDF → latch1=FD, $1FE0-$1FEF → latch1=FE (latch fires after the read returns)
+- ✅ Power-up latch state: both latches = FE
+- ✅ Dynamic mirroring (H/V) via $F000 bit 0
+- ✅ 10 unit tests — all passing
+
+**Specifications:**
+- PRG-ROM: 128KB (8KB switchable + three fixed 8KB banks)
+- CHR-ROM: 128KB (two 4KB switchable windows with latch-controlled bank selection)
+- Latch mechanism: CHR bank switches mid-render when PPU fetches tile $FD or $FE
+
+**Compatible Games:** Punch-Out!!, Mike Tyson's Punch-Out!!
+
 ### NES Bus ([arch/6502/nesbus.c](arch/6502/nesbus.c))
 
 **Implementation Status:** ~85% complete
@@ -591,11 +612,12 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
   - UxROM (002), CNROM (003), MMC3 (004) fully implemented and unit-tested
   - 40 new assertions across 3 test files — all passing
 
-- **Mappers 007/011/066** ✅ Complete (2026-05-18)
+- **Mappers 007/009/011/066** ✅ Complete (2026-05-18)
   - AxROM (007): 32KB switchable PRG, CHR-RAM, single-screen mirroring switch
+  - PxROM/MMC2 (009): 8KB switchable + 3 fixed PRG banks; two 4KB CHR windows with FD/FE latch — completes mapper epic
   - Color Dreams (011): 32KB PRG + 8KB CHR both banked via single register write
   - GxROM (066): 32KB PRG + 8KB CHR both banked via single register write
-  - 36 new assertions across 3 test files — all passing
+  - 60 new assertions across 4 test files — all passing
 
 - **Frame Timing** (100% complete)
   - ✅ 60 Hz frame rate via PPU
@@ -616,7 +638,7 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
   - PPU_RENDERING_PIPELINE.md
   - PPU_IMPLEMENTATION_COMPARISON.md
   - BUGFIXES_APPLIED.md
-- ✅ Unit tests: PPU clock (13 tests, 65 assertions), Mapper 001 (11 tests, 23 assertions), Mapper 002 (6 tests, 10 assertions), Mapper 003 (6 tests, 11 assertions), Mapper 004 (10 tests, 19 assertions), Mapper 007 (7 tests, 13 assertions), Mapper 011 (6 tests, 12 assertions), Mapper 066 (6 tests, 11 assertions), APU (8 tests, 72 assertions), CPU nestest integration test — **10 test suites, all passing**
+- ✅ Unit tests: PPU clock (13 tests, 65 assertions), Mapper 001 (11 tests, 23 assertions), Mapper 002 (6 tests, 10 assertions), Mapper 003 (6 tests, 11 assertions), Mapper 004 (10 tests, 19 assertions), Mapper 007 (7 tests, 13 assertions), Mapper 009 (10 tests, 24 assertions), Mapper 011 (6 tests, 12 assertions), Mapper 066 (6 tests, 11 assertions), APU (8 tests, 72 assertions), CPU nestest integration test — **11 test suites, all passing**
 - ✅ Documentation (CLAUDE.md updated 2026-05-18)
 
 ---
@@ -717,6 +739,25 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
 - **Tab fast-forward** — holding Tab overrides the menu selection to uncapped speed for instant fast-forward without changing the persistent setting.
 
 **Files modified:** `emu.c`, `lib/ui/ui.cpp`
+
+### 2026-05-18 Session: Mapper 009 (PxROM / MMC2) — closes mapper epic #80
+
+**Mapper 009 implemented and unit-tested. Completes the Additional Mappers epic.**
+
+MMC2's distinguishing feature is the CHR latch: each of the two 4 KB CHR windows selects between two possible banks (FD-slot and FE-slot) controlled by a latch that fires automatically when the PPU fetches tiles $FD or $FE from CHR-ROM. The latch update is implemented entirely inside `mapper_009_ppu_read()` with no PPU changes required — it checks the read address after returning data and updates the latch in-place.
+
+**New files:**
+- `arch/6502/mapper_009.c/.h` — PxROM/MMC2: 8KB switchable PRG + three fixed 8KB banks; two 4KB CHR windows with FD/FE latch-controlled bank selection; dynamic H/V mirroring
+- `tests/test_mapper_009.c` — 10 tests, 24 assertions (all passing)
+
+**Modified:**
+- `arch/6502/mapper.c` — case 9 added to mapper dispatch table
+- `arch/6502/CMakeLists.txt` — `mapper_009.c` added to lib6502
+- `tests/CMakeLists.txt` — `test_mapper_009` target and `mapper_009` CTest entry added
+
+**Total test suite: 11 suites, all passing.**
+
+**Compatible games:** Punch-Out!!, Mike Tyson's Punch-Out!!
 
 ### 2026-05-18 Session: Mappers 007, 011, 066
 
@@ -901,7 +942,7 @@ All illegal NOP opcodes that consume operand bytes ($04, $0C, $14, $1C, $34, $3C
 - [X] ~~Implement APU DMC~~ ✅ Complete (2026-05-17)
 - [X] ~~Add Mappers 2, 3, 4~~ ✅ Complete (2026-05-17) — UxROM, CNROM, MMC3 all implemented and unit-tested
 - [X] ~~Add Mappers 7, 11, 66~~ ✅ Complete (2026-05-18) — AxROM, Color Dreams, GxROM all implemented and unit-tested
-- [ ] Add Mapper 9 (PxROM / MMC2) — Punch-Out!! (requires PPU tile-fetch hook for CHR latch)
+- [X] ~~Add Mapper 9 (PxROM / MMC2)~~ ✅ Complete (2026-05-18) — latch-based CHR banking implemented and unit-tested
 
 ### Phase 3: Quality of Life
 - [ ] Save state support (serialize all state)
