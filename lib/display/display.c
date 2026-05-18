@@ -289,3 +289,38 @@ void display_upload_framebuffer(struct display_context *ctx) {
     SDL_UpdateTexture(ctx->screen_texture, NULL, ctx->frame_buffer,
                       ctx->screen_width * (int)sizeof(uint32_t));
 }
+
+void display_request_quit(struct display_context *ctx) {
+    if (ctx) ctx->running = 0;
+}
+
+void display_set_scale(struct display_context *ctx, int scale) {
+    if (!ctx || scale < 1) return;
+    ctx->scale_factor = scale;
+    SDL_SetWindowSize(ctx->window,
+                      ctx->screen_width * scale,
+                      ctx->screen_height * scale);
+}
+
+int display_get_scale(struct display_context *ctx) {
+    return ctx ? ctx->scale_factor : 1;
+}
+
+void display_toggle_fullscreen(struct display_context *ctx) {
+    if (!ctx) return;
+    Uint32 flags = SDL_GetWindowFlags(ctx->window);
+    if (flags & SDL_WINDOW_FULLSCREEN_DESKTOP) {
+        SDL_SetWindowFullscreen(ctx->window, 0);
+    } else {
+        SDL_SetWindowFullscreen(ctx->window, SDL_WINDOW_FULLSCREEN_DESKTOP);
+    }
+}
+
+int display_is_fullscreen(struct display_context *ctx) {
+    if (!ctx) return 0;
+    return (SDL_GetWindowFlags(ctx->window) & SDL_WINDOW_FULLSCREEN_DESKTOP) != 0;
+}
+
+void display_set_title(struct display_context *ctx, const char *title) {
+    if (ctx && ctx->window) SDL_SetWindowTitle(ctx->window, title);
+}

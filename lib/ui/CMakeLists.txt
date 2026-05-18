@@ -1,5 +1,13 @@
 set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/vendor/imgui)
 
+include(FetchContent)
+FetchContent_Declare(
+    nfd
+    GIT_REPOSITORY https://github.com/btzy/nativefiledialog-extended.git
+    GIT_TAG        v1.2.1
+)
+FetchContent_MakeAvailable(nfd)
+
 add_library(libui STATIC
     ui.cpp
     ui.h
@@ -21,9 +29,10 @@ target_include_directories(libui PUBLIC
 
 target_include_directories(libui PRIVATE
     ${PROJECT_SOURCE_DIR}/lib/display
+    ${PROJECT_BINARY_DIR}
 )
 
-target_link_libraries(libui PUBLIC libdisplay ${SDL2_LIBRARIES})
+target_link_libraries(libui PUBLIC libdisplay ${SDL2_LIBRARIES} nfd)
 
 set_target_properties(libui PROPERTIES
     CXX_STANDARD 17
