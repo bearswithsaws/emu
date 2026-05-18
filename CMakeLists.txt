@@ -52,3 +52,9 @@ target_include_directories(emu PUBLIC
                            "${PROJECT_SOURCE_DIR}/lib/display"
                            "${PROJECT_SOURCE_DIR}/lib/ui"
                            )
+
+# Windows-specific: suppress console window and static-link MinGW runtime so
+# emu.exe runs from Explorer without a terminal or extra DLLs.
+if(MINGW)
+    target_link_options(emu PRIVATE -mwindows -static-libgcc -static-libstdc++)
+endif()

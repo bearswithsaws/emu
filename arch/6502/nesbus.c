@@ -47,8 +47,10 @@ static uint8_t read(uint16_t addr) {
     } else if ((addr >= 0x4000) && (addr <= 0x4015)) {
         data = apu_read(&apu_chip, addr);
     } else {
-        // remainder of reads like cartridge and open bus?
-        data = bus.cart->cpu_read(bus.cart, addr);
+        if (bus.cart)
+            data = bus.cart->cpu_read(bus.cart, addr);
+        else
+            data = 0xFF;
     }
 
     return data;
@@ -84,8 +86,8 @@ static void write(uint16_t addr, uint8_t data) {
     } else if (addr == 0x4017) {
         apu_write(&apu_chip, addr, data);
     } else {
-        // remainder of reads like cartridge and open bus?
-        bus.cart->cpu_write(bus.cart, addr, data);
+        if (bus.cart)
+            bus.cart->cpu_write(bus.cart, addr, data);
     }
     return;
 }
