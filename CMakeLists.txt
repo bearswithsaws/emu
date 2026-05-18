@@ -55,6 +55,13 @@ target_include_directories(emu PUBLIC
 
 # Windows-specific: suppress console window and static-link MinGW runtime so
 # emu.exe runs from Explorer without a terminal or extra DLLs.
+# -Wl,-Bstatic,-lpthread,-Bdynamic: static-link libwinpthread only,
+# then switch back to dynamic so SDL2.dll is still found at runtime.
 if(MINGW)
-    target_link_options(emu PRIVATE -mwindows -static-libgcc -static-libstdc++)
+    target_link_options(emu PRIVATE
+        -mwindows
+        -static-libgcc
+        -static-libstdc++
+        -Wl,-Bstatic,-lpthread,-Bdynamic
+    )
 endif()
