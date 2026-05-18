@@ -625,8 +625,7 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
   - ✅ NMI triggering
 
 ### ❌ Not Started
-- Save states (Phase 3)
-- Debugging tools (Phase 4)
+- CPU Debugger / Breakpoints (Phase 4)
 - Performance optimization (Phase 5)
 
 ### Code Quality Status
@@ -739,6 +738,28 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
 - **Tab fast-forward** — holding Tab overrides the menu selection to uncapped speed for instant fast-forward without changing the persistent setting.
 
 **Files modified:** `emu.c`, `lib/ui/ui.cpp`
+
+### 2026-05-18 Session: Save State / Load State (Issue #51) — closes UI epic #59
+
+**Full save/load state system implemented. Closes Phase 3 and the UI epic.**
+
+**Save format:** binary sequential file at `~/.local/share/emu/slot_N.sav`. Sections in order: file header (magic + version + mapper_id + CHR-RAM size + ctx size), CPU registers, PPU VRAM/registers/OAM, CPU RAM (2 KB), APU channel state (ring buffer excluded), controllers, mapper mirroring + IRQ flag + mapper ctx blob, CHR-RAM (if applicable). Format is validated on load (magic, version, mapper_id mismatch all caught with clear error messages).
+
+**New files:**
+- `arch/6502/savestate.h/.c` — `savestate_save(slot, bus)` / `savestate_load(slot, bus)` public API
+
+**Modified:**
+- `arch/6502/mapper.h` — added `ctx_size` field to `struct mapper`
+- All mapper inits (001–009, 011, 066) — set `ctx_size = sizeof(ctx_struct)`
+- `arch/6502/nesbus.h/.c` — `nesbus_get_ram()` / `nesbus_set_ram()` accessors; removed duplicate `NES_RAM_SIZE` define from .c
+- `lib/ui/ui.h` — added `ui_savestate_fn` type and `on_save_state`/`on_load_state` to `ui_callbacks`
+- `lib/ui/ui.cpp` — removed `BeginDisabled` wrapper from Save/Load State menus; wired callbacks; added F2–F6/Shift+F2–F6 keyboard shortcuts; updated Controls Reference popup
+- `emu.c` — `emu_save_state`/`emu_load_state` callbacks implemented; wired into `ui_callbacks`
+- `arch/6502/CMakeLists.txt` — `savestate.c` added to lib6502
+
+**Keyboard shortcuts:** F2–F6 = save slot 1–5, Shift+F2–F6 = load slot 1–5. Menu shows same hints.
+
+**All 11 test suites pass — no regressions.**
 
 ### 2026-05-18 Session: Mapper 009 (PxROM / MMC2) — closes mapper epic #80
 
@@ -945,7 +966,7 @@ All illegal NOP opcodes that consume operand bytes ($04, $0C, $14, $1C, $34, $3C
 - [X] ~~Add Mapper 9 (PxROM / MMC2)~~ ✅ Complete (2026-05-18) — latch-based CHR banking implemented and unit-tested
 
 ### Phase 3: Quality of Life
-- [ ] Save state support (serialize all state)
+- [X] ~~Save state support~~ ✅ Complete (2026-05-18, issue #51) — 5 slots, binary format, F2–F6/Shift+F2–F6 shortcuts, Emulation menu wired
 - [X] ~~ROM browser GUI~~ ✅ Complete (2026-05-17) — native file picker + Recent ROMs list via ImGui menu bar
 - [X] ~~ROM launcher splash / idle state~~ ✅ Complete (2026-05-18, issue #50) — shown on startup with no ROM; drag-and-drop supported
 - [X] ~~Pause/reset controls~~ ✅ Complete (2026-05-17) — wired through Emulation menu

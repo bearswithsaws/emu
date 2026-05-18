@@ -45,7 +45,8 @@ void mapper_004_init(struct mapper *map) {
     struct mmc3_ctx *ctx = calloc(1, sizeof(struct mmc3_ctx));
     if (!ctx) return;
     // mirroring is seeded from ROM header by mapper.c
-    map->ctx = ctx;
+    map->ctx      = ctx;
+    map->ctx_size = sizeof(struct mmc3_ctx);
 }
 
 // ---------------------------------------------------------------------------

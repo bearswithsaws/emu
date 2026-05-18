@@ -15,6 +15,7 @@
 #include "nesbus.h"
 
 #include "debug.h"
+#include "savestate.h"
 
 static struct nesbus *bus;
 static struct cpu6502 *cpu;
@@ -33,6 +34,18 @@ static void emu_power_cycle(void *userdata) {
     (void)userdata;
     if (cpu && cartridge_global) cpu->reset();
     /* Full hardware reinit is deferred until save-state support is added. */
+}
+
+static void emu_save_state(int slot, void *userdata) {
+    (void)userdata;
+    if (!cartridge_global) return;
+    savestate_save(slot, bus);
+}
+
+static void emu_load_state(int slot, void *userdata) {
+    (void)userdata;
+    if (!cartridge_global) return;
+    savestate_load(slot, bus);
 }
 
 static void emu_load_rom(const char *path, void *userdata) {
@@ -92,6 +105,8 @@ int main(int argc, char *argv[]) {
         .on_soft_reset  = emu_soft_reset,
         .on_power_cycle = emu_power_cycle,
         .on_load_rom    = emu_load_rom,
+        .on_save_state  = emu_save_state,
+        .on_load_state  = emu_load_state,
         .userdata       = NULL,
     };
     ui = ui_init(display, &ui_cbs);

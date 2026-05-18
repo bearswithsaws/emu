@@ -40,7 +40,8 @@ void mapper_009_init(struct mapper *map) {
     if (!ctx) return;
     ctx->latch[0] = 0xFE;
     ctx->latch[1] = 0xFE;
-    map->ctx = ctx;
+    map->ctx      = ctx;
+    map->ctx_size = sizeof(struct mmc2_ctx);
 }
 
 uint8_t mapper_009_cpu_read(struct mapper *map, uint16_t addr) {

@@ -197,25 +197,24 @@ static void render_menu_emulation(ui_context *ui, display_context *display) {
 
     ImGui::Separator();
 
-    /* Save/Load state slots — not yet implemented */
-    ImGui::BeginDisabled(true);
     if (ImGui::BeginMenu("Save State")) {
         for (int i = 1; i <= 5; i++) {
-            char label[16];
-            snprintf(label, sizeof(label), "Slot %d", i);
-            ImGui::MenuItem(label);
+            char label[24];
+            snprintf(label, sizeof(label), "Slot %d  (F%d)", i, i + 1);
+            if (ImGui::MenuItem(label) && ui->callbacks.on_save_state)
+                ui->callbacks.on_save_state(i, ui->callbacks.userdata);
         }
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("Load State")) {
         for (int i = 1; i <= 5; i++) {
-            char label[16];
-            snprintf(label, sizeof(label), "Slot %d", i);
-            ImGui::MenuItem(label);
+            char label[32];
+            snprintf(label, sizeof(label), "Slot %d  (Shift+F%d)", i, i + 1);
+            if (ImGui::MenuItem(label) && ui->callbacks.on_load_state)
+                ui->callbacks.on_load_state(i, ui->callbacks.userdata);
         }
         ImGui::EndMenu();
     }
-    ImGui::EndDisabled();
 
     ImGui::Separator();
 
@@ -305,6 +304,8 @@ static void render_controls_popup() {
         ImGui::SeparatorText("UI");
         ImGui::Text("Menubar     F1");
         ImGui::Text("Fullscreen  F11");
+        ImGui::Text("Save State  F2-F6 (slot 1-5)");
+        ImGui::Text("Load State  Shift+F2-F6 (slot 1-5)");
         ImGui::Spacing();
         if (ImGui::Button("Close", ImVec2(120, 0)))
             ImGui::CloseCurrentPopup();
@@ -471,6 +472,25 @@ void ui_render_frame(struct ui_context *ui, struct display_context *display) {
         ui->show_menubar = !ui->show_menubar;
     if (ImGui::IsKeyPressed(ImGuiKey_F11))
         display_toggle_fullscreen(display);
+
+    /* F2–F6 = save slot 1–5,  Shift+F2–F6 = load slot 1–5 */
+    {
+        static const ImGuiKey save_keys[] = {
+            ImGuiKey_F2, ImGuiKey_F3, ImGuiKey_F4, ImGuiKey_F5, ImGuiKey_F6 };
+        bool shift = ImGui::IsKeyDown(ImGuiKey_LeftShift) ||
+                     ImGui::IsKeyDown(ImGuiKey_RightShift);
+        for (int i = 0; i < 5; i++) {
+            if (ImGui::IsKeyPressed(save_keys[i])) {
+                if (shift) {
+                    if (ui->callbacks.on_load_state)
+                        ui->callbacks.on_load_state(i + 1, ui->callbacks.userdata);
+                } else {
+                    if (ui->callbacks.on_save_state)
+                        ui->callbacks.on_save_state(i + 1, ui->callbacks.userdata);
+                }
+            }
+        }
+    }
 
     /* ------ Demo window (dev helper) ------------------------------------ */
     if (ui && ui->show_demo)

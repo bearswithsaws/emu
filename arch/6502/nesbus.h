@@ -33,4 +33,10 @@ struct nesbus {
 
 struct nesbus *nesbus_init(struct cpu6502 *cpu, struct ppu2c02 *ppu);
 
+#define NES_RAM_SIZE 2048
+
+/* Copy the 2 KB CPU RAM into/out of buf (for save states). */
+void nesbus_get_ram(uint8_t *buf);
+void nesbus_set_ram(const uint8_t *buf);
+
 #endif /* __NESBUS_H__ */
