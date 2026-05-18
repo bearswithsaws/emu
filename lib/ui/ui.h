@@ -57,6 +57,12 @@ float ui_get_speed_multiplier(const struct ui_context *ui);
  */
 int ui_show_fps(const struct ui_context *ui);
 
+/**
+ * Notify the UI that a ROM has been loaded (loaded=1) or unloaded (loaded=0).
+ * Controls whether the no-ROM splash screen is shown.
+ */
+void ui_notify_rom_loaded(struct ui_context *ui, int loaded);
+
 #ifdef __cplusplus
 }
 #endif

@@ -52,13 +52,24 @@ struct ui_context {
     float fps;
     Uint32 fps_last_tick;
     int fps_frame_count;
+
+    /* Splash / idle state */
+    bool rom_loaded;
+    char pending_drop_path[1024];
 };
 
 /* ---------- SDL event hook ------------------------------------------------ */
 
-static void sdl_event_hook(const void *sdl_event, void * /*userdata*/) {
-    ImGui_ImplSDL2_ProcessEvent(
-        static_cast<const SDL_Event *>(sdl_event));
+static void sdl_event_hook(const void *sdl_event, void *userdata) {
+    const SDL_Event *e = static_cast<const SDL_Event *>(sdl_event);
+    ImGui_ImplSDL2_ProcessEvent(e);
+
+    if (e->type == SDL_DROPFILE && e->drop.file && userdata) {
+        ui_context *ui = static_cast<ui_context *>(userdata);
+        strncpy(ui->pending_drop_path, e->drop.file,
+                sizeof(ui->pending_drop_path) - 1);
+        ui->pending_drop_path[sizeof(ui->pending_drop_path) - 1] = '\0';
+    }
 }
 
 /* ---------- Recent ROMs persistence --------------------------------------- */
@@ -123,6 +134,7 @@ static void do_load_rom(ui_context *ui, const char *path) {
     if (ui->callbacks.on_load_rom)
         ui->callbacks.on_load_rom(path, ui->callbacks.userdata);
     add_recent_rom(ui, path);
+    ui->rom_loaded = true;
 }
 
 /* ---------- Menu rendering helpers ---------------------------------------- */
@@ -320,6 +332,74 @@ static void render_about_popup() {
     }
 }
 
+/* ---------- No-ROM splash ------------------------------------------------- */
+
+static void render_no_rom_splash(ui_context *ui, display_context *display,
+                                  float menu_height) {
+    SDL_Renderer *renderer =
+        static_cast<SDL_Renderer *>(display_get_renderer(display));
+    int win_w = 0, win_h = 0;
+    SDL_GetRendererOutputSize(renderer, &win_w, &win_h);
+    float avail_h = (float)win_h - menu_height;
+
+    const float panel_w = 340.0f;
+    const float panel_h = 200.0f;
+    ImGui::SetNextWindowPos(
+        ImVec2(win_w * 0.5f, menu_height + avail_h * 0.5f),
+        ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(panel_w, panel_h), ImGuiCond_Always);
+    ImGui::SetNextWindowBgAlpha(0.88f);
+
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration |
+                             ImGuiWindowFlags_NoMove       |
+                             ImGuiWindowFlags_NoSavedSettings |
+                             ImGuiWindowFlags_NoNav;
+    if (!ImGui::Begin("##splash", nullptr, flags)) {
+        ImGui::End();
+        return;
+    }
+
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 24.0f);
+
+    auto center_text = [&](const char *text) {
+        float tw = ImGui::CalcTextSize(text).x;
+        ImGui::SetCursorPosX((panel_w - tw) * 0.5f);
+        ImGui::TextUnformatted(text);
+    };
+
+    center_text("Drop a .nes file here");
+    ImGui::Spacing();
+    {
+        float tw = ImGui::CalcTextSize("\xe2\x80\x94 or \xe2\x80\x94").x;
+        ImGui::SetCursorPosX((panel_w - tw) * 0.5f);
+        ImGui::TextDisabled("\xe2\x80\x94 or \xe2\x80\x94");
+    }
+    ImGui::Spacing();
+
+    const float bw = 130.0f;
+    ImGui::SetCursorPosX((panel_w - bw) * 0.5f);
+    if (ImGui::Button("Open ROM\xe2\x80\xa6", ImVec2(bw, 0)))
+        ui->open_file_dialog_requested = true;
+
+    if (!ui->recent_roms.empty()) {
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+        ImGui::TextDisabled("Recent:");
+        for (const auto &rom : ui->recent_roms) {
+            const char *label = rom.c_str();
+            const char *slash = strrchr(label, '/');
+            if (slash) label = slash + 1;
+            if (ImGui::MenuItem(label))
+                do_load_rom(ui, rom.c_str());
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s", rom.c_str());
+        }
+    }
+
+    ImGui::End();
+}
+
 /* ---------- Public API ---------------------------------------------------- */
 
 struct ui_context *ui_init(struct display_context *display,
@@ -331,14 +411,16 @@ struct ui_context *ui_init(struct display_context *display,
 
     if (!renderer || !window) return nullptr;
 
-    ui_context *ui       = new ui_context{};
-    ui->show_demo        = false;
-    ui->show_menubar     = true;
-    ui->show_fps         = false;
-    ui->speed_multiplier = 1.0f;
-    ui->fps              = 0.0f;
-    ui->fps_last_tick    = SDL_GetTicks();
-    ui->fps_frame_count  = 0;
+    ui_context *ui            = new ui_context{};
+    ui->show_demo             = false;
+    ui->show_menubar          = true;
+    ui->show_fps              = false;
+    ui->speed_multiplier      = 1.0f;
+    ui->fps                   = 0.0f;
+    ui->fps_last_tick         = SDL_GetTicks();
+    ui->fps_frame_count       = 0;
+    ui->rom_loaded            = false;
+    ui->pending_drop_path[0]  = '\0';
 
     if (callbacks)
         ui->callbacks = *callbacks;
@@ -357,7 +439,7 @@ struct ui_context *ui_init(struct display_context *display,
     ImGui_ImplSDL2_InitForSDLRenderer(window, renderer);
     ImGui_ImplSDLRenderer2_Init(renderer);
 
-    display_set_event_hook(display, sdl_event_hook, nullptr);
+    display_set_event_hook(display, sdl_event_hook, ui);
 
     NFD_Init();
 
@@ -377,6 +459,12 @@ void ui_render_frame(struct ui_context *ui, struct display_context *display) {
     ImGui_ImplSDLRenderer2_NewFrame();
     ImGui_ImplSDL2_NewFrame();
     ImGui::NewFrame();
+
+    /* ------ Process drag-and-drop from previous event poll -------------- */
+    if (ui && ui->pending_drop_path[0] != '\0') {
+        do_load_rom(ui, ui->pending_drop_path);
+        ui->pending_drop_path[0] = '\0';
+    }
 
     /* ------ Keyboard shortcuts handled here (after NewFrame) ------------ */
     if (ImGui::IsKeyPressed(ImGuiKey_F1))
@@ -436,6 +524,10 @@ void ui_render_frame(struct ui_context *ui, struct display_context *display) {
         render_about_popup();
     }
 
+    /* ------ Splash overlay when no ROM is loaded ------------------------ */
+    if (ui && !ui->rom_loaded)
+        render_no_rom_splash(ui, display, menu_height);
+
     ImGui::Render();
 
     /* ------ Composite: game texture then ImGui on top ------------------- */
@@ -446,14 +538,17 @@ void ui_render_frame(struct ui_context *ui, struct display_context *display) {
     /* Reserve space for the menu bar so the game isn't hidden behind it. */
     int avail_h = win_h - (int)menu_height;
     if (avail_h < 1) avail_h = 1;
-    float scale = std::min((float)win_w / gw, (float)avail_h / gh);
-    SDL_Rect dst = {
-        (int)((win_w - gw * scale) * 0.5f),
-        (int)(menu_height + (avail_h - gh * scale) * 0.5f),
-        (int)(gw * scale),
-        (int)(gh * scale)
-    };
-    SDL_RenderCopy(renderer, game_tex, nullptr, &dst);
+
+    if (ui && ui->rom_loaded) {
+        float scale = std::min((float)win_w / gw, (float)avail_h / gh);
+        SDL_Rect dst = {
+            (int)((win_w - gw * scale) * 0.5f),
+            (int)(menu_height + (avail_h - gh * scale) * 0.5f),
+            (int)(gw * scale),
+            (int)(gh * scale)
+        };
+        SDL_RenderCopy(renderer, game_tex, nullptr, &dst);
+    }
 
     ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData(), renderer);
     SDL_RenderPresent(renderer);
@@ -501,4 +596,8 @@ float ui_get_speed_multiplier(const struct ui_context *ui) {
 
 int ui_show_fps(const struct ui_context *ui) {
     return ui ? (ui->show_fps ? 1 : 0) : 0;
+}
+
+void ui_notify_rom_loaded(struct ui_context *ui, int loaded) {
+    if (ui) ui->rom_loaded = (loaded != 0);
 }

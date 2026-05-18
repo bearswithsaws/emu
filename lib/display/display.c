@@ -115,6 +115,8 @@ struct display_context *display_init(const struct display_config *config) {
         return NULL;
     }
 
+    SDL_EventState(SDL_DROPFILE, SDL_ENABLE);
+
     // Initialize to a gray checkerboard pattern
     for (int y = 0; y < config->screen_height; y++) {
         for (int x = 0; x < config->screen_width; x++) {
@@ -208,6 +210,11 @@ int display_poll_events(struct display_context *ctx,
             if (input_handler) {
                 input_handler(event.key.keysym.sym, 0, userdata);
             }
+            break;
+
+        case SDL_DROPFILE:
+            /* Path was already copied by the event hook; free the SDL allocation. */
+            SDL_free(event.drop.file);
             break;
 
         default:
