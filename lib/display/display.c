@@ -19,6 +19,10 @@ struct display_context {
     // State
     int running;
     int paused;
+
+    // Optional raw SDL event hook (used by UI layer to forward to ImGui)
+    display_event_hook_t event_hook;
+    void *event_hook_userdata;
 };
 
 struct display_context *display_init(const struct display_config *config) {
@@ -166,6 +170,9 @@ int display_poll_events(struct display_context *ctx,
         return 1;
 
     while (SDL_PollEvent(&event)) {
+        if (ctx->event_hook) {
+            ctx->event_hook(&event, ctx->event_hook_userdata);
+        }
         switch (event.type) {
         case SDL_QUIT:
             ctx->running = 0;
@@ -247,4 +254,38 @@ void display_set_paused(struct display_context *ctx, int paused) {
     if (ctx) {
         ctx->paused = paused;
     }
+}
+
+void display_set_event_hook(struct display_context *ctx,
+                            display_event_hook_t hook, void *userdata) {
+    if (ctx) {
+        ctx->event_hook = hook;
+        ctx->event_hook_userdata = userdata;
+    }
+}
+
+void *display_get_renderer(struct display_context *ctx) {
+    return ctx ? ctx->renderer : NULL;
+}
+
+void *display_get_window(struct display_context *ctx) {
+    return ctx ? ctx->window : NULL;
+}
+
+void *display_get_screen_texture(struct display_context *ctx) {
+    return ctx ? ctx->screen_texture : NULL;
+}
+
+int display_get_width(struct display_context *ctx) {
+    return ctx ? ctx->screen_width : 0;
+}
+
+int display_get_height(struct display_context *ctx) {
+    return ctx ? ctx->screen_height : 0;
+}
+
+void display_upload_framebuffer(struct display_context *ctx) {
+    if (!ctx || !ctx->screen_texture || !ctx->frame_buffer) return;
+    SDL_UpdateTexture(ctx->screen_texture, NULL, ctx->frame_buffer,
+                      ctx->screen_width * (int)sizeof(uint32_t));
 }

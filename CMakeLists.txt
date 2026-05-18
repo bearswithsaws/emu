@@ -1,8 +1,14 @@
 cmake_minimum_required(VERSION 3.10)
 
 # set the project name
-project(emu VERSION 0.1)
+project(emu VERSION 0.1 LANGUAGES C CXX)
 
+# Ensure ImGui submodule is present
+if(NOT EXISTS "${CMAKE_SOURCE_DIR}/lib/ui/vendor/imgui/imgui.h")
+    message(FATAL_ERROR
+        "ImGui submodule not found. Run:\n"
+        "  git submodule update --init --recursive")
+endif()
 
 INCLUDE(FindPkgConfig)
 PKG_SEARCH_MODULE(SDL2 REQUIRED sdl2)
@@ -38,10 +44,11 @@ set(CMAKE_CXX_FLAGS_DEBUG "-g3 -O0 -Wall -Wextra -fno-omit-frame-pointer")
 # add the executable
 add_executable(emu emu.c)
 
-target_link_libraries(emu PUBLIC lib6502 libdisplay ${SDL2_LIBRARIES})
+target_link_libraries(emu PUBLIC lib6502 libdisplay libui ${SDL2_LIBRARIES})
 
 target_include_directories(emu PUBLIC
                            "${PROJECT_BINARY_DIR}"
                            "${PROJECT_SOURCE_DIR}/arch/6502"
                            "${PROJECT_SOURCE_DIR}/lib/display"
+                           "${PROJECT_SOURCE_DIR}/lib/ui"
                            )

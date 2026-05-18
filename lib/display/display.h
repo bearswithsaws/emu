@@ -119,4 +119,27 @@ int display_is_paused(struct display_context *ctx);
  */
 void display_set_paused(struct display_context *ctx, int paused);
 
+/**
+ * Raw SDL event hook — called for every SDL_Event before display handles it.
+ * The event pointer is an SDL_Event* cast to void* to keep this header SDL-free.
+ * Used by the UI layer to forward events to ImGui.
+ */
+typedef void (*display_event_hook_t)(const void *sdl_event, void *userdata);
+void display_set_event_hook(struct display_context *ctx,
+                            display_event_hook_t hook, void *userdata);
+
+/* Accessors that expose the underlying SDL objects as void* so callers
+ * (e.g. the C++ UI layer) can cast them without pulling SDL into this header. */
+void *display_get_renderer(struct display_context *ctx);
+void *display_get_window(struct display_context *ctx);
+void *display_get_screen_texture(struct display_context *ctx);
+int   display_get_width(struct display_context *ctx);
+int   display_get_height(struct display_context *ctx);
+
+/**
+ * Upload the current framebuffer to the screen texture without rendering.
+ * Call this before ui_render_frame() so ImGui can sample the texture.
+ */
+void display_upload_framebuffer(struct display_context *ctx);
+
 #endif /* __DISPLAY_H__ */
