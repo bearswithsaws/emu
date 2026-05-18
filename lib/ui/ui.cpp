@@ -69,14 +69,22 @@ static std::string recent_roms_path() {
     return std::string(home) + "/.config/emu/recent.txt";
 }
 
+static void create_directory(const char *path) {
+#ifdef _WIN32
+    mkdir(path);
+#else
+    mkdir(path, 0755);
+#endif
+}
+
 static void ensure_config_dir() {
     const char *home = SDL_getenv("HOME");
     if (!home) return;
     char dir[512];
     snprintf(dir, sizeof(dir), "%s/.config", home);
-    mkdir(dir, 0755);
+    create_directory(dir);
     snprintf(dir, sizeof(dir), "%s/.config/emu", home);
-    mkdir(dir, 0755);
+    create_directory(dir);
 }
 
 static void load_recent_roms(ui_context *ui) {
