@@ -21,6 +21,41 @@ static struct cpu6502 *cpu;
 static struct ppu2c02 *ppu;
 static struct ui_context *ui;
 static SDL_AudioDeviceID audio_dev = 0;
+static struct nes_cartridge *cartridge_global = NULL;
+static struct display_context *display_global = NULL;
+
+static void emu_soft_reset(void *userdata) {
+    (void)userdata;
+    if (cpu) cpu->reset();
+}
+
+static void emu_power_cycle(void *userdata) {
+    (void)userdata;
+    if (cpu) cpu->reset();
+    /* Full hardware reinit is deferred until save-state support is added. */
+}
+
+static void emu_load_rom(const char *path, void *userdata) {
+    (void)userdata;
+    struct nes_cartridge *new_cart = load_rom(path);
+    if (!new_cart) {
+        fprintf(stderr, "Failed to load ROM: %s\n", path);
+        return;
+    }
+    /* Swap cartridge — old one is intentionally leaked (no free API yet). */
+    cartridge_global = new_cart;
+    bus->connect_cartridge(new_cart);
+    ppu->connect_cartridge(new_cart);
+    cpu->reset();
+
+    /* Update window title to show the loaded filename. */
+    const char *slash = strrchr(path, '/');
+    const char *name  = slash ? slash + 1 : path;
+    char title[256];
+    snprintf(title, sizeof(title), "NES Emulator — %s", name);
+    display_set_title(display_global, title);
+    printf("Loaded ROM: %s\n", path);
+}
 
 static void print_usage(const char *prog_name) {
     printf("Usage: %s <rom_file.nes>\n", prog_name);
@@ -60,6 +95,7 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Error: Failed to initialize display\n");
         return EXIT_FAILURE;
     }
+    display_global = display;
 
     cartridge = load_rom(argv[1]);
     if (cartridge == NULL) {
@@ -67,6 +103,7 @@ int main(int argc, char *argv[]) {
         display_cleanup(display);
         return EXIT_FAILURE;
     }
+    cartridge_global = cartridge;
     cartridge_info(cartridge);
 
     cpu = cpu6502_init();
@@ -77,7 +114,13 @@ int main(int argc, char *argv[]) {
     nes_input_init(bus->controller1, bus->controller2);
     ppu->set_framebuffer(display_get_framebuffer(display));
 
-    ui = ui_init(display);
+    struct ui_callbacks ui_cbs = {
+        .on_soft_reset  = emu_soft_reset,
+        .on_power_cycle = emu_power_cycle,
+        .on_load_rom    = emu_load_rom,
+        .userdata       = NULL,
+    };
+    ui = ui_init(display, &ui_cbs);
 
     /* Open SDL2 audio after the bus (and APU) are initialised so we can
      * calibrate cycles_per_sample to the actual device frequency.

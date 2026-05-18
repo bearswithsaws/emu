@@ -142,4 +142,25 @@ int   display_get_height(struct display_context *ctx);
  */
 void display_upload_framebuffer(struct display_context *ctx);
 
+/** Signal the display to stop running (triggers clean exit on next loop). */
+void display_request_quit(struct display_context *ctx);
+
+/**
+ * Resize the window to screen_width*scale x screen_height*scale.
+ * Updates the stored scale_factor.
+ */
+void display_set_scale(struct display_context *ctx, int scale);
+
+/** Return the current integer scale factor. */
+int display_get_scale(struct display_context *ctx);
+
+/** Toggle borderless-fullscreen mode. */
+void display_toggle_fullscreen(struct display_context *ctx);
+
+/** Return non-zero if the window is currently fullscreen. */
+int display_is_fullscreen(struct display_context *ctx);
+
+/** Update the window title string. */
+void display_set_title(struct display_context *ctx, const char *title);
+
 #endif /* __DISPLAY_H__ */

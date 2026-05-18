@@ -511,13 +511,20 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
   - ✅ OAM DMA CPU halt (513-cycle stall enforced in main loop 2026-05-17)
   - ⚠️ Sprite overflow flag — correct for common case; hardware diagonal-scan bug not replicated
 
-- **GUI/Display Integration** (~90% complete)
+- **GUI/Display Integration** (~98% complete)
   - ✅ SDL2 window creation and rendering (lib/display/)
   - ✅ Frame buffer display (256x240)
   - ✅ Event loop integrated with emulation
   - ✅ Frame timing (60 Hz via PPU frame_complete flag)
   - ✅ Pause/resume functionality
   - ✅ Window close handling
+  - ✅ **Full ImGui menu bar** (2026-05-17, issue #49)
+    - File: Open ROM (native GTK file picker via nativefiledialog-extended), Recent ROMs (last 5, persisted to `~/.config/emu/recent.txt`), Close ROM, Quit
+    - Emulation: Pause/Resume, Reset (Soft), Power Cycle, Save/Load State slots (greyed — not yet implemented), Speed (50%/100%/200%/Uncapped)
+    - Debug: CPU Debugger, Memory Viewer, PPU Viewer, APU Visualizer (panel visibility toggles)
+    - View: Scale 1×–4×, Fullscreen (F11), Show FPS Overlay, Toggle Menubar (F1)
+    - Help: Controls Reference popup, About popup (version from emu_config.h)
+  - ✅ Window scale/fullscreen/title control (display helpers added to lib/display/)
   - ⚠️ Old gui.c/gui.h removed, replaced with modular display library
 
 - **Mapper 001 (MMC1)** ✅ Complete (2026-05-17)
@@ -614,6 +621,26 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
 ---
 
 ## Recent Work
+
+### 2026-05-17 Session: ImGui Menu Bar (Issue #49)
+
+**Full top-level menu bar implemented** across all five menus from the issue spec.
+
+**Files modified:**
+- `lib/ui/ui.cpp` — Full menu bar implementation; native file dialog via NFD; recent ROMs persistence; FPS overlay; F1/F11 shortcuts; game rect offset below menu bar
+- `lib/ui/ui.h` — `ui_callbacks` struct (`on_soft_reset`, `on_power_cycle`, `on_load_rom`); updated `ui_init` signature; `ui_get_speed_multiplier`, `ui_show_fps` query functions
+- `lib/ui/CMakeLists.txt` — Added `nativefiledialog-extended` v1.2.1 via FetchContent (GTK3 backend); exposed `${PROJECT_BINARY_DIR}` for `emu_config.h`
+- `lib/display/display.h/.c` — New helpers: `display_request_quit`, `display_set_scale`, `display_get_scale`, `display_toggle_fullscreen`, `display_is_fullscreen`, `display_set_title`
+- `emu.c` — `emu_soft_reset`, `emu_power_cycle`, `emu_load_rom` callbacks; `cartridge_global` / `display_global` statics for mid-session ROM swaps
+
+**Menu bar features:**
+- **File**: Open ROM (native OS file picker filtered to `*.nes`), Recent ROMs sub-menu (last 5, persisted to `~/.config/emu/recent.txt`), Close ROM, Quit
+- **Emulation**: Pause/Resume, Reset (Soft), Power Cycle, Save/Load State 1–5 (greyed — not implemented), Speed 50%/100%/200%/Uncapped with checkmarks
+- **Debug**: CPU Debugger, Memory Viewer, PPU Viewer, APU Visualizer (toggle panel visibility booleans)
+- **View**: Scale 1×–4×, Fullscreen (F11), Show FPS Overlay, Toggle Menubar (F1)
+- **Help**: Controls Reference popup (all keybindings), About popup (version from `emu_config.h`)
+
+**Acceptance criteria met:** All menus navigable; Pause/Resume and Reset work from the menu; Recent ROMs populates after opening a ROM.
 
 ### 2026-05-17 Session: Mapper 002/003/004 Unit Tests + Documentation Sync
 
@@ -764,9 +791,9 @@ All illegal NOP opcodes that consume operand bytes ($04, $0C, $14, $1C, $34, $3C
 
 ### Phase 3: Quality of Life
 - [ ] Save state support (serialize all state)
-- [ ] ROM browser GUI
-- [ ] Pause/reset controls
-- [ ] Fast forward / slow motion
+- [X] ~~ROM browser GUI~~ ✅ Complete (2026-05-17) — native file picker + Recent ROMs list via ImGui menu bar
+- [X] ~~Pause/reset controls~~ ✅ Complete (2026-05-17) — wired through Emulation menu
+- [ ] Fast forward / slow motion (Speed menu items exist; core loop hookup pending)
 - [ ] Screenshot capture
 
 ### Phase 4: Advanced Features

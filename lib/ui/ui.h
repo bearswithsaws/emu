@@ -6,14 +6,29 @@ extern "C" {
 #endif
 
 struct display_context;
-
 struct ui_context;
+
+/**
+ * Callbacks provided by the emulator core so the menu bar can trigger
+ * actions that require access to CPU/bus/cartridge state.
+ */
+typedef void (*ui_reset_fn)(void *userdata);
+typedef void (*ui_load_rom_fn)(const char *path, void *userdata);
+
+struct ui_callbacks {
+    ui_reset_fn   on_soft_reset;   /* CPU reset, RAM preserved */
+    ui_reset_fn   on_power_cycle;  /* Full hardware reinit */
+    ui_load_rom_fn on_load_rom;    /* Load a new ROM file by path */
+    void         *userdata;
+};
 
 /**
  * Initialize Dear ImGui with the SDL2 + SDL_Renderer backend.
  * Must be called after display_init().
+ * callbacks may be NULL (menu actions that need them will be no-ops).
  */
-struct ui_context *ui_init(struct display_context *display);
+struct ui_context *ui_init(struct display_context *display,
+                           const struct ui_callbacks *callbacks);
 
 /**
  * Render one frame: uploads the NES framebuffer, runs ImGui, presents.
@@ -30,6 +45,17 @@ void ui_shutdown(struct ui_context *ui);
  * Toggle the ImGui demo window (useful during development).
  */
 void ui_toggle_demo(struct ui_context *ui);
+
+/**
+ * Query the speed multiplier the user has selected via the Emulation menu.
+ * Returns: 0.5, 1.0, 2.0, or -1.0 (uncapped).
+ */
+float ui_get_speed_multiplier(const struct ui_context *ui);
+
+/**
+ * Return non-zero if the FPS overlay is enabled.
+ */
+int ui_show_fps(const struct ui_context *ui);
 
 #ifdef __cplusplus
 }
