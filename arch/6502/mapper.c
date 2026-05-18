@@ -6,6 +6,8 @@
 #include "mapper_003.h"
 #include "mapper_004.h"
 #include "mapper_007.h"
+#include "mapper_011.h"
+#include "mapper_066.h"
 
 static struct mapper map = {0};
 
@@ -64,6 +66,20 @@ struct mapper *mapper_init(struct nes_cartridge *cartridge) {
         map.ppu_read  = mapper_007_ppu_read;
         map.ppu_write = mapper_007_ppu_write;
         mapper_007_init(&map);
+        break;
+    case 11:
+        map.cpu_read  = mapper_011_cpu_read;
+        map.cpu_write = mapper_011_cpu_write;
+        map.ppu_read  = mapper_011_ppu_read;
+        map.ppu_write = mapper_011_ppu_write;
+        mapper_011_init(&map);
+        break;
+    case 66:
+        map.cpu_read  = mapper_066_cpu_read;
+        map.cpu_write = mapper_066_cpu_write;
+        map.ppu_read  = mapper_066_ppu_read;
+        map.ppu_write = mapper_066_ppu_write;
+        mapper_066_init(&map);
         break;
     }
 
