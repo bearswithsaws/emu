@@ -55,13 +55,29 @@ target_include_directories(emu PUBLIC
 
 # Windows-specific: suppress console window and static-link MinGW runtime so
 # emu.exe runs from Explorer without a terminal or extra DLLs.
-# -Wl,-Bstatic,-lpthread,-Bdynamic: static-link libwinpthread only,
-# then switch back to dynamic so SDL2.dll is still found at runtime.
 if(MINGW)
-    target_link_options(emu PRIVATE
-        -mwindows
-        -static-libgcc
-        -static-libstdc++
-        -Wl,-Bstatic,-lpthread,-Bdynamic
+    # -mwindows: GUI subsystem, no console window.
+    # -static-libgcc/-static-libstdc++: bake GCC/C++ runtimes into the exe.
+    target_link_options(emu PRIVATE -mwindows -static-libgcc -static-libstdc++)
+
+    # Static-link libwinpthread. The -Bstatic/-Bdynamic pair is placed via
+    # target_link_libraries so it lands in the library section of the link
+    # command (after SDL2), not before it — which would break SDL2.
+    target_link_libraries(emu PRIVATE -Wl,-Bstatic -lpthread -Wl,-Bdynamic)
+
+    # Copy SDL2.dll next to emu.exe at build time so it's found when the exe
+    # is launched from Explorer.
+    find_file(SDL2_DLL_PATH SDL2.dll
+        HINTS "${SDL2_LIBDIR}/../bin"
+        ENV PATH
     )
+    if(SDL2_DLL_PATH)
+        add_custom_command(TARGET emu POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${SDL2_DLL_PATH}" "$<TARGET_FILE_DIR:emu>"
+            COMMENT "Copying SDL2.dll to output directory"
+        )
+    else()
+        message(WARNING "SDL2.dll not found — copy it next to emu.exe manually")
+    endif()
 endif()
