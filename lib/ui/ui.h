@@ -1,12 +1,17 @@
 #ifndef UI_H
 #define UI_H
 
+#include <stdint.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 struct display_context;
 struct ui_context;
+struct cpu6502;
+struct ppu2c02;
+struct nesbus;
 
 /**
  * Callbacks provided by the emulator core so the menu bar can trigger
@@ -65,6 +70,42 @@ int ui_show_fps(const struct ui_context *ui);
  * Controls whether the no-ROM splash screen is shown.
  */
 void ui_notify_rom_loaded(struct ui_context *ui, int loaded);
+
+/**
+ * Provide live CPU/PPU/bus pointers for the CPU debugger panel.
+ * Must be called after ui_init(). Pointers are held by reference only.
+ */
+void ui_set_debug_context(struct ui_context *ui,
+                          struct cpu6502 *cpu,
+                          struct ppu2c02 *ppu,
+                          struct nesbus  *bus);
+
+/**
+ * Update the total CPU cycle counter shown in the debugger panel.
+ * Call once per emulated frame.
+ */
+void ui_debugger_update_cycles(struct ui_context *ui, uint64_t cycles);
+
+/**
+ * Returns 1 and clears the flag if the user requested a single-instruction step.
+ */
+int ui_debugger_consume_step(struct ui_context *ui);
+
+/**
+ * Returns 1 and clears the flag if the user requested step-over.
+ * *out_target is set to the address to run until (current PC + insn length).
+ */
+int ui_debugger_consume_step_over(struct ui_context *ui, uint16_t *out_target);
+
+/**
+ * Returns 1 and clears the flag if the user requested a break (pause).
+ */
+int ui_debugger_consume_break(struct ui_context *ui);
+
+/**
+ * Returns 1 if addr is in the current breakpoint list, 0 otherwise.
+ */
+int ui_debugger_is_breakpoint(struct ui_context *ui, uint16_t addr);
 
 #ifdef __cplusplus
 }

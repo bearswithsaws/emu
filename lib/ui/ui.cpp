@@ -19,7 +19,33 @@ extern "C" {
 #include "emu_config.h"
 }
 
+/* C emulator headers — included outside extern "C" because they are guarded
+ * with their own __cplusplus checks inside (e.g. _Atomic compat). */
+#include "6502.h"
+#include "2c02.h"
+#include "nesbus.h"
+#include "disasm.h"
+
 #define MAX_RECENT_ROMS 5
+
+/* Debug panel layout —————————————————————————————————————————————————————
+ * Two columns of debug panels appear to the right of the game viewport.
+ *
+ *  ┌──────────────┬──────────────┬──────────────┐
+ *  │  Game View   │   Col A      │   Col B      │
+ *  │  (game_w)    │  (COL_A_W)   │  (COL_B_W)   │
+ *  │              │  CPU top 65% │  Memory 65%  │
+ *  │              │  APU  bot35% │  PPU    35%  │
+ *  └──────────────┴──────────────┴──────────────┘
+ *
+ * The SDL window widens by the column widths as panels are opened.
+ * Panels snap to their slot position when first opened, then can be dragged.
+ */
+static const int DBG_COL_A_W = 440;   /* CPU Debugger + APU Visualizer   */
+static const int DBG_COL_B_W = 540;   /* Memory Viewer + PPU Viewer       */
+static const int DBG_COL_PAD = 4;     /* gap between game/col-A/col-B     */
+static const float DBG_CPU_FRAC  = 0.65f;  /* fraction of col A for CPU panel  */
+static const float DBG_MEM_FRAC  = 0.65f;  /* fraction of col B for Memory     */
 
 struct ui_context {
     bool show_demo;
@@ -56,6 +82,26 @@ struct ui_context {
     /* Splash / idle state */
     bool rom_loaded;
     char pending_drop_path[1024];
+
+    /* Debug panel layout */
+    bool dbg_prev_col_a;      /* col A (CPU+APU) was active last frame */
+    bool dbg_prev_col_b;      /* col B (Mem+PPU) was active last frame */
+    bool dbg_snap_col_a;      /* snap col A panels to slot this frame  */
+    bool dbg_snap_col_b;      /* snap col B panels to slot this frame  */
+    float dbg_menu_height;    /* menu bar height captured each frame   */
+
+    /* CPU debugger */
+    struct cpu6502 *dbg_cpu;
+    struct ppu2c02 *dbg_ppu;
+    struct nesbus  *dbg_bus;
+    uint64_t        dbg_cycles;           /* total CPU cycles, updated each frame */
+    uint16_t        dbg_scroll_addr;      /* top address in disassembly view */
+    bool            dbg_scroll_needs_sync;/* true when PC scrolled out of view */
+    int             dbg_step_pending;
+    int             dbg_step_over_pending;
+    uint16_t        dbg_step_over_target;
+    int             dbg_break_pending;
+    std::vector<uint16_t> dbg_breakpoints;
 };
 
 /* ---------- SDL event hook ------------------------------------------------ */
@@ -343,10 +389,18 @@ static void render_no_rom_splash(ui_context *ui, display_context *display,
     SDL_GetRendererOutputSize(renderer, &win_w, &win_h);
     float avail_h = (float)win_h - menu_height;
 
+    /* Center within the game column only — not the full window. */
+    int col_a_px = (ui->show_cpu_debugger || ui->show_apu_visualizer)
+                       ? (DBG_COL_A_W + DBG_COL_PAD) : 0;
+    int col_b_px = (ui->show_memory_viewer || ui->show_ppu_viewer)
+                       ? (DBG_COL_B_W + DBG_COL_PAD) : 0;
+    float game_col_w = (float)(win_w - col_a_px - col_b_px);
+    if (game_col_w < 1.0f) game_col_w = 1.0f;
+
     const float panel_w = 340.0f;
     const float panel_h = 200.0f;
     ImGui::SetNextWindowPos(
-        ImVec2(win_w * 0.5f, menu_height + avail_h * 0.5f),
+        ImVec2(game_col_w * 0.5f, menu_height + avail_h * 0.5f),
         ImGuiCond_Always, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(panel_w, panel_h), ImGuiCond_Always);
     ImGui::SetNextWindowBgAlpha(0.88f);
@@ -401,6 +455,451 @@ static void render_no_rom_splash(ui_context *ui, display_context *display,
     ImGui::End();
 }
 
+/* ---------- Debug panel layout -------------------------------------------- */
+
+static bool dbg_col_a_active(const ui_context *ui) {
+    return ui->show_cpu_debugger || ui->show_apu_visualizer;
+}
+static bool dbg_col_b_active(const ui_context *ui) {
+    return ui->show_memory_viewer || ui->show_ppu_viewer;
+}
+
+/* Return the x position where column A panels should start. */
+static float dbg_col_a_x(const ui_context *ui, display_context *display) {
+    int game_w = display_get_width(display) * display_get_scale(display);
+    return (float)(game_w + DBG_COL_PAD);
+}
+
+/* Return the x position where column B panels should start. */
+static float dbg_col_b_x(const ui_context *ui, display_context *display) {
+    float ax = dbg_col_a_x(ui, display);
+    bool col_a = dbg_col_a_active(ui);
+    return ax + (col_a ? (float)(DBG_COL_A_W + DBG_COL_PAD) : 0.0f);
+}
+
+/* Resize the SDL window to fit active debug columns, and arm snap flags when
+ * a column transitions from closed → open. */
+static void ui_update_debug_layout(ui_context *ui, display_context *display) {
+    bool col_a = dbg_col_a_active(ui);
+    bool col_b = dbg_col_b_active(ui);
+
+    bool col_a_changed = col_a != ui->dbg_prev_col_a;
+    bool col_b_changed = col_b != ui->dbg_prev_col_b;
+    if (!col_a_changed && !col_b_changed) return;
+
+    int gw     = display_get_width(display);
+    int gh     = display_get_height(display);
+    int scale  = display_get_scale(display);
+    int base_w = gw * scale;
+    int base_h = gh * scale;
+
+    /* Compute the desired window width. */
+    int new_w = base_w
+              + (col_a ? DBG_COL_A_W + DBG_COL_PAD : 0)
+              + (col_b ? DBG_COL_B_W + DBG_COL_PAD : 0);
+
+    SDL_Window *window = static_cast<SDL_Window *>(display_get_window(display));
+    SDL_SetWindowSize(window, new_w, base_h);
+
+    /* Arm snap for columns that just became active. */
+    if (col_a && !ui->dbg_prev_col_a) ui->dbg_snap_col_a = true;
+    if (col_b && !ui->dbg_prev_col_b) ui->dbg_snap_col_b = true;
+
+    ui->dbg_prev_col_a = col_a;
+    ui->dbg_prev_col_b = col_b;
+}
+
+/* ---------- CPU Debugger panel -------------------------------------------- */
+
+/* Read up to 3 bytes from the bus without side-effects. */
+static void dbg_read3(struct nesbus *bus, uint16_t addr, uint8_t out[3]) {
+    bus->debug_read(addr, out, 3);
+}
+
+/* Disassemble `count` instructions starting at `start_addr`.
+ * Fills addrs[] and texts[] (caller allocates). Returns number filled. */
+static int disasm_forward(struct nesbus *bus, uint16_t start_addr,
+                          uint16_t *addrs, char texts[][32], int count) {
+    uint16_t cur = start_addr;
+    for (int i = 0; i < count; i++) {
+        addrs[i] = cur;
+        uint8_t bytes[3];
+        dbg_read3(bus, cur, bytes);
+        int len = disasm_insn(cur, bytes, texts[i], 32);
+        cur = (uint16_t)(cur + len);
+    }
+    return count;
+}
+
+/* Find the address N instructions before `target` (approximate — walks
+ * forward from an anchor to find a window that contains target). */
+static uint16_t disasm_addr_before(struct nesbus *bus, uint16_t target, int n_before) {
+    /* Walk backwards up to 3*n_before bytes max, then disassemble forward
+     * to find the best alignment that includes target with n_before lines above. */
+    uint16_t anchor = (uint16_t)(target > (uint16_t)(n_before * 3)
+                                     ? target - (uint16_t)(n_before * 3)
+                                     : 0);
+    /* Advance anchor to within 64 addresses of target, keeping alignment. */
+    uint16_t best = anchor;
+    for (uint16_t a = anchor; (int)(target - a) >= 0; ) {
+        uint8_t bytes[3];
+        dbg_read3(bus, a, bytes);
+        int len = disasm_insn(a, bytes, nullptr, 0);
+        uint16_t next = (uint16_t)(a + len);
+        if (next > target) break;
+        if (next == target) { best = a; break; }
+        /* Track the address that is n_before instructions before target. */
+        best = a;
+        a = next;
+    }
+    /* Now best is the instruction boundary just before or at target.
+     * Walk back n_before steps using a small look-behind window. */
+    (void)n_before;
+    return best;
+}
+
+static void render_cpu_debugger(ui_context *ui, display_context *display) {
+    if (!ui->show_cpu_debugger) return;
+
+    /* Snap to col A slot when the column first opens. */
+    if (ui->dbg_snap_col_a) {
+        float win_h   = ImGui::GetIO().DisplaySize.y;
+        float avail_h = win_h - ui->dbg_menu_height;
+        float h       = ui->show_apu_visualizer ? avail_h * DBG_CPU_FRAC : avail_h;
+        ImGui::SetNextWindowPos(
+            ImVec2(dbg_col_a_x(ui, display), ui->dbg_menu_height),
+            ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2((float)DBG_COL_A_W, h), ImGuiCond_Always);
+    } else {
+        ImGui::SetNextWindowSize(ImVec2(430, 500), ImGuiCond_FirstUseEver);
+    }
+
+    if (!ui->dbg_cpu || !ui->dbg_ppu || !ui->dbg_bus) {
+        if (ImGui::Begin("CPU Debugger", &ui->show_cpu_debugger)) {
+            ImGui::TextDisabled("No debug context set.");
+        }
+        ImGui::End();
+        return;
+    }
+
+    struct cpu6502 *cpu = ui->dbg_cpu;
+    struct ppu2c02 *ppu = ui->dbg_ppu;
+    struct nesbus  *bus = ui->dbg_bus;
+    if (!ImGui::Begin("CPU Debugger", &ui->show_cpu_debugger)) {
+        ImGui::End();
+        return;
+    }
+
+    /* ---- Registers ---- */
+    ImGui::SeparatorText("Registers");
+
+    ImGui::PushItemWidth(60.0f);
+
+    char buf[8];
+    /* PC */
+    snprintf(buf, sizeof(buf), "%04X", cpu->PC);
+    ImGui::SetNextItemWidth(50.0f);
+    if (ImGui::InputText("PC##reg", buf, sizeof(buf),
+                         ImGuiInputTextFlags_CharsHexadecimal |
+                         ImGuiInputTextFlags_EnterReturnsTrue)) {
+        cpu->PC = (uint16_t)strtoul(buf, nullptr, 16);
+        ui->dbg_scroll_needs_sync = true;
+    }
+    ImGui::SameLine(0, 8);
+
+    /* A */
+    snprintf(buf, sizeof(buf), "%02X", cpu->A);
+    ImGui::SetNextItemWidth(34.0f);
+    if (ImGui::InputText("A##reg", buf, sizeof(buf),
+                         ImGuiInputTextFlags_CharsHexadecimal |
+                         ImGuiInputTextFlags_EnterReturnsTrue))
+        cpu->A = (uint8_t)strtoul(buf, nullptr, 16);
+    ImGui::SameLine(0, 8);
+
+    /* X */
+    snprintf(buf, sizeof(buf), "%02X", cpu->X);
+    ImGui::SetNextItemWidth(34.0f);
+    if (ImGui::InputText("X##reg", buf, sizeof(buf),
+                         ImGuiInputTextFlags_CharsHexadecimal |
+                         ImGuiInputTextFlags_EnterReturnsTrue))
+        cpu->X = (uint8_t)strtoul(buf, nullptr, 16);
+    ImGui::SameLine(0, 8);
+
+    /* Y */
+    snprintf(buf, sizeof(buf), "%02X", cpu->Y);
+    ImGui::SetNextItemWidth(34.0f);
+    if (ImGui::InputText("Y##reg", buf, sizeof(buf),
+                         ImGuiInputTextFlags_CharsHexadecimal |
+                         ImGuiInputTextFlags_EnterReturnsTrue))
+        cpu->Y = (uint8_t)strtoul(buf, nullptr, 16);
+    ImGui::SameLine(0, 8);
+
+    /* SP */
+    snprintf(buf, sizeof(buf), "%02X", cpu->sp);
+    ImGui::SetNextItemWidth(34.0f);
+    if (ImGui::InputText("SP##reg", buf, sizeof(buf),
+                         ImGuiInputTextFlags_CharsHexadecimal |
+                         ImGuiInputTextFlags_EnterReturnsTrue))
+        cpu->sp = (uint8_t)strtoul(buf, nullptr, 16);
+
+    ImGui::PopItemWidth();
+
+    /* Status flags — coloured indicators: green=set, dark=clear */
+    ImGui::Spacing();
+    const char *flag_names[] = {"N","V","-","B","D","I","Z","C"};
+    const uint8_t flag_bits[] = {
+        cpu->flags.N, cpu->flags.V, cpu->flags.U,
+        cpu->flags.B, cpu->flags.D, cpu->flags.I,
+        cpu->flags.Z, cpu->flags.C
+    };
+    ImVec4 col_set   = ImVec4(0.2f, 0.8f, 0.2f, 1.0f);
+    ImVec4 col_clear = ImVec4(0.35f, 0.35f, 0.35f, 1.0f);
+    for (int i = 0; i < 8; i++) {
+        if (i > 0) ImGui::SameLine(0, 4);
+        ImGui::TextColored(flag_bits[i] ? col_set : col_clear, "%s", flag_names[i]);
+    }
+
+    /* ---- Disassembly ---- */
+    ImGui::Spacing();
+    ImGui::SeparatorText("Disassembly");
+
+    /* Sync scroll to PC when paused or on step. */
+    bool paused = display_is_paused(display) != 0;
+    if (ui->dbg_scroll_needs_sync || paused) {
+        /* Aim to show PC with ~5 lines of context above it. */
+        ui->dbg_scroll_addr = disasm_addr_before(bus, cpu->PC, 5);
+        ui->dbg_scroll_needs_sync = false;
+    }
+
+    /* Disassemble DASM_LINES instructions from scroll_addr. */
+    static const int DASM_LINES = 20;
+    uint16_t  dasm_addrs[DASM_LINES];
+    char      dasm_texts[DASM_LINES][32];
+    disasm_forward(bus, ui->dbg_scroll_addr, dasm_addrs, dasm_texts, DASM_LINES);
+
+    float line_h = ImGui::GetTextLineHeightWithSpacing();
+    ImVec2 list_sz = ImVec2(-1.0f, line_h * DASM_LINES + 4.0f);
+    ImGui::BeginChild("##dasm", list_sz, ImGuiChildFlags_FrameStyle);
+
+    ImVec4 col_pc   = ImVec4(1.0f, 1.0f, 0.2f, 1.0f);  /* yellow — current PC */
+    ImVec4 col_bp   = ImVec4(1.0f, 0.3f, 0.3f, 1.0f);  /* red — breakpoint */
+    ImVec4 col_norm = ImGui::GetStyleColorVec4(ImGuiCol_Text);
+
+    for (int i = 0; i < DASM_LINES; i++) {
+        uint16_t a = dasm_addrs[i];
+        bool is_pc = (a == cpu->PC);
+        bool is_bp = false;
+        for (auto bp : ui->dbg_breakpoints)
+            if (bp == a) { is_bp = true; break; }
+
+        /* Raw bytes for display. */
+        uint8_t raw[3];
+        dbg_read3(bus, a, raw);
+        uint8_t bytes_len = (uint8_t)disasm_insn(a, raw, nullptr, 0);
+
+        char line[80];
+        if (bytes_len == 1)
+            snprintf(line, sizeof(line), "%04X  %02X        %s",
+                     a, raw[0], dasm_texts[i]);
+        else if (bytes_len == 2)
+            snprintf(line, sizeof(line), "%04X  %02X %02X     %s",
+                     a, raw[0], raw[1], dasm_texts[i]);
+        else
+            snprintf(line, sizeof(line), "%04X  %02X %02X %02X  %s",
+                     a, raw[0], raw[1], raw[2], dasm_texts[i]);
+
+        /* Prefix for current PC. */
+        char label[96];
+        snprintf(label, sizeof(label), "%c %s##dasm%d",
+                 is_pc ? '>' : ' ', line, i);
+
+        ImVec4 color = is_pc ? col_pc : (is_bp ? col_bp : col_norm);
+        ImGui::TextColored(color, "%s", label);
+
+        /* Click to toggle breakpoint. */
+        if (ImGui::IsItemClicked()) {
+            auto &bps = ui->dbg_breakpoints;
+            auto it = std::find(bps.begin(), bps.end(), a);
+            if (it != bps.end())
+                bps.erase(it);
+            else
+                bps.push_back(a);
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Click to toggle breakpoint at $%04X", a);
+    }
+
+    ImGui::EndChild();
+
+    /* Scroll buttons. */
+    if (ImGui::Button("<<")) {
+        uint8_t b[3]; dbg_read3(bus, ui->dbg_scroll_addr, b);
+        int step = disasm_insn(ui->dbg_scroll_addr, b, nullptr, 0) * 4;
+        ui->dbg_scroll_addr = (uint16_t)(ui->dbg_scroll_addr > step
+                                             ? ui->dbg_scroll_addr - step
+                                             : 0);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button(">>")) {
+        uint8_t b[3]; dbg_read3(bus, ui->dbg_scroll_addr, b);
+        int step = disasm_insn(ui->dbg_scroll_addr, b, nullptr, 0) * 4;
+        ui->dbg_scroll_addr = (uint16_t)(ui->dbg_scroll_addr + step);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("PC##scroll")) {
+        ui->dbg_scroll_needs_sync = true;
+    }
+
+    /* ---- Controls ---- */
+    ImGui::Spacing();
+    ImGui::SeparatorText("Controls");
+
+    bool is_paused = display_is_paused(display) != 0;
+
+    if (ImGui::Button("Step") || ImGui::IsKeyPressed(ImGuiKey_F7)) {
+        if (!ui->dbg_step_pending && !ui->dbg_step_over_pending) {
+            ui->dbg_step_pending = 1;
+            display_set_paused(display, 1);
+        }
+    }
+    ImGui::SameLine();
+
+    if (ImGui::Button("Step Over") || ImGui::IsKeyPressed(ImGuiKey_F8)) {
+        if (!ui->dbg_step_pending && !ui->dbg_step_over_pending) {
+            /* Compute target = PC + instruction length. */
+            uint8_t bytes[3];
+            dbg_read3(bus, cpu->PC, bytes);
+            char tmp[32];
+            int len = disasm_insn(cpu->PC, bytes, tmp, sizeof(tmp));
+            ui->dbg_step_over_target  = (uint16_t)(cpu->PC + len);
+            ui->dbg_step_over_pending = 1;
+            display_set_paused(display, 1);
+        }
+    }
+    ImGui::SameLine();
+
+    if (ImGui::Button("Run")) {
+        ui->dbg_step_pending      = 0;
+        ui->dbg_step_over_pending = 0;
+        display_set_paused(display, 0);
+    }
+    ImGui::SameLine();
+
+    if (ImGui::Button("Break")) {
+        ui->dbg_break_pending = 1;
+        display_set_paused(display, 1);
+    }
+    ImGui::SameLine();
+
+    if (ImGui::Button("Reset")) {
+        if (ui->callbacks.on_soft_reset)
+            ui->callbacks.on_soft_reset(ui->callbacks.userdata);
+    }
+
+    /* Breakpoint list. */
+    if (!ui->dbg_breakpoints.empty()) {
+        ImGui::Spacing();
+        ImGui::TextDisabled("Breakpoints:");
+        ImGui::SameLine();
+        for (size_t i = 0; i < ui->dbg_breakpoints.size(); i++) {
+            if (i > 0) ImGui::SameLine(0, 4);
+            char bplabel[16];
+            snprintf(bplabel, sizeof(bplabel), "$%04X##bp%d",
+                     ui->dbg_breakpoints[i], (int)i);
+            if (ImGui::SmallButton(bplabel))
+                ui->dbg_breakpoints.erase(ui->dbg_breakpoints.begin() + (int)i);
+        }
+    }
+
+    /* ---- Status bar ---- */
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Text("CYC:%-10llu  SL:%-3d  DOT:%-3d  %s",
+                (unsigned long long)ui->dbg_cycles,
+                (int)ppu->scanline,
+                (int)ppu->dot,
+                is_paused ? "[PAUSED]" : "[RUNNING]");
+
+    ImGui::End();
+}
+
+/* ---------- APU Visualizer panel (stub) ----------------------------------- */
+
+static void render_apu_visualizer(ui_context *ui, display_context *display) {
+    if (!ui->show_apu_visualizer) return;
+
+    if (ui->dbg_snap_col_a) {
+        float win_h   = ImGui::GetIO().DisplaySize.y;
+        float avail_h = win_h - ui->dbg_menu_height;
+        float top_h   = ui->show_cpu_debugger ? avail_h * DBG_CPU_FRAC : 0.0f;
+        float h       = avail_h - top_h;
+        float y       = ui->dbg_menu_height + top_h;
+        ImGui::SetNextWindowPos(
+            ImVec2(dbg_col_a_x(ui, display), y), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2((float)DBG_COL_A_W, h), ImGuiCond_Always);
+    } else {
+        ImGui::SetNextWindowSize(ImVec2(430, 200), ImGuiCond_FirstUseEver);
+    }
+
+    if (!ImGui::Begin("APU Visualizer", &ui->show_apu_visualizer)) {
+        ImGui::End();
+        return;
+    }
+    ImGui::TextDisabled("APU Visualizer — not yet implemented.");
+    ImGui::End();
+}
+
+/* ---------- Memory Viewer panel (stub) ------------------------------------ */
+
+static void render_memory_viewer(ui_context *ui, display_context *display) {
+    if (!ui->show_memory_viewer) return;
+
+    if (ui->dbg_snap_col_b) {
+        float win_h   = ImGui::GetIO().DisplaySize.y;
+        float avail_h = win_h - ui->dbg_menu_height;
+        float h       = ui->show_ppu_viewer ? avail_h * DBG_MEM_FRAC : avail_h;
+        ImGui::SetNextWindowPos(
+            ImVec2(dbg_col_b_x(ui, display), ui->dbg_menu_height),
+            ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2((float)DBG_COL_B_W, h), ImGuiCond_Always);
+    } else {
+        ImGui::SetNextWindowSize(ImVec2(530, 500), ImGuiCond_FirstUseEver);
+    }
+
+    if (!ImGui::Begin("Memory Viewer", &ui->show_memory_viewer)) {
+        ImGui::End();
+        return;
+    }
+    ImGui::TextDisabled("Memory Viewer — not yet implemented.");
+    ImGui::End();
+}
+
+/* ---------- PPU Viewer panel (stub) --------------------------------------- */
+
+static void render_ppu_viewer(ui_context *ui, display_context *display) {
+    if (!ui->show_ppu_viewer) return;
+
+    if (ui->dbg_snap_col_b) {
+        float win_h   = ImGui::GetIO().DisplaySize.y;
+        float avail_h = win_h - ui->dbg_menu_height;
+        float top_h   = ui->show_memory_viewer ? avail_h * DBG_MEM_FRAC : 0.0f;
+        float h       = avail_h - top_h;
+        float y       = ui->dbg_menu_height + top_h;
+        ImGui::SetNextWindowPos(
+            ImVec2(dbg_col_b_x(ui, display), y), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2((float)DBG_COL_B_W, h), ImGuiCond_Always);
+    } else {
+        ImGui::SetNextWindowSize(ImVec2(530, 300), ImGuiCond_FirstUseEver);
+    }
+
+    if (!ImGui::Begin("PPU Viewer", &ui->show_ppu_viewer)) {
+        ImGui::End();
+        return;
+    }
+    ImGui::TextDisabled("PPU Viewer — not yet implemented.");
+    ImGui::End();
+}
+
 /* ---------- Public API ---------------------------------------------------- */
 
 struct ui_context *ui_init(struct display_context *display,
@@ -422,6 +921,23 @@ struct ui_context *ui_init(struct display_context *display,
     ui->fps_frame_count       = 0;
     ui->rom_loaded            = false;
     ui->pending_drop_path[0]  = '\0';
+
+    ui->dbg_prev_col_a        = false;
+    ui->dbg_prev_col_b        = false;
+    ui->dbg_snap_col_a        = false;
+    ui->dbg_snap_col_b        = false;
+    ui->dbg_menu_height       = 0.0f;
+
+    ui->dbg_cpu               = nullptr;
+    ui->dbg_ppu               = nullptr;
+    ui->dbg_bus               = nullptr;
+    ui->dbg_cycles            = 0;
+    ui->dbg_scroll_addr       = 0;
+    ui->dbg_scroll_needs_sync = true;
+    ui->dbg_step_pending      = 0;
+    ui->dbg_step_over_pending = 0;
+    ui->dbg_step_over_target  = 0;
+    ui->dbg_break_pending     = 0;
 
     if (callbacks)
         ui->callbacks = *callbacks;
@@ -496,6 +1012,9 @@ void ui_render_frame(struct ui_context *ui, struct display_context *display) {
     if (ui && ui->show_demo)
         ImGui::ShowDemoWindow(&ui->show_demo);
 
+    /* ------ Resize window / arm snap flags for debug panels ------------- */
+    if (ui) ui_update_debug_layout(ui, display);
+
     /* ------ Main menu bar ----------------------------------------------- */
     float menu_height = 0.0f;
     if (ui && ui->show_menubar) {
@@ -544,9 +1063,23 @@ void ui_render_frame(struct ui_context *ui, struct display_context *display) {
         render_about_popup();
     }
 
+    /* Store menu height for panel renderers. */
+    if (ui) ui->dbg_menu_height = menu_height;
+
     /* ------ Splash overlay when no ROM is loaded ------------------------ */
     if (ui && !ui->rom_loaded)
         render_no_rom_splash(ui, display, menu_height);
+
+    /* ------ Debug panels (col A: CPU + APU, col B: Memory + PPU) --------- */
+    if (ui) {
+        render_cpu_debugger(ui, display);
+        render_apu_visualizer(ui, display);
+        render_memory_viewer(ui, display);
+        render_ppu_viewer(ui, display);
+        /* Clear snap flags after all panels have been positioned. */
+        ui->dbg_snap_col_a = false;
+        ui->dbg_snap_col_b = false;
+    }
 
     ImGui::Render();
 
@@ -560,12 +1093,18 @@ void ui_render_frame(struct ui_context *ui, struct display_context *display) {
     if (avail_h < 1) avail_h = 1;
 
     if (ui && ui->rom_loaded) {
-        float scale = std::min((float)win_w / gw, (float)avail_h / gh);
+        /* Constrain game to the left column; debug columns occupy the right. */
+        int col_a = dbg_col_a_active(ui) ? (DBG_COL_A_W + DBG_COL_PAD) : 0;
+        int col_b = dbg_col_b_active(ui) ? (DBG_COL_B_W + DBG_COL_PAD) : 0;
+        int game_col_w = win_w - col_a - col_b;
+        if (game_col_w < 1) game_col_w = 1;
+
+        float s = std::min((float)game_col_w / gw, (float)avail_h / gh);
         SDL_Rect dst = {
-            (int)((win_w - gw * scale) * 0.5f),
-            (int)(menu_height + (avail_h - gh * scale) * 0.5f),
-            (int)(gw * scale),
-            (int)(gh * scale)
+            (int)((game_col_w - gw * s) * 0.5f),
+            (int)(menu_height + (avail_h - gh * s) * 0.5f),
+            (int)(gw * s),
+            (int)(gh * s)
         };
         SDL_RenderCopy(renderer, game_tex, nullptr, &dst);
     }
@@ -620,4 +1159,45 @@ int ui_show_fps(const struct ui_context *ui) {
 
 void ui_notify_rom_loaded(struct ui_context *ui, int loaded) {
     if (ui) ui->rom_loaded = (loaded != 0);
+}
+
+void ui_set_debug_context(struct ui_context *ui,
+                          struct cpu6502 *cpu,
+                          struct ppu2c02 *ppu,
+                          struct nesbus  *bus) {
+    if (!ui) return;
+    ui->dbg_cpu = cpu;
+    ui->dbg_ppu = ppu;
+    ui->dbg_bus = bus;
+    ui->dbg_scroll_needs_sync = true;
+}
+
+void ui_debugger_update_cycles(struct ui_context *ui, uint64_t cycles) {
+    if (ui) ui->dbg_cycles = cycles;
+}
+
+int ui_debugger_consume_step(struct ui_context *ui) {
+    if (!ui || !ui->dbg_step_pending) return 0;
+    ui->dbg_step_pending = 0;
+    return 1;
+}
+
+int ui_debugger_consume_step_over(struct ui_context *ui, uint16_t *out_target) {
+    if (!ui || !ui->dbg_step_over_pending) return 0;
+    if (out_target) *out_target = ui->dbg_step_over_target;
+    ui->dbg_step_over_pending = 0;
+    return 1;
+}
+
+int ui_debugger_consume_break(struct ui_context *ui) {
+    if (!ui || !ui->dbg_break_pending) return 0;
+    ui->dbg_break_pending = 0;
+    return 1;
+}
+
+int ui_debugger_is_breakpoint(struct ui_context *ui, uint16_t addr) {
+    if (!ui) return 0;
+    for (auto bp : ui->dbg_breakpoints)
+        if (bp == addr) return 1;
+    return 0;
 }

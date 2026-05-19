@@ -624,8 +624,17 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
   - ✅ VBlank synchronization
   - ✅ NMI triggering
 
+### ✅ CPU Debugger (Complete — 2026-05-18, issue #52)
+- ✅ 6502 disassembler (`arch/6502/disasm.c/.h`) — flat 256-entry table covering all legal + documented illegal opcodes; all addressing modes; REL branch target computed from PC
+- ✅ `disasm_insn(addr, bytes, out, len)` — returns instruction length (1-3); used by panel and unit tests
+- ✅ CPU Debugger ImGui panel (`lib/ui/`) — register display (PC/A/X/Y/SP editable hex fields; P flags as coloured N V - B D I Z C indicators); 20-line disassembly view scrolling to keep PC visible; step/step-over/run/break/reset controls; scanline/dot/cycle status bar
+- ✅ Breakpoints — click any disassembly line to toggle; shown in red; main loop halts emulation on PC match
+- ✅ Step (F7) — executes exactly one CPU instruction then pauses
+- ✅ Step Over (F8) — runs until PC = current PC + instruction length (handles JSR)
+- ✅ Panel toggled from Debug menu; dockable via ImGui docking
+- ✅ Unit tests: `tests/test_disasm.c` — 16 test groups, 126 assertions, all passing
+
 ### ❌ Not Started
-- CPU Debugger / Breakpoints (Phase 4)
 - Performance optimization (Phase 5)
 
 ### Code Quality Status
@@ -637,7 +646,7 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
   - PPU_RENDERING_PIPELINE.md
   - PPU_IMPLEMENTATION_COMPARISON.md
   - BUGFIXES_APPLIED.md
-- ✅ Unit tests: PPU clock (13 tests, 65 assertions), Mapper 001 (11 tests, 23 assertions), Mapper 002 (6 tests, 10 assertions), Mapper 003 (6 tests, 11 assertions), Mapper 004 (10 tests, 19 assertions), Mapper 007 (7 tests, 13 assertions), Mapper 009 (10 tests, 24 assertions), Mapper 011 (6 tests, 12 assertions), Mapper 066 (6 tests, 11 assertions), APU (8 tests, 72 assertions), CPU nestest integration test — **11 test suites, all passing**
+- ✅ Unit tests: PPU clock (13 tests, 65 assertions), Mapper 001 (11 tests, 23 assertions), Mapper 002 (6 tests, 10 assertions), Mapper 003 (6 tests, 11 assertions), Mapper 004 (10 tests, 19 assertions), Mapper 007 (7 tests, 13 assertions), Mapper 009 (10 tests, 24 assertions), Mapper 011 (6 tests, 12 assertions), Mapper 066 (6 tests, 11 assertions), APU (8 tests, 72 assertions), CPU nestest integration test, Disassembler (16 groups, 126 assertions) — **12 test suites, all passing**
 - ✅ Documentation (CLAUDE.md updated 2026-05-18)
 
 ---
@@ -704,6 +713,39 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
 ---
 
 ## Recent Work
+
+### 2026-05-18 Session: CPU Debugger Panel (Issue #52)
+
+**Full CPU debugger implemented. Closes Phase 4 debugger item.**
+
+**Disassembler (`arch/6502/disasm.c/.h`):**
+- Flat 256-entry lookup table covering all legal opcodes + all documented illegal opcodes used by the CPU emulator (SLO, RLA, SRE, RRA, SAX, LAX, DCP, ISB, ANC, ALR, ARR, SBX, USB, etc.)
+- All 13 addressing modes: IMP, ACC, IMM, ZPG, ZPX, ZPY, ABS, ABX, ABY, IND, IDX, IDY, REL
+- REL branch targets computed from instruction address: `target = addr + 2 + (int8_t)offset`
+- `disasm_insn(addr, bytes[3], out, len)` returns instruction length (1–3); does not call into bus
+
+**CPU Debugger panel (`lib/ui/ui.cpp`):**
+- Registers section: PC/A/X/Y/SP as editable hex input fields (writes directly into cpu struct); P flags as coloured N V - B D I Z C indicators (green=set, grey=clear)
+- Disassembly view: 20 lines; shows address + raw bytes + mnemonic/operand; current PC highlighted yellow; breakpoints highlighted red; click any line to toggle a breakpoint
+- Scroll controls: `<<`/`>>` scroll by 4 instructions; `PC` button re-syncs view to current PC; auto-syncs when paused/stepping
+- Controls: Step (F7), Step Over (F8), Run, Break, Reset buttons; breakpoint list shown as removable chips
+- Status bar: `CYC:N  SL:N  DOT:N  [PAUSED/RUNNING]`
+- Panel toggled via Debug menu; dockable
+
+**Step mode (`emu.c`):**
+- `emu_tick()` — one NES tick: 3 PPU + 1 CPU + 1 APU cycles
+- `emu_step_one()` — finishes any in-progress instruction then executes exactly one complete instruction
+- `emu_step_over(target)` — calls `emu_step_one()` until `cpu->PC == target` (max 100 000 instruction guard)
+- Breakpoint check in main frame loop: if `ui_debugger_is_breakpoint(ui, cpu->PC)` then pause
+
+**C++ compatibility fix (`arch/6502/2a03.h`):**
+- `_Atomic int` ring buffer fields guarded with `#ifdef __cplusplus` / `volatile int` fallback so the header can be included from C++ translation units
+
+**New files:** `arch/6502/disasm.h`, `arch/6502/disasm.c`, `tests/test_disasm.c`
+
+**Modified:** `lib/ui/ui.h`, `lib/ui/ui.cpp`, `lib/ui/CMakeLists.txt`, `arch/6502/CMakeLists.txt`, `arch/6502/2a03.h`, `emu.c`, `tests/CMakeLists.txt`
+
+**All 12 test suites pass — no regressions.**
 
 ### 2026-05-18 Session: Windows DLL Bundling (Issue #102)
 
@@ -974,7 +1016,7 @@ All illegal NOP opcodes that consume operand bytes ($04, $0C, $14, $1C, $34, $3C
 - [ ] Screenshot capture
 
 ### Phase 4: Advanced Features
-- [ ] Debugger (CPU state, breakpoints, step through)
+- [X] ~~Debugger (CPU state, breakpoints, step through)~~ ✅ Complete (2026-05-18, issue #52) — disassembler, editable registers, F7/F8 step/step-over, breakpoints, cycle/scanline/dot display
 - [ ] PPU viewer (nametables, patterns, palettes)
 - [ ] Memory viewer/editor
 - [ ] Rewind functionality (ring buffer of states)

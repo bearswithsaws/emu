@@ -2,8 +2,10 @@
 #define __2A03_H__
 
 #include <stdbool.h>
-#include <stdatomic.h>
 #include <stdint.h>
+#ifndef __cplusplus
+#include <stdatomic.h>
+#endif
 
 /* SPSC ring buffer capacity (power-of-2; ~93 ms at 44100 Hz) */
 #define APU_RING_SIZE 4096
@@ -119,8 +121,13 @@ struct apu2a03 {
 
     /* SPSC ring buffer — written by main thread, drained by SDL audio callback */
     float ring_buf[APU_RING_SIZE];
+#ifdef __cplusplus
+    volatile int ring_write; /* producer index (main thread) */
+    volatile int ring_read;  /* consumer index (audio thread) */
+#else
     _Atomic int ring_write; /* producer index (main thread) */
     _Atomic int ring_read;  /* consumer index (audio thread) */
+#endif
 
     bool irq_pending; /* frame counter or DMC IRQ (ORed) */
 
