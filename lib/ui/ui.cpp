@@ -989,18 +989,14 @@ static void render_ppu_viewer(ui_context *ui, display_context *display) {
                                           SDL_TEXTUREACCESS_STREAMING, 256, 240);
     }
 
-    /* Snapshot 8 KB of CHR address space through the mapper so the viewer
-     * shows the currently-banked tiles for CHR-ROM games.  CHR-RAM games
-     * populate ppu->pattern_table via the mapper write path, so this also
-     * works correctly for them.  We snapshot before rendering any tab so
-     * both Pattern Tables and Nametables share the same consistent data. */
-    uint8_t chr_snapshot[0x2000];
-    if (ppu->cart && ppu->cart->ppu_read) {
-        for (int i = 0; i < 0x2000; i++)
-            chr_snapshot[i] = ppu->cart->ppu_read(ppu->cart, (uint16_t)i);
-    } else {
-        memcpy(chr_snapshot, ppu->pattern_table, 0x2000);
-    }
+    /* Throttle texture rebuilds: refresh at ~15 fps while running, every
+     * frame while paused so the user sees live state when stepping.
+     * This avoids paying 8K mapper reads + SDL_LockTexture GPU syncs at 60 Hz. */
+    static int  refresh_ticker = 0;
+    static int  pt_pal_prev    = -1; /* force refresh on palette change */
+    bool        emu_paused     = display_is_paused(display) != 0;
+    bool        should_refresh = emu_paused || (++refresh_ticker >= 4);
+    if (should_refresh) refresh_ticker = 0;
 
     static int ppu_tab = 0;
     if (ImGui::BeginTabBar("##ppusegs")) {
@@ -1027,20 +1023,34 @@ static void render_ppu_viewer(ui_context *ui, display_context *display) {
         }
         ImGui::Spacing();
 
-        const uint8_t *chr = chr_snapshot;
-        for (int tbl = 0; tbl < 2; tbl++) {
-            void *pv; int pitch;
-            if (SDL_LockTexture(pt_tex[tbl], nullptr, &pv, &pitch) == 0) {
-                int stride      = pitch / 4;
-                uint32_t *px    = static_cast<uint32_t *>(pv);
-                for (int tile = 0; tile < 256; tile++) {
-                    int tc            = tile % 16;
-                    int tr            = tile / 16;
-                    const uint8_t *td = chr + tbl * 0x1000 + tile * 16;
-                    uint32_t *dst     = px + tr * 8 * stride + tc * 8;
-                    ppu_decode_tile(td, ppu->palette_table, pt_pal, dst, stride);
+        /* Force a refresh when the palette selection changes even mid-throttle. */
+        bool pal_changed = (pt_pal != pt_pal_prev);
+        if (should_refresh || pal_changed) {
+            pt_pal_prev = pt_pal;
+
+            /* Snapshot CHR only when we're about to redraw. */
+            uint8_t chr_snapshot[0x2000];
+            if (ppu->cart && ppu->cart->ppu_read) {
+                for (int i = 0; i < 0x2000; i++)
+                    chr_snapshot[i] = ppu->cart->ppu_read(ppu->cart, (uint16_t)i);
+            } else {
+                memcpy(chr_snapshot, ppu->pattern_table, 0x2000);
+            }
+
+            for (int tbl = 0; tbl < 2; tbl++) {
+                void *pv; int pitch;
+                if (SDL_LockTexture(pt_tex[tbl], nullptr, &pv, &pitch) == 0) {
+                    int stride   = pitch / 4;
+                    uint32_t *px = static_cast<uint32_t *>(pv);
+                    for (int tile = 0; tile < 256; tile++) {
+                        int tc            = tile % 16;
+                        int tr            = tile / 16;
+                        const uint8_t *td = chr_snapshot + tbl * 0x1000 + tile * 16;
+                        uint32_t *dst     = px + tr * 8 * stride + tc * 8;
+                        ppu_decode_tile(td, ppu->palette_table, pt_pal, dst, stride);
+                    }
+                    SDL_UnlockTexture(pt_tex[tbl]);
                 }
-                SDL_UnlockTexture(pt_tex[tbl]);
             }
         }
 
@@ -1091,26 +1101,37 @@ static void render_ppu_viewer(ui_context *ui, display_context *display) {
         uint8_t bg_tbl = ppu->ppuctrl.bg_pattern_table;
         uint8_t m      = mirror < 4 ? mirror : 0;
 
-        for (int nt = 0; nt < 4; nt++) {
-            void *pv; int pitch;
-            if (SDL_LockTexture(nt_tex[nt], nullptr, &pv, &pitch) != 0) continue;
-            int stride      = pitch / 4;
-            uint32_t *px    = static_cast<uint32_t *>(pv);
-            const uint8_t *ntd  = ppu->nametable + nt_off[m][nt];
-            const uint8_t *attr = ntd + 0x3C0;
-
-            for (int cy = 0; cy < 30; cy++) {
-                for (int cx = 0; cx < 32; cx++) {
-                    uint8_t tile_id   = ntd[cy * 32 + cx];
-                    uint8_t ab        = attr[(cy / 4) * 8 + (cx / 4)];
-                    int shift         = ((cy & 2) << 1) | (cx & 2);
-                    int pal_slot      = (ab >> shift) & 3;
-                    const uint8_t *td = chr_snapshot + bg_tbl * 0x1000 + tile_id * 16;
-                    uint32_t *dst     = px + cy * 8 * stride + cx * 8;
-                    ppu_decode_tile(td, ppu->palette_table, pal_slot, dst, stride);
-                }
+        if (should_refresh) {
+            /* Snapshot CHR only when we're about to redraw. */
+            uint8_t chr_snapshot[0x2000];
+            if (ppu->cart && ppu->cart->ppu_read) {
+                for (int i = 0; i < 0x2000; i++)
+                    chr_snapshot[i] = ppu->cart->ppu_read(ppu->cart, (uint16_t)i);
+            } else {
+                memcpy(chr_snapshot, ppu->pattern_table, 0x2000);
             }
-            SDL_UnlockTexture(nt_tex[nt]);
+
+            for (int nt = 0; nt < 4; nt++) {
+                void *pv; int pitch;
+                if (SDL_LockTexture(nt_tex[nt], nullptr, &pv, &pitch) != 0) continue;
+                int stride          = pitch / 4;
+                uint32_t *px        = static_cast<uint32_t *>(pv);
+                const uint8_t *ntd  = ppu->nametable + nt_off[m][nt];
+                const uint8_t *attr = ntd + 0x3C0;
+
+                for (int cy = 0; cy < 30; cy++) {
+                    for (int cx = 0; cx < 32; cx++) {
+                        uint8_t tile_id   = ntd[cy * 32 + cx];
+                        uint8_t ab        = attr[(cy / 4) * 8 + (cx / 4)];
+                        int shift         = ((cy & 2) << 1) | (cx & 2);
+                        int pal_slot      = (ab >> shift) & 3;
+                        const uint8_t *td = chr_snapshot + bg_tbl * 0x1000 + tile_id * 16;
+                        uint32_t *dst     = px + cy * 8 * stride + cx * 8;
+                        ppu_decode_tile(td, ppu->palette_table, pal_slot, dst, stride);
+                    }
+                }
+                SDL_UnlockTexture(nt_tex[nt]);
+            }
         }
 
         /* 2×2 grid at 45% scale — capture screen positions for scroll rect */
