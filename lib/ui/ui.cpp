@@ -13,6 +13,7 @@
 #include "vendor/imgui/imgui_internal.h"
 #include "vendor/imgui/backends/imgui_impl_sdl2.h"
 #include "vendor/imgui/backends/imgui_impl_sdlrenderer2.h"
+#include "vendor/imgui_memory_editor.h"
 #include <nfd.h>
 
 extern "C" {
@@ -809,18 +810,95 @@ static void render_apu_visualizer(ui_context *ui, display_context *display) {
     ImGui::End();
 }
 
-/* ---------- Memory Viewer panel (stub) ------------------------------------ */
+/* ---------- Memory Viewer panel ------------------------------------------- */
+
+/* CPU bus read/write callbacks for MemoryEditor — uses nesbus debug_read/write
+ * so all bus side-effects (mapper, PPU register reads) happen normally.
+ * mem_data is unused; the bus pointer is passed through UserData. */
+static ImU8 memview_cpu_read(const ImU8 * /*mem*/, size_t off, void *user_data) {
+    struct nesbus *bus = static_cast<struct nesbus *>(user_data);
+    uint8_t byte = 0;
+    bus->debug_read((uint16_t)off, &byte, 1);
+    return byte;
+}
+static void memview_cpu_write(ImU8 * /*mem*/, size_t off, ImU8 d, void *user_data) {
+    struct nesbus *bus = static_cast<struct nesbus *>(user_data);
+    bus->write((uint16_t)off, (uint8_t)d);
+}
+
+/* Background color hints for the CPU address space. */
+static ImU32 memview_cpu_bg(const ImU8 * /*mem*/, size_t off, void * /*u*/) {
+    if (off < 0x0100) return IM_COL32(60,  90, 160,  80);  /* zero page — blue   */
+    if (off < 0x0200) return IM_COL32(90,  60, 160,  80);  /* stack     — purple */
+    if (off < 0x0800) return IM_COL32(50,  50,  50,  50);  /* RAM                */
+    if (off >= 0x2000 && off < 0x2008)
+                      return IM_COL32(50, 140,  50,  80);  /* PPU regs  — green  */
+    if (off >= 0x4000 && off < 0x4018)
+                      return IM_COL32(160, 100, 40,  80);  /* APU/IO    — orange */
+    if (off >= 0x8000) return IM_COL32(100, 70,  30,  60); /* ROM       — tan    */
+    return IM_COL32(0, 0, 0, 0);
+}
 
 static void render_memory_viewer(ui_context *ui, display_context *display) {
     if (!ui->show_memory_viewer) return;
 
-    ImGui::SetNextWindowSize(ImVec2(530, 500), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(560, 520), ImGuiCond_FirstUseEver);
 
     if (!ImGui::Begin("Memory Viewer", &ui->show_memory_viewer)) {
         ImGui::End();
         return;
     }
-    ImGui::TextDisabled("Memory Viewer — not yet implemented.");
+
+    if (!ui->dbg_cpu || !ui->dbg_ppu || !ui->dbg_bus) {
+        ImGui::TextDisabled("No debug context set.");
+        ImGui::End();
+        return;
+    }
+
+    struct ppu2c02 *ppu = ui->dbg_ppu;
+    struct nesbus  *bus = ui->dbg_bus;
+
+    /* One persistent MemoryEditor per segment so scroll/cursor survive tab switches. */
+    static MemoryEditor mem_cpu, mem_oam, mem_vram, mem_palette;
+    static bool mem_init = false;
+    if (!mem_init) {
+        mem_cpu.ReadFn    = memview_cpu_read;
+        mem_cpu.WriteFn   = memview_cpu_write;
+        mem_cpu.BgColorFn = memview_cpu_bg;
+        mem_init = true;
+    }
+    mem_cpu.UserData = bus;   /* refresh each frame in case bus pointer changes */
+
+    /* Segment tab bar */
+    static int seg = 0;
+    if (ImGui::BeginTabBar("##memsegs")) {
+        if (ImGui::BeginTabItem("CPU Bus"))  { seg = 0; ImGui::EndTabItem(); }
+        if (ImGui::BeginTabItem("OAM"))      { seg = 1; ImGui::EndTabItem(); }
+        if (ImGui::BeginTabItem("PPU VRAM")) { seg = 2; ImGui::EndTabItem(); }
+        if (ImGui::BeginTabItem("Palette"))  { seg = 3; ImGui::EndTabItem(); }
+        ImGui::EndTabBar();
+    }
+
+    switch (seg) {
+    case 0:
+        /* CPU bus — 64 KB via custom read/write callbacks; pass null for mem_data
+         * since ReadFn/WriteFn never dereference it. */
+        mem_cpu.DrawContents(nullptr, 0x10000, 0x0000);
+        break;
+    case 1:
+        /* OAM — 256 bytes, directly editable */
+        mem_oam.DrawContents(ppu->oam, 256, 0x0000);
+        break;
+    case 2:
+        /* PPU nametable VRAM — 2 KB, base address $2000 */
+        mem_vram.DrawContents(ppu->nametable, 0x0800, 0x2000);
+        break;
+    case 3:
+        /* Palette RAM — 32 bytes, base address $3F00 */
+        mem_palette.DrawContents(ppu->palette_table, 0x20, 0x3F00);
+        break;
+    }
+
     ImGui::End();
 }
 
