@@ -592,7 +592,7 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
   - ✅ Window close handling
   - ✅ **Full ImGui menu bar** (2026-05-17, issue #49)
     - File: Open ROM (native GTK file picker via nativefiledialog-extended), Recent ROMs (last 5, persisted to `~/.config/emu/recent.txt`), Close ROM, Quit
-    - Emulation: Pause/Resume, Reset (Soft), Power Cycle, Save/Load State slots (greyed — not yet implemented), Speed (50%/100%/200%/Uncapped)
+    - Emulation: Pause/Resume, Reset (Soft), Power Cycle, Save/Load State slots 1–5 (F2–F6/Shift+F2–F6), Speed (50%/100%/200%/Uncapped)
     - Debug: CPU Debugger, Memory Viewer, PPU Viewer, APU Visualizer (panel visibility toggles)
     - View: Scale 1×–4×, Fullscreen (F11), Show FPS Overlay, Toggle Menubar (F1)
     - Help: Controls Reference popup, About popup (version from emu_config.h)
@@ -647,7 +647,7 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
   - PPU_IMPLEMENTATION_COMPARISON.md
   - BUGFIXES_APPLIED.md
 - ✅ Unit tests: PPU clock (13 tests, 65 assertions), Mapper 001 (11 tests, 23 assertions), Mapper 002 (6 tests, 10 assertions), Mapper 003 (6 tests, 11 assertions), Mapper 004 (10 tests, 19 assertions), Mapper 007 (7 tests, 13 assertions), Mapper 009 (10 tests, 24 assertions), Mapper 011 (6 tests, 12 assertions), Mapper 066 (6 tests, 11 assertions), APU (8 tests, 72 assertions), CPU nestest integration test, Disassembler (16 groups, 126 assertions) — **12 test suites, all passing**
-- ✅ Documentation (CLAUDE.md updated 2026-05-18)
+- ✅ Documentation (CLAUDE.md updated 2026-05-19)
 
 ---
 
@@ -713,6 +713,53 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
 ---
 
 ## Recent Work
+
+### 2026-05-19 Session: PPU Viewer Panel (Issues #54, #55, #56)
+
+**Full PPU Viewer implemented. Closes all three remaining Phase 4 debug panel items.**
+
+**PPU Viewer panel (`lib/ui/ui.cpp`) — three tabs:**
+
+**Pattern Tables (`#54`):**
+- NES system palette lookup table (64 colors, ARGB8888) added as `NES_SYS_PALETTE[64]`
+- `ppu_decode_tile()` helper: decodes one 8×8 tile from two bitplanes into ARGB pixels
+- Two `SDL_Texture` 128×128 (SDL_TEXTUREACCESS_STREAMING), updated each frame via `SDL_LockTexture`
+- 16×16 tile grid per table; rendered at 2× scale (256×256 screen pixels each)
+- Palette selector (radio buttons): BG 0–3, Spr 0–3 — changes colors live
+- Hover tooltip: table #, tile index ($00–$FF), CHR address range
+- Reads directly from `ppu->pattern_table[]` (CHR-RAM for CHR-RAM games; see note)
+
+**Nametables (`#55`):**
+- Four `SDL_Texture` 256×240, updated each frame, decoded tile-by-tile using attribute table palette
+- Attribute palette lookup: `shift = ((cy & 2) << 1) | (cx & 2)` selects 2-bit slot from attribute byte
+- Mirroring applied via `ppu->cart->map->mirroring` → `nt_off[4][4]` lookup (HORIZONTAL/VERTICAL/SINGLE_LO/SINGLE_HI)
+- Displayed as 2×2 grid at 45% scale (~115×108 each)
+- Yellow scroll viewport rectangle drawn via `ImDrawList::AddRect` using loopy `v` and `x` registers
+- Mirroring mode label + current BG pattern table shown above grid
+
+**OAM (`#56`):**
+- `ImGui::BeginTable` with 9 columns: #, Y, X, Tile, Pal, Pri, H-Fl, V-Fl, Vis
+- 64 rows from `ppu->oam[256]`; off-screen sprites (Y ≥ 239) dimmed with dark row background
+- Sticky header row; scrollable
+
+**Note on CHR-ROM games:** `ppu->pattern_table[]` holds CHR-RAM for CHR-RAM mappers (0-CHR-RAM, 1, 2, 3, 7, 11, 66). For CHR-ROM mappers with banking (4, 9 etc.), this buffer may not reflect current banks; a future improvement can snapshot via `ppu->ppu_read`.
+
+**Files modified:** `lib/ui/ui.cpp`
+
+---
+
+### 2026-05-19 Session: Memory Viewer Panel (Issue #57)
+
+**Hex memory viewer implemented. Closes Phase 4 memory viewer item.**
+
+**Memory Viewer panel (`lib/ui/ui.cpp`):**
+- Uses `imgui_memory_editor` (vendored at `lib/ui/vendor/imgui_memory_editor.h`)
+- Four tabs: **CPU Bus** (64 KB read-only view via `nesbus_read`), **OAM** (256 B sprite RAM), **VRAM** (16 KB PPU address space via `ppu_read`), **Palette** (32 B palette RAM)
+- Panel toggled via Debug → Memory Viewer menu; dockable
+
+**Merged as PR #109.**
+
+---
 
 ### 2026-05-18 Session: CPU Debugger Panel (Issue #52)
 
@@ -1017,8 +1064,8 @@ All illegal NOP opcodes that consume operand bytes ($04, $0C, $14, $1C, $34, $3C
 
 ### Phase 4: Advanced Features
 - [X] ~~Debugger (CPU state, breakpoints, step through)~~ ✅ Complete (2026-05-18, issue #52) — disassembler, editable registers, F7/F8 step/step-over, breakpoints, cycle/scanline/dot display
-- [ ] PPU viewer (nametables, patterns, palettes)
-- [ ] Memory viewer/editor
+- [X] ~~PPU viewer (nametables, patterns, palettes)~~ ✅ Complete (2026-05-19, issues #54/#55/#56) — Pattern Tables (two 128×128 tile grids, palette selector, hover tooltip), Nametables (2×2 grid with scroll viewport rect overlay + mirroring label), OAM (64-entry table with all sprite attributes)
+- [X] ~~Memory viewer/editor~~ ✅ Complete (2026-05-19, issue #57) — hex viewer with CPU bus, OAM, VRAM, Palette tabs; uses imgui_memory_editor
 - [ ] Rewind functionality (ring buffer of states)
 - [ ] TAS (Tool-Assisted Speedrun) input recording
 
@@ -1027,7 +1074,7 @@ All illegal NOP opcodes that consume operand bytes ($04, $0C, $14, $1C, $34, $3C
 - [ ] PPU open bus behavior
 - [ ] Sprite overflow flag accuracy
 - [ ] APU sweep unit edge cases
-- [ ] More mappers (5, 9, etc.)
+- [ ] More mappers (5, etc.) — Mapper 9 (PxROM/MMC2) already complete
 - [ ] Pass test ROM suites (blargg's tests, etc.)
 
 ---
@@ -1063,5 +1110,5 @@ TODO: Add contribution guidelines
 
 ---
 
-**Last Updated:** 2026-05-18
+**Last Updated:** 2026-05-19 (PPU Viewer complete)
 **Emulator Version:** 0.1.0 (pre-alpha)
