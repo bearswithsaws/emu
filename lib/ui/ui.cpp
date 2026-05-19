@@ -643,21 +643,32 @@ static void render_cpu_debugger(ui_context *ui, display_context *display) {
         ui->dbg_scroll_needs_sync = false;
     }
 
-    /* Disassemble DASM_LINES instructions from scroll_addr. */
-    static const int DASM_LINES = 20;
-    uint16_t  dasm_addrs[DASM_LINES];
-    char      dasm_texts[DASM_LINES][32];
-    disasm_forward(bus, ui->dbg_scroll_addr, dasm_addrs, dasm_texts, DASM_LINES);
+    /* Disassembly height fills whatever space is available, reserving the
+     * controls section below.  This keeps Step/Break/status bar visible even
+     * when another window is snapped below and shrinks this panel. */
+    float line_h   = ImGui::GetTextLineHeightWithSpacing();
+    float frame_h  = ImGui::GetFrameHeightWithSpacing();
+    float sp       = ImGui::GetStyle().ItemSpacing.y;
+    float ctrl_h   = frame_h * 3          /* scroll btns + SeparatorText + step btns */
+                   + line_h  * 2          /* status bar + breakpoints reserve         */
+                   + sp      * 4;         /* spacings + separator                     */
+    float avail_h  = ImGui::GetContentRegionAvail().y;
+    float dasm_h   = std::max(avail_h - ctrl_h, line_h * 4.0f);
 
-    float line_h = ImGui::GetTextLineHeightWithSpacing();
-    ImVec2 list_sz = ImVec2(-1.0f, line_h * DASM_LINES + 4.0f);
+    static const int DASM_MAX = 60;
+    int n_lines = std::max(4, std::min(DASM_MAX, (int)((dasm_h - 4.0f) / line_h)));
+    uint16_t dasm_addrs[DASM_MAX];
+    char     dasm_texts[DASM_MAX][32];
+    disasm_forward(bus, ui->dbg_scroll_addr, dasm_addrs, dasm_texts, n_lines);
+
+    ImVec2 list_sz(-1.0f, dasm_h);
     ImGui::BeginChild("##dasm", list_sz, ImGuiChildFlags_FrameStyle);
 
     ImVec4 col_pc   = ImVec4(1.0f, 1.0f, 0.2f, 1.0f);  /* yellow — current PC */
     ImVec4 col_bp   = ImVec4(1.0f, 0.3f, 0.3f, 1.0f);  /* red — breakpoint */
     ImVec4 col_norm = ImGui::GetStyleColorVec4(ImGuiCol_Text);
 
-    for (int i = 0; i < DASM_LINES; i++) {
+    for (int i = 0; i < n_lines; i++) {
         uint16_t a = dasm_addrs[i];
         bool is_pc = (a == cpu->PC);
         bool is_bp = false;
@@ -978,6 +989,19 @@ static void render_ppu_viewer(ui_context *ui, display_context *display) {
                                           SDL_TEXTUREACCESS_STREAMING, 256, 240);
     }
 
+    /* Snapshot 8 KB of CHR address space through the mapper so the viewer
+     * shows the currently-banked tiles for CHR-ROM games.  CHR-RAM games
+     * populate ppu->pattern_table via the mapper write path, so this also
+     * works correctly for them.  We snapshot before rendering any tab so
+     * both Pattern Tables and Nametables share the same consistent data. */
+    uint8_t chr_snapshot[0x2000];
+    if (ppu->cart && ppu->cart->ppu_read) {
+        for (int i = 0; i < 0x2000; i++)
+            chr_snapshot[i] = ppu->cart->ppu_read(ppu->cart, (uint16_t)i);
+    } else {
+        memcpy(chr_snapshot, ppu->pattern_table, 0x2000);
+    }
+
     static int ppu_tab = 0;
     if (ImGui::BeginTabBar("##ppusegs")) {
         if (ImGui::BeginTabItem("Pattern Tables")) { ppu_tab = 0; ImGui::EndTabItem(); }
@@ -1003,7 +1027,7 @@ static void render_ppu_viewer(ui_context *ui, display_context *display) {
         }
         ImGui::Spacing();
 
-        const uint8_t *chr = ppu->pattern_table;
+        const uint8_t *chr = chr_snapshot;
         for (int tbl = 0; tbl < 2; tbl++) {
             void *pv; int pitch;
             if (SDL_LockTexture(pt_tex[tbl], nullptr, &pv, &pitch) == 0) {
@@ -1081,7 +1105,7 @@ static void render_ppu_viewer(ui_context *ui, display_context *display) {
                     uint8_t ab        = attr[(cy / 4) * 8 + (cx / 4)];
                     int shift         = ((cy & 2) << 1) | (cx & 2);
                     int pal_slot      = (ab >> shift) & 3;
-                    const uint8_t *td = ppu->pattern_table + bg_tbl * 0x1000 + tile_id * 16;
+                    const uint8_t *td = chr_snapshot + bg_tbl * 0x1000 + tile_id * 16;
                     uint32_t *dst     = px + cy * 8 * stride + cx * 8;
                     ppu_decode_tile(td, ppu->palette_table, pal_slot, dst, stride);
                 }
