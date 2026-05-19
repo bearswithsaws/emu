@@ -28,6 +28,25 @@ extern "C" {
 
 #define MAX_RECENT_ROMS 5
 
+/* Debug panel layout —————————————————————————————————————————————————————
+ * Two columns of debug panels appear to the right of the game viewport.
+ *
+ *  ┌──────────────┬──────────────┬──────────────┐
+ *  │  Game View   │   Col A      │   Col B      │
+ *  │  (game_w)    │  (COL_A_W)   │  (COL_B_W)   │
+ *  │              │  CPU top 65% │  Memory 65%  │
+ *  │              │  APU  bot35% │  PPU    35%  │
+ *  └──────────────┴──────────────┴──────────────┘
+ *
+ * The SDL window widens by the column widths as panels are opened.
+ * Panels snap to their slot position when first opened, then can be dragged.
+ */
+static const int DBG_COL_A_W = 440;   /* CPU Debugger + APU Visualizer   */
+static const int DBG_COL_B_W = 540;   /* Memory Viewer + PPU Viewer       */
+static const int DBG_COL_PAD = 4;     /* gap between game/col-A/col-B     */
+static const float DBG_CPU_FRAC  = 0.65f;  /* fraction of col A for CPU panel  */
+static const float DBG_MEM_FRAC  = 0.65f;  /* fraction of col B for Memory     */
+
 struct ui_context {
     bool show_demo;
     bool show_menubar;
@@ -63,6 +82,13 @@ struct ui_context {
     /* Splash / idle state */
     bool rom_loaded;
     char pending_drop_path[1024];
+
+    /* Debug panel layout */
+    bool dbg_prev_col_a;      /* col A (CPU+APU) was active last frame */
+    bool dbg_prev_col_b;      /* col B (Mem+PPU) was active last frame */
+    bool dbg_snap_col_a;      /* snap col A panels to slot this frame  */
+    bool dbg_snap_col_b;      /* snap col B panels to slot this frame  */
+    float dbg_menu_height;    /* menu bar height captured each frame   */
 
     /* CPU debugger */
     struct cpu6502 *dbg_cpu;
@@ -363,10 +389,18 @@ static void render_no_rom_splash(ui_context *ui, display_context *display,
     SDL_GetRendererOutputSize(renderer, &win_w, &win_h);
     float avail_h = (float)win_h - menu_height;
 
+    /* Center within the game column only — not the full window. */
+    int col_a_px = (ui->show_cpu_debugger || ui->show_apu_visualizer)
+                       ? (DBG_COL_A_W + DBG_COL_PAD) : 0;
+    int col_b_px = (ui->show_memory_viewer || ui->show_ppu_viewer)
+                       ? (DBG_COL_B_W + DBG_COL_PAD) : 0;
+    float game_col_w = (float)(win_w - col_a_px - col_b_px);
+    if (game_col_w < 1.0f) game_col_w = 1.0f;
+
     const float panel_w = 340.0f;
     const float panel_h = 200.0f;
     ImGui::SetNextWindowPos(
-        ImVec2(win_w * 0.5f, menu_height + avail_h * 0.5f),
+        ImVec2(game_col_w * 0.5f, menu_height + avail_h * 0.5f),
         ImGuiCond_Always, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(panel_w, panel_h), ImGuiCond_Always);
     ImGui::SetNextWindowBgAlpha(0.88f);
@@ -421,6 +455,60 @@ static void render_no_rom_splash(ui_context *ui, display_context *display,
     ImGui::End();
 }
 
+/* ---------- Debug panel layout -------------------------------------------- */
+
+static bool dbg_col_a_active(const ui_context *ui) {
+    return ui->show_cpu_debugger || ui->show_apu_visualizer;
+}
+static bool dbg_col_b_active(const ui_context *ui) {
+    return ui->show_memory_viewer || ui->show_ppu_viewer;
+}
+
+/* Return the x position where column A panels should start. */
+static float dbg_col_a_x(const ui_context *ui, display_context *display) {
+    int game_w = display_get_width(display) * display_get_scale(display);
+    return (float)(game_w + DBG_COL_PAD);
+}
+
+/* Return the x position where column B panels should start. */
+static float dbg_col_b_x(const ui_context *ui, display_context *display) {
+    float ax = dbg_col_a_x(ui, display);
+    bool col_a = dbg_col_a_active(ui);
+    return ax + (col_a ? (float)(DBG_COL_A_W + DBG_COL_PAD) : 0.0f);
+}
+
+/* Resize the SDL window to fit active debug columns, and arm snap flags when
+ * a column transitions from closed → open. */
+static void ui_update_debug_layout(ui_context *ui, display_context *display) {
+    bool col_a = dbg_col_a_active(ui);
+    bool col_b = dbg_col_b_active(ui);
+
+    bool col_a_changed = col_a != ui->dbg_prev_col_a;
+    bool col_b_changed = col_b != ui->dbg_prev_col_b;
+    if (!col_a_changed && !col_b_changed) return;
+
+    int gw     = display_get_width(display);
+    int gh     = display_get_height(display);
+    int scale  = display_get_scale(display);
+    int base_w = gw * scale;
+    int base_h = gh * scale;
+
+    /* Compute the desired window width. */
+    int new_w = base_w
+              + (col_a ? DBG_COL_A_W + DBG_COL_PAD : 0)
+              + (col_b ? DBG_COL_B_W + DBG_COL_PAD : 0);
+
+    SDL_Window *window = static_cast<SDL_Window *>(display_get_window(display));
+    SDL_SetWindowSize(window, new_w, base_h);
+
+    /* Arm snap for columns that just became active. */
+    if (col_a && !ui->dbg_prev_col_a) ui->dbg_snap_col_a = true;
+    if (col_b && !ui->dbg_prev_col_b) ui->dbg_snap_col_b = true;
+
+    ui->dbg_prev_col_a = col_a;
+    ui->dbg_prev_col_b = col_b;
+}
+
 /* ---------- CPU Debugger panel -------------------------------------------- */
 
 /* Read up to 3 bytes from the bus without side-effects. */
@@ -472,8 +560,21 @@ static uint16_t disasm_addr_before(struct nesbus *bus, uint16_t target, int n_be
 
 static void render_cpu_debugger(ui_context *ui, display_context *display) {
     if (!ui->show_cpu_debugger) return;
+
+    /* Snap to col A slot when the column first opens. */
+    if (ui->dbg_snap_col_a) {
+        float win_h   = ImGui::GetIO().DisplaySize.y;
+        float avail_h = win_h - ui->dbg_menu_height;
+        float h       = ui->show_apu_visualizer ? avail_h * DBG_CPU_FRAC : avail_h;
+        ImGui::SetNextWindowPos(
+            ImVec2(dbg_col_a_x(ui, display), ui->dbg_menu_height),
+            ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2((float)DBG_COL_A_W, h), ImGuiCond_Always);
+    } else {
+        ImGui::SetNextWindowSize(ImVec2(430, 500), ImGuiCond_FirstUseEver);
+    }
+
     if (!ui->dbg_cpu || !ui->dbg_ppu || !ui->dbg_bus) {
-        ImGui::SetNextWindowSize(ImVec2(360, 80), ImGuiCond_FirstUseEver);
         if (ImGui::Begin("CPU Debugger", &ui->show_cpu_debugger)) {
             ImGui::TextDisabled("No debug context set.");
         }
@@ -484,8 +585,6 @@ static void render_cpu_debugger(ui_context *ui, display_context *display) {
     struct cpu6502 *cpu = ui->dbg_cpu;
     struct ppu2c02 *ppu = ui->dbg_ppu;
     struct nesbus  *bus = ui->dbg_bus;
-
-    ImGui::SetNextWindowSize(ImVec2(430, 500), ImGuiCond_FirstUseEver);
     if (!ImGui::Begin("CPU Debugger", &ui->show_cpu_debugger)) {
         ImGui::End();
         return;
@@ -724,6 +823,83 @@ static void render_cpu_debugger(ui_context *ui, display_context *display) {
     ImGui::End();
 }
 
+/* ---------- APU Visualizer panel (stub) ----------------------------------- */
+
+static void render_apu_visualizer(ui_context *ui, display_context *display) {
+    if (!ui->show_apu_visualizer) return;
+
+    if (ui->dbg_snap_col_a) {
+        float win_h   = ImGui::GetIO().DisplaySize.y;
+        float avail_h = win_h - ui->dbg_menu_height;
+        float top_h   = ui->show_cpu_debugger ? avail_h * DBG_CPU_FRAC : 0.0f;
+        float h       = avail_h - top_h;
+        float y       = ui->dbg_menu_height + top_h;
+        ImGui::SetNextWindowPos(
+            ImVec2(dbg_col_a_x(ui, display), y), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2((float)DBG_COL_A_W, h), ImGuiCond_Always);
+    } else {
+        ImGui::SetNextWindowSize(ImVec2(430, 200), ImGuiCond_FirstUseEver);
+    }
+
+    if (!ImGui::Begin("APU Visualizer", &ui->show_apu_visualizer)) {
+        ImGui::End();
+        return;
+    }
+    ImGui::TextDisabled("APU Visualizer — not yet implemented.");
+    ImGui::End();
+}
+
+/* ---------- Memory Viewer panel (stub) ------------------------------------ */
+
+static void render_memory_viewer(ui_context *ui, display_context *display) {
+    if (!ui->show_memory_viewer) return;
+
+    if (ui->dbg_snap_col_b) {
+        float win_h   = ImGui::GetIO().DisplaySize.y;
+        float avail_h = win_h - ui->dbg_menu_height;
+        float h       = ui->show_ppu_viewer ? avail_h * DBG_MEM_FRAC : avail_h;
+        ImGui::SetNextWindowPos(
+            ImVec2(dbg_col_b_x(ui, display), ui->dbg_menu_height),
+            ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2((float)DBG_COL_B_W, h), ImGuiCond_Always);
+    } else {
+        ImGui::SetNextWindowSize(ImVec2(530, 500), ImGuiCond_FirstUseEver);
+    }
+
+    if (!ImGui::Begin("Memory Viewer", &ui->show_memory_viewer)) {
+        ImGui::End();
+        return;
+    }
+    ImGui::TextDisabled("Memory Viewer — not yet implemented.");
+    ImGui::End();
+}
+
+/* ---------- PPU Viewer panel (stub) --------------------------------------- */
+
+static void render_ppu_viewer(ui_context *ui, display_context *display) {
+    if (!ui->show_ppu_viewer) return;
+
+    if (ui->dbg_snap_col_b) {
+        float win_h   = ImGui::GetIO().DisplaySize.y;
+        float avail_h = win_h - ui->dbg_menu_height;
+        float top_h   = ui->show_memory_viewer ? avail_h * DBG_MEM_FRAC : 0.0f;
+        float h       = avail_h - top_h;
+        float y       = ui->dbg_menu_height + top_h;
+        ImGui::SetNextWindowPos(
+            ImVec2(dbg_col_b_x(ui, display), y), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2((float)DBG_COL_B_W, h), ImGuiCond_Always);
+    } else {
+        ImGui::SetNextWindowSize(ImVec2(530, 300), ImGuiCond_FirstUseEver);
+    }
+
+    if (!ImGui::Begin("PPU Viewer", &ui->show_ppu_viewer)) {
+        ImGui::End();
+        return;
+    }
+    ImGui::TextDisabled("PPU Viewer — not yet implemented.");
+    ImGui::End();
+}
+
 /* ---------- Public API ---------------------------------------------------- */
 
 struct ui_context *ui_init(struct display_context *display,
@@ -745,6 +921,12 @@ struct ui_context *ui_init(struct display_context *display,
     ui->fps_frame_count       = 0;
     ui->rom_loaded            = false;
     ui->pending_drop_path[0]  = '\0';
+
+    ui->dbg_prev_col_a        = false;
+    ui->dbg_prev_col_b        = false;
+    ui->dbg_snap_col_a        = false;
+    ui->dbg_snap_col_b        = false;
+    ui->dbg_menu_height       = 0.0f;
 
     ui->dbg_cpu               = nullptr;
     ui->dbg_ppu               = nullptr;
@@ -830,6 +1012,9 @@ void ui_render_frame(struct ui_context *ui, struct display_context *display) {
     if (ui && ui->show_demo)
         ImGui::ShowDemoWindow(&ui->show_demo);
 
+    /* ------ Resize window / arm snap flags for debug panels ------------- */
+    if (ui) ui_update_debug_layout(ui, display);
+
     /* ------ Main menu bar ----------------------------------------------- */
     float menu_height = 0.0f;
     if (ui && ui->show_menubar) {
@@ -878,13 +1063,23 @@ void ui_render_frame(struct ui_context *ui, struct display_context *display) {
         render_about_popup();
     }
 
+    /* Store menu height for panel renderers. */
+    if (ui) ui->dbg_menu_height = menu_height;
+
     /* ------ Splash overlay when no ROM is loaded ------------------------ */
     if (ui && !ui->rom_loaded)
         render_no_rom_splash(ui, display, menu_height);
 
-    /* ------ CPU Debugger panel ----------------------------------------- */
-    if (ui)
+    /* ------ Debug panels (col A: CPU + APU, col B: Memory + PPU) --------- */
+    if (ui) {
         render_cpu_debugger(ui, display);
+        render_apu_visualizer(ui, display);
+        render_memory_viewer(ui, display);
+        render_ppu_viewer(ui, display);
+        /* Clear snap flags after all panels have been positioned. */
+        ui->dbg_snap_col_a = false;
+        ui->dbg_snap_col_b = false;
+    }
 
     ImGui::Render();
 
@@ -898,12 +1093,18 @@ void ui_render_frame(struct ui_context *ui, struct display_context *display) {
     if (avail_h < 1) avail_h = 1;
 
     if (ui && ui->rom_loaded) {
-        float scale = std::min((float)win_w / gw, (float)avail_h / gh);
+        /* Constrain game to the left column; debug columns occupy the right. */
+        int col_a = dbg_col_a_active(ui) ? (DBG_COL_A_W + DBG_COL_PAD) : 0;
+        int col_b = dbg_col_b_active(ui) ? (DBG_COL_B_W + DBG_COL_PAD) : 0;
+        int game_col_w = win_w - col_a - col_b;
+        if (game_col_w < 1) game_col_w = 1;
+
+        float s = std::min((float)game_col_w / gw, (float)avail_h / gh);
         SDL_Rect dst = {
-            (int)((win_w - gw * scale) * 0.5f),
-            (int)(menu_height + (avail_h - gh * scale) * 0.5f),
-            (int)(gw * scale),
-            (int)(gh * scale)
+            (int)((game_col_w - gw * s) * 0.5f),
+            (int)(menu_height + (avail_h - gh * s) * 0.5f),
+            (int)(gw * s),
+            (int)(gh * s)
         };
         SDL_RenderCopy(renderer, game_tex, nullptr, &dst);
     }
