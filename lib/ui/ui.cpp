@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "vendor/imgui/imgui.h"
+#include "vendor/imgui/imgui_internal.h"
 #include "vendor/imgui/backends/imgui_impl_sdl2.h"
 #include "vendor/imgui/backends/imgui_impl_sdlrenderer2.h"
 #include <nfd.h>
@@ -28,24 +29,22 @@ extern "C" {
 
 #define MAX_RECENT_ROMS 5
 
-/* Debug panel layout —————————————————————————————————————————————————————
- * Two columns of debug panels appear to the right of the game viewport.
+/* Debug panel layout reference widths (used in DockBuilder ratio comments).
  *
- *  ┌──────────────┬──────────────┬──────────────┐
- *  │  Game View   │   Col A      │   Col B      │
- *  │  (game_w)    │  (COL_A_W)   │  (COL_B_W)   │
- *  │              │  CPU top 65% │  Memory 65%  │
- *  │              │  APU  bot35% │  PPU    35%  │
- *  └──────────────┴──────────────┴──────────────┘
+ *  ┌──────────────────────────┬──────────────┬───────────────┐
+ *  │   Game##viewport         │ CPU Debugger │ Memory Viewer │
+ *  │   (central node)         │  (col A top) │  (col B top)  │
+ *  │                          ├──────────────┤               │
+ *  │                          │ APU Visualiz ├───────────────┤
+ *  │                          │  (col A bot) │  PPU Viewer   │
+ *  └──────────────────────────┴──────────────┴───────────────┘
  *
- * The SDL window widens by the column widths as panels are opened.
- * Panels snap to their slot position when first opened, then can be dragged.
+ * col B = 30% of total dockspace width
+ * col A = 35% of remaining width after col B is split off
+ * game  = rest (central)
  */
-static const int DBG_COL_A_W = 440;   /* CPU Debugger + APU Visualizer   */
-static const int DBG_COL_B_W = 540;   /* Memory Viewer + PPU Viewer       */
-static const int DBG_COL_PAD = 4;     /* gap between game/col-A/col-B     */
-static const float DBG_CPU_FRAC  = 0.65f;  /* fraction of col A for CPU panel  */
-static const float DBG_MEM_FRAC  = 0.65f;  /* fraction of col B for Memory     */
+static const int DBG_COL_A_W = 440;   /* reference width — CPU Debugger + APU  */
+static const int DBG_COL_B_W = 540;   /* reference width — Memory Viewer + PPU */
 
 struct ui_context {
     bool show_demo;
@@ -83,12 +82,8 @@ struct ui_context {
     bool rom_loaded;
     char pending_drop_path[1024];
 
-    /* Debug panel layout */
-    bool dbg_prev_col_a;      /* col A (CPU+APU) was active last frame */
-    bool dbg_prev_col_b;      /* col B (Mem+PPU) was active last frame */
-    bool dbg_snap_col_a;      /* snap col A panels to slot this frame  */
-    bool dbg_snap_col_b;      /* snap col B panels to slot this frame  */
-    float dbg_menu_height;    /* menu bar height captured each frame   */
+    /* DockSpace: false until the default layout has been built once */
+    bool dockspace_initialized;
 
     /* CPU debugger */
     struct cpu6502 *dbg_cpu;
@@ -379,42 +374,19 @@ static void render_about_popup() {
     }
 }
 
-/* ---------- No-ROM splash ------------------------------------------------- */
+/* ---------- No-ROM splash (renders inside the Game##viewport window) ------- */
 
-static void render_no_rom_splash(ui_context *ui, display_context *display,
-                                  float menu_height) {
-    SDL_Renderer *renderer =
-        static_cast<SDL_Renderer *>(display_get_renderer(display));
-    int win_w = 0, win_h = 0;
-    SDL_GetRendererOutputSize(renderer, &win_w, &win_h);
-    float avail_h = (float)win_h - menu_height;
-
-    /* Center within the game column only — not the full window. */
-    int col_a_px = (ui->show_cpu_debugger || ui->show_apu_visualizer)
-                       ? (DBG_COL_A_W + DBG_COL_PAD) : 0;
-    int col_b_px = (ui->show_memory_viewer || ui->show_ppu_viewer)
-                       ? (DBG_COL_B_W + DBG_COL_PAD) : 0;
-    float game_col_w = (float)(win_w - col_a_px - col_b_px);
-    if (game_col_w < 1.0f) game_col_w = 1.0f;
-
-    const float panel_w = 340.0f;
-    const float panel_h = 200.0f;
-    ImGui::SetNextWindowPos(
-        ImVec2(game_col_w * 0.5f, menu_height + avail_h * 0.5f),
-        ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(panel_w, panel_h), ImGuiCond_Always);
-    ImGui::SetNextWindowBgAlpha(0.88f);
-
-    ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration |
-                             ImGuiWindowFlags_NoMove       |
-                             ImGuiWindowFlags_NoSavedSettings |
-                             ImGuiWindowFlags_NoNav;
-    if (!ImGui::Begin("##splash", nullptr, flags)) {
-        ImGui::End();
-        return;
-    }
-
-    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 24.0f);
+static void render_no_rom_splash_content(ui_context *ui) {
+    ImVec2 avail = ImGui::GetContentRegionAvail();
+    const float panel_w = 320.0f;
+    const float panel_h = 180.0f;
+    float ox = (avail.x - panel_w) * 0.5f;
+    float oy = (avail.y - panel_h) * 0.5f;
+    ImGui::SetCursorPos(ImVec2(ImGui::GetCursorPosX() + (ox > 0 ? ox : 0),
+                               ImGui::GetCursorPosY() + (oy > 0 ? oy : 0)));
+    ImGui::BeginChild("##splash_inner", ImVec2(panel_w, panel_h),
+                      ImGuiChildFlags_FrameStyle);
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 20.0f);
 
     auto center_text = [&](const char *text) {
         float tw = ImGui::CalcTextSize(text).x;
@@ -430,7 +402,6 @@ static void render_no_rom_splash(ui_context *ui, display_context *display,
         ImGui::TextDisabled("\xe2\x80\x94 or \xe2\x80\x94");
     }
     ImGui::Spacing();
-
     const float bw = 130.0f;
     ImGui::SetCursorPosX((panel_w - bw) * 0.5f);
     if (ImGui::Button("Open ROM\xe2\x80\xa6", ImVec2(bw, 0)))
@@ -452,61 +423,72 @@ static void render_no_rom_splash(ui_context *ui, display_context *display,
         }
     }
 
+    ImGui::EndChild();
+}
+
+/* ---------- DockSpace default layout -------------------------------------- */
+
+static void setup_default_dock_layout(ImGuiID dockspace_id) {
+    ImGui::DockBuilderRemoveNode(dockspace_id);
+    ImGui::DockBuilderAddNode(dockspace_id, ImGuiDockNodeFlags_DockSpace);
+    ImGui::DockBuilderSetNodeSize(dockspace_id, ImGui::GetMainViewport()->WorkSize);
+
+    ImGuiID dock_main = dockspace_id;
+    ImGuiID dock_col_b, dock_col_a, dock_col_a_bot, dock_col_b_bot;
+
+    /* Split right 30% for col B (Memory Viewer + PPU Viewer) */
+    ImGui::DockBuilderSplitNode(dock_main, ImGuiDir_Right, 0.30f,
+                                &dock_col_b, &dock_main);
+    /* Split remaining right 35% for col A (CPU Debugger + APU Visualizer) */
+    ImGui::DockBuilderSplitNode(dock_main, ImGuiDir_Right, 0.35f,
+                                &dock_col_a, &dock_main);
+    /* Split col A bottom 35% for APU Visualizer */
+    ImGui::DockBuilderSplitNode(dock_col_a, ImGuiDir_Down, 0.35f,
+                                &dock_col_a_bot, &dock_col_a);
+    /* Split col B bottom 35% for PPU Viewer */
+    ImGui::DockBuilderSplitNode(dock_col_b, ImGuiDir_Down, 0.35f,
+                                &dock_col_b_bot, &dock_col_b);
+
+    ImGui::DockBuilderDockWindow("Game##viewport", dock_main);
+    ImGui::DockBuilderDockWindow("CPU Debugger",   dock_col_a);
+    ImGui::DockBuilderDockWindow("APU Visualizer", dock_col_a_bot);
+    ImGui::DockBuilderDockWindow("Memory Viewer",  dock_col_b);
+    ImGui::DockBuilderDockWindow("PPU Viewer",     dock_col_b_bot);
+
+    ImGui::DockBuilderFinish(dockspace_id);
+}
+
+/* ---------- Game viewport panel ------------------------------------------- */
+
+static void render_game_viewport(ui_context *ui, display_context *display) {
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoScrollbar |
+                             ImGuiWindowFlags_NoScrollWithMouse;
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+    bool visible = ImGui::Begin("Game##viewport", nullptr, flags);
+    ImGui::PopStyleVar();
+
+    if (visible) {
+        if (!ui->rom_loaded) {
+            render_no_rom_splash_content(ui);
+        } else {
+            SDL_Texture *tex =
+                static_cast<SDL_Texture *>(display_get_screen_texture(display));
+            if (tex) {
+                ImVec2 avail = ImGui::GetContentRegionAvail();
+                int gw = display_get_width(display);
+                int gh = display_get_height(display);
+                float scale = std::min(avail.x / (float)gw,
+                                       avail.y / (float)gh);
+                ImVec2 img_sz = ImVec2(gw * scale, gh * scale);
+                ImVec2 cursor = ImGui::GetCursorPos();
+                ImGui::SetCursorPos(
+                    ImVec2(cursor.x + (avail.x - img_sz.x) * 0.5f,
+                           cursor.y + (avail.y - img_sz.y) * 0.5f));
+                ImGui::Image((ImTextureID)(intptr_t)tex, img_sz);
+            }
+        }
+    }
     ImGui::End();
-}
-
-/* ---------- Debug panel layout -------------------------------------------- */
-
-static bool dbg_col_a_active(const ui_context *ui) {
-    return ui->show_cpu_debugger || ui->show_apu_visualizer;
-}
-static bool dbg_col_b_active(const ui_context *ui) {
-    return ui->show_memory_viewer || ui->show_ppu_viewer;
-}
-
-/* Return the x position where column A panels should start. */
-static float dbg_col_a_x(const ui_context *ui, display_context *display) {
-    int game_w = display_get_width(display) * display_get_scale(display);
-    return (float)(game_w + DBG_COL_PAD);
-}
-
-/* Return the x position where column B panels should start. */
-static float dbg_col_b_x(const ui_context *ui, display_context *display) {
-    float ax = dbg_col_a_x(ui, display);
-    bool col_a = dbg_col_a_active(ui);
-    return ax + (col_a ? (float)(DBG_COL_A_W + DBG_COL_PAD) : 0.0f);
-}
-
-/* Resize the SDL window to fit active debug columns, and arm snap flags when
- * a column transitions from closed → open. */
-static void ui_update_debug_layout(ui_context *ui, display_context *display) {
-    bool col_a = dbg_col_a_active(ui);
-    bool col_b = dbg_col_b_active(ui);
-
-    bool col_a_changed = col_a != ui->dbg_prev_col_a;
-    bool col_b_changed = col_b != ui->dbg_prev_col_b;
-    if (!col_a_changed && !col_b_changed) return;
-
-    int gw     = display_get_width(display);
-    int gh     = display_get_height(display);
-    int scale  = display_get_scale(display);
-    int base_w = gw * scale;
-    int base_h = gh * scale;
-
-    /* Compute the desired window width. */
-    int new_w = base_w
-              + (col_a ? DBG_COL_A_W + DBG_COL_PAD : 0)
-              + (col_b ? DBG_COL_B_W + DBG_COL_PAD : 0);
-
-    SDL_Window *window = static_cast<SDL_Window *>(display_get_window(display));
-    SDL_SetWindowSize(window, new_w, base_h);
-
-    /* Arm snap for columns that just became active. */
-    if (col_a && !ui->dbg_prev_col_a) ui->dbg_snap_col_a = true;
-    if (col_b && !ui->dbg_prev_col_b) ui->dbg_snap_col_b = true;
-
-    ui->dbg_prev_col_a = col_a;
-    ui->dbg_prev_col_b = col_b;
 }
 
 /* ---------- CPU Debugger panel -------------------------------------------- */
@@ -561,18 +543,7 @@ static uint16_t disasm_addr_before(struct nesbus *bus, uint16_t target, int n_be
 static void render_cpu_debugger(ui_context *ui, display_context *display) {
     if (!ui->show_cpu_debugger) return;
 
-    /* Snap to col A slot when the column first opens. */
-    if (ui->dbg_snap_col_a) {
-        float win_h   = ImGui::GetIO().DisplaySize.y;
-        float avail_h = win_h - ui->dbg_menu_height;
-        float h       = ui->show_apu_visualizer ? avail_h * DBG_CPU_FRAC : avail_h;
-        ImGui::SetNextWindowPos(
-            ImVec2(dbg_col_a_x(ui, display), ui->dbg_menu_height),
-            ImGuiCond_Always);
-        ImGui::SetNextWindowSize(ImVec2((float)DBG_COL_A_W, h), ImGuiCond_Always);
-    } else {
-        ImGui::SetNextWindowSize(ImVec2(430, 500), ImGuiCond_FirstUseEver);
-    }
+    ImGui::SetNextWindowSize(ImVec2(430, 500), ImGuiCond_FirstUseEver);
 
     if (!ui->dbg_cpu || !ui->dbg_ppu || !ui->dbg_bus) {
         if (ImGui::Begin("CPU Debugger", &ui->show_cpu_debugger)) {
@@ -828,18 +799,7 @@ static void render_cpu_debugger(ui_context *ui, display_context *display) {
 static void render_apu_visualizer(ui_context *ui, display_context *display) {
     if (!ui->show_apu_visualizer) return;
 
-    if (ui->dbg_snap_col_a) {
-        float win_h   = ImGui::GetIO().DisplaySize.y;
-        float avail_h = win_h - ui->dbg_menu_height;
-        float top_h   = ui->show_cpu_debugger ? avail_h * DBG_CPU_FRAC : 0.0f;
-        float h       = avail_h - top_h;
-        float y       = ui->dbg_menu_height + top_h;
-        ImGui::SetNextWindowPos(
-            ImVec2(dbg_col_a_x(ui, display), y), ImGuiCond_Always);
-        ImGui::SetNextWindowSize(ImVec2((float)DBG_COL_A_W, h), ImGuiCond_Always);
-    } else {
-        ImGui::SetNextWindowSize(ImVec2(430, 200), ImGuiCond_FirstUseEver);
-    }
+    ImGui::SetNextWindowSize(ImVec2(430, 200), ImGuiCond_FirstUseEver);
 
     if (!ImGui::Begin("APU Visualizer", &ui->show_apu_visualizer)) {
         ImGui::End();
@@ -854,17 +814,7 @@ static void render_apu_visualizer(ui_context *ui, display_context *display) {
 static void render_memory_viewer(ui_context *ui, display_context *display) {
     if (!ui->show_memory_viewer) return;
 
-    if (ui->dbg_snap_col_b) {
-        float win_h   = ImGui::GetIO().DisplaySize.y;
-        float avail_h = win_h - ui->dbg_menu_height;
-        float h       = ui->show_ppu_viewer ? avail_h * DBG_MEM_FRAC : avail_h;
-        ImGui::SetNextWindowPos(
-            ImVec2(dbg_col_b_x(ui, display), ui->dbg_menu_height),
-            ImGuiCond_Always);
-        ImGui::SetNextWindowSize(ImVec2((float)DBG_COL_B_W, h), ImGuiCond_Always);
-    } else {
-        ImGui::SetNextWindowSize(ImVec2(530, 500), ImGuiCond_FirstUseEver);
-    }
+    ImGui::SetNextWindowSize(ImVec2(530, 500), ImGuiCond_FirstUseEver);
 
     if (!ImGui::Begin("Memory Viewer", &ui->show_memory_viewer)) {
         ImGui::End();
@@ -879,18 +829,7 @@ static void render_memory_viewer(ui_context *ui, display_context *display) {
 static void render_ppu_viewer(ui_context *ui, display_context *display) {
     if (!ui->show_ppu_viewer) return;
 
-    if (ui->dbg_snap_col_b) {
-        float win_h   = ImGui::GetIO().DisplaySize.y;
-        float avail_h = win_h - ui->dbg_menu_height;
-        float top_h   = ui->show_memory_viewer ? avail_h * DBG_MEM_FRAC : 0.0f;
-        float h       = avail_h - top_h;
-        float y       = ui->dbg_menu_height + top_h;
-        ImGui::SetNextWindowPos(
-            ImVec2(dbg_col_b_x(ui, display), y), ImGuiCond_Always);
-        ImGui::SetNextWindowSize(ImVec2((float)DBG_COL_B_W, h), ImGuiCond_Always);
-    } else {
-        ImGui::SetNextWindowSize(ImVec2(530, 300), ImGuiCond_FirstUseEver);
-    }
+    ImGui::SetNextWindowSize(ImVec2(530, 300), ImGuiCond_FirstUseEver);
 
     if (!ImGui::Begin("PPU Viewer", &ui->show_ppu_viewer)) {
         ImGui::End();
@@ -921,12 +860,7 @@ struct ui_context *ui_init(struct display_context *display,
     ui->fps_frame_count       = 0;
     ui->rom_loaded            = false;
     ui->pending_drop_path[0]  = '\0';
-
-    ui->dbg_prev_col_a        = false;
-    ui->dbg_prev_col_b        = false;
-    ui->dbg_snap_col_a        = false;
-    ui->dbg_snap_col_b        = false;
-    ui->dbg_menu_height       = 0.0f;
+    ui->dockspace_initialized = false;
 
     ui->dbg_cpu               = nullptr;
     ui->dbg_ppu               = nullptr;
@@ -966,10 +900,6 @@ struct ui_context *ui_init(struct display_context *display,
 void ui_render_frame(struct ui_context *ui, struct display_context *display) {
     SDL_Renderer *renderer =
         static_cast<SDL_Renderer *>(display_get_renderer(display));
-    SDL_Texture *game_tex =
-        static_cast<SDL_Texture *>(display_get_screen_texture(display));
-    int gw = display_get_width(display);
-    int gh = display_get_height(display);
 
     display_upload_framebuffer(display);
 
@@ -1011,9 +941,6 @@ void ui_render_frame(struct ui_context *ui, struct display_context *display) {
     /* ------ Demo window (dev helper) ------------------------------------ */
     if (ui && ui->show_demo)
         ImGui::ShowDemoWindow(&ui->show_demo);
-
-    /* ------ Resize window / arm snap flags for debug panels ------------- */
-    if (ui) ui_update_debug_layout(ui, display);
 
     /* ------ Main menu bar ----------------------------------------------- */
     float menu_height = 0.0f;
@@ -1063,52 +990,53 @@ void ui_render_frame(struct ui_context *ui, struct display_context *display) {
         render_about_popup();
     }
 
-    /* Store menu height for panel renderers. */
-    if (ui) ui->dbg_menu_height = menu_height;
+    /* ------ Fullscreen DockSpace covering the area below the menu bar --- */
+    if (ui) {
+        ImGuiViewport *vp = ImGui::GetMainViewport();
+        ImVec2 ds_pos  = ImVec2(vp->Pos.x, vp->Pos.y + menu_height);
+        ImVec2 ds_size = ImVec2(vp->Size.x, vp->Size.y - menu_height);
 
-    /* ------ Splash overlay when no ROM is loaded ------------------------ */
-    if (ui && !ui->rom_loaded)
-        render_no_rom_splash(ui, display, menu_height);
+        ImGui::SetNextWindowPos(ds_pos);
+        ImGui::SetNextWindowSize(ds_size);
+        ImGui::SetNextWindowViewport(vp->ID);
 
-    /* ------ Debug panels (col A: CPU + APU, col B: Memory + PPU) --------- */
+        ImGuiWindowFlags ds_window_flags =
+            ImGuiWindowFlags_NoTitleBar         | ImGuiWindowFlags_NoCollapse   |
+            ImGuiWindowFlags_NoResize           | ImGuiWindowFlags_NoMove       |
+            ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus |
+            ImGuiWindowFlags_NoDocking          | ImGuiWindowFlags_NoBackground;
+
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+        ImGui::Begin("##DockSpaceWindow", nullptr, ds_window_flags);
+        ImGui::PopStyleVar();
+
+        ImGuiID dockspace_id = ImGui::GetID("MainDockSpace");
+        ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_None);
+
+        if (!ui->dockspace_initialized) {
+            setup_default_dock_layout(dockspace_id);
+            ui->dockspace_initialized = true;
+        }
+
+        ImGui::End();
+    }
+
+    /* ------ Game viewport panel ----------------------------------------- */
+    if (ui)
+        render_game_viewport(ui, display);
+
+    /* ------ Debug panels ------------------------------------------------- */
     if (ui) {
         render_cpu_debugger(ui, display);
         render_apu_visualizer(ui, display);
         render_memory_viewer(ui, display);
         render_ppu_viewer(ui, display);
-        /* Clear snap flags after all panels have been positioned. */
-        ui->dbg_snap_col_a = false;
-        ui->dbg_snap_col_b = false;
     }
 
     ImGui::Render();
 
-    /* ------ Composite: game texture then ImGui on top ------------------- */
+    /* ------ Composite: clear, then ImGui (which includes the game image) - */
     SDL_RenderClear(renderer);
-    int win_w = 0, win_h = 0;
-    SDL_GetRendererOutputSize(renderer, &win_w, &win_h);
-
-    /* Reserve space for the menu bar so the game isn't hidden behind it. */
-    int avail_h = win_h - (int)menu_height;
-    if (avail_h < 1) avail_h = 1;
-
-    if (ui && ui->rom_loaded) {
-        /* Constrain game to the left column; debug columns occupy the right. */
-        int col_a = dbg_col_a_active(ui) ? (DBG_COL_A_W + DBG_COL_PAD) : 0;
-        int col_b = dbg_col_b_active(ui) ? (DBG_COL_B_W + DBG_COL_PAD) : 0;
-        int game_col_w = win_w - col_a - col_b;
-        if (game_col_w < 1) game_col_w = 1;
-
-        float s = std::min((float)game_col_w / gw, (float)avail_h / gh);
-        SDL_Rect dst = {
-            (int)((game_col_w - gw * s) * 0.5f),
-            (int)(menu_height + (avail_h - gh * s) * 0.5f),
-            (int)(gw * s),
-            (int)(gh * s)
-        };
-        SDL_RenderCopy(renderer, game_tex, nullptr, &dst);
-    }
-
     ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData(), renderer);
     SDL_RenderPresent(renderer);
 
