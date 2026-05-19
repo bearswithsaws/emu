@@ -1069,34 +1069,27 @@ void ui_render_frame(struct ui_context *ui, struct display_context *display) {
     }
 
     /* ------ Fullscreen DockSpace covering the area below the menu bar --- */
+    /* Use DockSpaceOverViewport (the official path) so that outer-edge snap
+     * targets appear at all four sides of the window.  We temporarily shrink
+     * the viewport's work area by the menu-bar height so the dockspace starts
+     * below the menu bar, then restore it immediately after the call. */
     if (ui) {
-        ImGuiViewport *vp = ImGui::GetMainViewport();
-        ImVec2 ds_pos  = ImVec2(vp->Pos.x, vp->Pos.y + menu_height);
-        ImVec2 ds_size = ImVec2(vp->Size.x, vp->Size.y - menu_height);
-
-        ImGui::SetNextWindowPos(ds_pos);
-        ImGui::SetNextWindowSize(ds_size);
-        ImGui::SetNextWindowViewport(vp->ID);
-
-        ImGuiWindowFlags ds_window_flags =
-            ImGuiWindowFlags_NoTitleBar         | ImGuiWindowFlags_NoCollapse   |
-            ImGuiWindowFlags_NoResize           | ImGuiWindowFlags_NoMove       |
-            ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus |
-            ImGuiWindowFlags_NoDocking          | ImGuiWindowFlags_NoBackground;
-
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-        ImGui::Begin("##DockSpaceWindow", nullptr, ds_window_flags);
-        ImGui::PopStyleVar();
+        ImGuiViewport *vp    = ImGui::GetMainViewport();
+        ImVec2 saved_work_pos  = vp->WorkPos;
+        ImVec2 saved_work_size = vp->WorkSize;
+        vp->WorkPos.y  += menu_height;
+        vp->WorkSize.y -= menu_height;
 
         ImGuiID dockspace_id = ImGui::GetID("MainDockSpace");
-        ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_None);
+        ImGui::DockSpaceOverViewport(dockspace_id, vp, ImGuiDockNodeFlags_None);
+
+        vp->WorkPos  = saved_work_pos;
+        vp->WorkSize = saved_work_size;
 
         if (!ui->dockspace_initialized) {
             setup_default_dock_layout(dockspace_id);
             ui->dockspace_initialized = true;
         }
-
-        ImGui::End();
     }
 
     /* ------ Game viewport panel ----------------------------------------- */
