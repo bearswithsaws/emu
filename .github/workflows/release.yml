@@ -45,17 +45,17 @@ jobs:
 
       - name: Create AppImage
         env:
-          OUTPUT: emu-${{ github.ref_name }}-linux-x86_64.AppImage
-          VERSION: ${{ github.ref_name }}
+          # LDAI_OUTPUT / LINUXDEPLOY_OUTPUT_VERSION are the current env var
+          # names consumed by the appimage plugin (the old OUTPUT/VERSION names
+          # still work but emit deprecation warnings).
+          LDAI_OUTPUT: emu-${{ github.ref_name }}-linux-x86_64.AppImage
+          LINUXDEPLOY_OUTPUT_VERSION: ${{ github.ref_name }}
         run: |
           squashfs-root/AppRun \
             --appdir AppDir \
             --desktop-file assets/emu.desktop \
             --icon-file assets/icon.png \
             --output appimage
-
-          # linuxdeploy names the output based on .desktop Name + version
-          mv emu-*.AppImage "$OUTPUT"
 
       - name: Upload AppImage artifact
         uses: actions/upload-artifact@v4
@@ -106,12 +106,20 @@ jobs:
           mkdir -p dist
           cp build/emu.exe dist/
 
-          # Walk all recursive DLL dependencies; keep only those inside MinGW
+          # ntldd lists all transitive DLL dependencies.  The path column may
+          # carry a long prefix (e.g. /c/msys64/mingw64/bin/SDL2.dll) that
+          # varies by host, so we extract just the basename and resolve it
+          # against the known MSYS2 bin dir rather than grepping on the path.
           ntldd -R dist/emu.exe \
-            | grep -i '/mingw64/' \
             | awk '{print $3}' \
-            | sort -u \
-            | xargs -I{} cp {} dist/
+            | grep -v '^$' \
+            | while read dll_path; do
+                dll_name=$(basename "$dll_path")
+                src="/mingw64/bin/$dll_name"
+                if [ -f "$src" ]; then
+                  cp -n "$src" dist/
+                fi
+              done
 
       - name: Create zip
         run: |
