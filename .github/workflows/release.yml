@@ -93,7 +93,7 @@ jobs:
 
       - name: Run tests
         shell: pwsh
-        run: ctest --test-dir build --config Release --output-on-failure
+        run: ctest --test-dir build -C Release --output-on-failure
 
       - name: Package (exe only — no DLLs needed)
         shell: pwsh
