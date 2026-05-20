@@ -64,68 +64,44 @@ jobs:
           path: emu-${{ github.ref_name }}-linux-x86_64.AppImage
 
   # ---------------------------------------------------------------------------
-  # Windows — build + bundle DLLs via ntldd + zip
+  # Windows — MSVC x64 + vcpkg static SDL2 → single standalone exe, no DLLs
   # ---------------------------------------------------------------------------
   build-windows:
-    name: Build Windows Zip
+    name: Build Windows (MSVC x64 static)
     runs-on: windows-latest
-
-    defaults:
-      run:
-        shell: msys2 {0}
 
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Install dependencies
-        uses: msys2/setup-msys2@v2
-        with:
-          msystem: MINGW64
-          update: true
-          install: >-
-            mingw-w64-x86_64-gcc
-            mingw-w64-x86_64-cmake
-            mingw-w64-x86_64-ninja
-            mingw-w64-x86_64-SDL2
-            mingw-w64-x86_64-ntldd-git
-            zip
+      - name: Install SDL2 (static) via vcpkg
+        run: vcpkg install sdl2:x64-windows-static
+        shell: pwsh
 
       - name: Configure (Release)
-        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+        shell: pwsh
+        run: |
+          cmake -B build `
+            -G "Visual Studio 17 2022" -A x64 `
+            -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET=x64-windows-static
 
       - name: Build
-        run: cmake --build build --parallel
+        shell: pwsh
+        run: cmake --build build --config Release --parallel
 
       - name: Run tests
-        run: ctest --test-dir build --output-on-failure
+        shell: pwsh
+        run: ctest --test-dir build --config Release --output-on-failure
 
-      - name: Bundle DLLs with ntldd
+      - name: Package (exe only — no DLLs needed)
+        shell: pwsh
         run: |
-          mkdir -p dist
-          cp build/emu.exe dist/
-
-          # ntldd lists all transitive DLL dependencies.  The path column may
-          # carry a long prefix (e.g. /c/msys64/mingw64/bin/SDL2.dll) that
-          # varies by host, so we extract just the basename and resolve it
-          # against the known MSYS2 bin dir rather than grepping on the path.
-          ntldd -R dist/emu.exe \
-            | awk '{print $3}' \
-            | grep -v '^$' \
-            | while read dll_path; do
-                dll_name=$(basename "$dll_path")
-                src="/mingw64/bin/$dll_name"
-                if [ -f "$src" ]; then
-                  cp -n "$src" dist/
-                fi
-              done
-
-      - name: Create zip
-        run: |
-          VERSION="${{ github.ref_name }}"
-          cd dist
-          zip -r "../emu-${VERSION}-windows-x64.zip" .
+          $version = "${{ github.ref_name }}"
+          New-Item -ItemType Directory -Path dist | Out-Null
+          Copy-Item build/Release/emu.exe dist/
+          Compress-Archive -Path dist/* -DestinationPath "emu-$version-windows-x64.zip"
 
       - name: Upload Windows zip artifact
         uses: actions/upload-artifact@v4
