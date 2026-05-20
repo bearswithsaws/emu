@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.10)
 
 # set the project name
-project(emu VERSION 0.1 LANGUAGES C CXX)
+project(emu VERSION 0.1.0 LANGUAGES C CXX)
 
 # Ensure ImGui submodule is present
 if(NOT EXISTS "${CMAKE_SOURCE_DIR}/lib/ui/vendor/imgui/imgui.h")
@@ -59,6 +59,12 @@ target_include_directories(emu PUBLIC
 # SDL2. We therefore bundle all required MinGW DLLs next to emu.exe instead.
 # Issue #64 (Windows packaging) will replace this with an ntldd-based full
 # dependency walk in the GitHub Actions release workflow.
+# Install targets (used by AppImage and packaging)
+install(TARGETS emu DESTINATION bin)
+install(FILES assets/emu.desktop DESTINATION share/applications)
+install(FILES assets/icon.png    DESTINATION share/pixmaps RENAME emu.png)
+install(FILES assets/icon.png    DESTINATION share/icons/hicolor/256x256/apps RENAME emu.png)
+
 if(MINGW)
     target_link_options(emu PRIVATE -mwindows -static-libgcc -static-libstdc++)
 

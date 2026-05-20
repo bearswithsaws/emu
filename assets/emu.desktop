@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=emu
+Comment=NES Emulator
+Exec=emu %f
+Icon=emu
+Type=Application
+Categories=Game;Emulator;
+MimeType=application/x-nes-rom;

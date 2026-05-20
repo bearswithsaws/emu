@@ -1,3 +1,5 @@
 // the configured options and settings for emu
 #define emu_VERSION_MAJOR @emu_VERSION_MAJOR@
 #define emu_VERSION_MINOR @emu_VERSION_MINOR@
+#define emu_VERSION_PATCH @emu_VERSION_PATCH@
+#define EMU_VERSION "@emu_VERSION_MAJOR@.@emu_VERSION_MINOR@.@emu_VERSION_PATCH@"
