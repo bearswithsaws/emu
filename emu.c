@@ -239,10 +239,13 @@ int main(int argc, char *argv[]) {
                 while (!ppu->frame_complete) {
                     emu_tick();
 
-                    /* Breakpoint check: pause on execute or read/write breakpoint hit. */
+                    /* Breakpoint check: pause on execute or read/write breakpoint hit.
+                     * Break immediately so the debugger shows the exact PC at the hit,
+                     * not wherever the CPU ends up at the end of the frame. */
                     if (ui_debugger_is_breakpoint(ui, cpu->PC) ||
                         ui_debugger_consume_rw_bp_hit(ui)) {
                         display_set_paused(display, 1);
+                        break;
                     }
                 }
 
