@@ -3,6 +3,10 @@ cmake_minimum_required(VERSION 3.10)
 # set the project name
 project(emu VERSION 0.1.0 LANGUAGES C CXX)
 
+# Require C11 globally — needed for stdatomic.h (_Atomic) on all platforms
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+
 # Ensure ImGui submodule is present
 if(NOT EXISTS "${CMAKE_SOURCE_DIR}/lib/ui/vendor/imgui/imgui.h")
     message(FATAL_ERROR
