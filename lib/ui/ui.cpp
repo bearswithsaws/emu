@@ -643,21 +643,32 @@ static void render_cpu_debugger(ui_context *ui, display_context *display) {
         ui->dbg_scroll_needs_sync = false;
     }
 
-    /* Disassemble DASM_LINES instructions from scroll_addr. */
-    static const int DASM_LINES = 20;
-    uint16_t  dasm_addrs[DASM_LINES];
-    char      dasm_texts[DASM_LINES][32];
-    disasm_forward(bus, ui->dbg_scroll_addr, dasm_addrs, dasm_texts, DASM_LINES);
+    /* Disassembly height fills whatever space is available, reserving the
+     * controls section below.  This keeps Step/Break/status bar visible even
+     * when another window is snapped below and shrinks this panel. */
+    float line_h   = ImGui::GetTextLineHeightWithSpacing();
+    float frame_h  = ImGui::GetFrameHeightWithSpacing();
+    float sp       = ImGui::GetStyle().ItemSpacing.y;
+    float ctrl_h   = frame_h * 3          /* scroll btns + SeparatorText + step btns */
+                   + line_h  * 2          /* status bar + breakpoints reserve         */
+                   + sp      * 4;         /* spacings + separator                     */
+    float avail_h  = ImGui::GetContentRegionAvail().y;
+    float dasm_h   = std::max(avail_h - ctrl_h, line_h * 4.0f);
 
-    float line_h = ImGui::GetTextLineHeightWithSpacing();
-    ImVec2 list_sz = ImVec2(-1.0f, line_h * DASM_LINES + 4.0f);
+    static const int DASM_MAX = 60;
+    int n_lines = std::max(4, std::min(DASM_MAX, (int)((dasm_h - 4.0f) / line_h)));
+    uint16_t dasm_addrs[DASM_MAX];
+    char     dasm_texts[DASM_MAX][32];
+    disasm_forward(bus, ui->dbg_scroll_addr, dasm_addrs, dasm_texts, n_lines);
+
+    ImVec2 list_sz(-1.0f, dasm_h);
     ImGui::BeginChild("##dasm", list_sz, ImGuiChildFlags_FrameStyle);
 
     ImVec4 col_pc   = ImVec4(1.0f, 1.0f, 0.2f, 1.0f);  /* yellow — current PC */
     ImVec4 col_bp   = ImVec4(1.0f, 0.3f, 0.3f, 1.0f);  /* red — breakpoint */
     ImVec4 col_norm = ImGui::GetStyleColorVec4(ImGuiCol_Text);
 
-    for (int i = 0; i < DASM_LINES; i++) {
+    for (int i = 0; i < n_lines; i++) {
         uint16_t a = dasm_addrs[i];
         bool is_pc = (a == cpu->PC);
         bool is_bp = false;
@@ -797,6 +808,47 @@ static void render_cpu_debugger(ui_context *ui, display_context *display) {
 
 /* ---------- APU Visualizer panel (stub) ----------------------------------- */
 
+/* ---------- NES system palette (NTSC 2C02 approximation, ARGB8888) -------- */
+
+static const uint32_t NES_SYS_PALETTE[64] = {
+    0xFF545454, 0xFF001E74, 0xFF081090, 0xFF300088,
+    0xFF440064, 0xFF5C0030, 0xFF540400, 0xFF3C1800,
+    0xFF202A00, 0xFF083A00, 0xFF004000, 0xFF003C00,
+    0xFF00323C, 0xFF000000, 0xFF000000, 0xFF000000,
+    0xFF989698, 0xFF084CC4, 0xFF3032EC, 0xFF5C1EE4,
+    0xFF8814B0, 0xFFA01464, 0xFF982220, 0xFF783C00,
+    0xFF545A00, 0xFF287200, 0xFF087C00, 0xFF007628,
+    0xFF006678, 0xFF000000, 0xFF000000, 0xFF000000,
+    0xFFECEEEC, 0xFF4C9AEC, 0xFF787CEC, 0xFFB062EC,
+    0xFFE454EC, 0xFFEC58B4, 0xFFEC6A64, 0xFFD48820,
+    0xFFA0AA00, 0xFF74C400, 0xFF4CD020, 0xFF38CC6C,
+    0xFF38B4CC, 0xFF3C3C3C, 0xFF000000, 0xFF000000,
+    0xFFECEEEC, 0xFFA8CCEC, 0xFFBCBCEC, 0xFFD4B2EC,
+    0xFFECAEEC, 0xFFECAED4, 0xFFECB4B0, 0xFFE4C490,
+    0xFFCCD278, 0xFFB4DE78, 0xFFA8E290, 0xFF98E2B4,
+    0xFFA0D6E4, 0xFFA0A2A0, 0xFF000000, 0xFF000000,
+};
+
+/* Decode one 8×8 CHR tile into an ARGB8888 pixel buffer.
+ * tile_data: 16-byte tile (bytes 0-7 = low bitplane, 8-15 = high bitplane)
+ * pal_ram:   ppu->palette_table (32 bytes)
+ * pal_slot:  0-3 = BG palette, 4-7 = sprite palette
+ * pixels:    output buffer with given stride (uint32_t elements per row) */
+static void ppu_decode_tile(const uint8_t *tile_data, const uint8_t *pal_ram,
+                             int pal_slot, uint32_t *pixels, int stride) {
+    int pal_base = (pal_slot < 4) ? (pal_slot * 4) : ((pal_slot - 4) * 4 + 0x10);
+    for (int row = 0; row < 8; row++) {
+        uint8_t lo = tile_data[row];
+        uint8_t hi = tile_data[row + 8];
+        for (int col = 0; col < 8; col++) {
+            int bit   = 7 - col;
+            int pixel = ((lo >> bit) & 1) | (((hi >> bit) & 1) << 1);
+            uint8_t ci = pal_ram[pal_base + pixel] & 0x3F;
+            pixels[row * stride + col] = NES_SYS_PALETTE[ci];
+        }
+    }
+}
+
 static void render_apu_visualizer(ui_context *ui, display_context *display) {
     if (!ui->show_apu_visualizer) return;
 
@@ -902,18 +954,272 @@ static void render_memory_viewer(ui_context *ui, display_context *display) {
     ImGui::End();
 }
 
-/* ---------- PPU Viewer panel (stub) --------------------------------------- */
+/* ---------- PPU Viewer panel (#54 Pattern Tables, #55 Nametables, #56 OAM) */
 
 static void render_ppu_viewer(ui_context *ui, display_context *display) {
     if (!ui->show_ppu_viewer) return;
 
-    ImGui::SetNextWindowSize(ImVec2(530, 300), ImGuiCond_FirstUseEver);
-
+    ImGui::SetNextWindowSize(ImVec2(600, 560), ImGuiCond_FirstUseEver);
     if (!ImGui::Begin("PPU Viewer", &ui->show_ppu_viewer)) {
         ImGui::End();
         return;
     }
-    ImGui::TextDisabled("PPU Viewer — not yet implemented.");
+
+    if (!ui->dbg_ppu) {
+        ImGui::TextDisabled("No debug context set.");
+        ImGui::End();
+        return;
+    }
+
+    struct ppu2c02  *ppu      = ui->dbg_ppu;
+    SDL_Renderer    *renderer =
+        static_cast<SDL_Renderer *>(display_get_renderer(display));
+
+    /* Static SDL textures — created once on first open, freed at SDL shutdown */
+    static SDL_Texture *pt_tex[2] = {nullptr, nullptr}; /* 128×128 pattern tables */
+    static SDL_Texture *nt_tex[4] = {nullptr, nullptr, nullptr, nullptr}; /* 256×240 nametables */
+    if (!pt_tex[0]) {
+        for (int i = 0; i < 2; i++)
+            pt_tex[i] = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888,
+                                          SDL_TEXTUREACCESS_STREAMING, 128, 128);
+    }
+    if (!nt_tex[0]) {
+        for (int i = 0; i < 4; i++)
+            nt_tex[i] = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888,
+                                          SDL_TEXTUREACCESS_STREAMING, 256, 240);
+    }
+
+    /* Throttle texture rebuilds: refresh at ~15 fps while running, every
+     * frame while paused so the user sees live state when stepping.
+     * This avoids paying 8K mapper reads + SDL_LockTexture GPU syncs at 60 Hz. */
+    static int  refresh_ticker = 0;
+    static int  pt_pal_prev    = -1; /* force refresh on palette change */
+    bool        emu_paused     = display_is_paused(display) != 0;
+    bool        should_refresh = emu_paused || (++refresh_ticker >= 4);
+    if (should_refresh) refresh_ticker = 0;
+
+    static int ppu_tab = 0;
+    if (ImGui::BeginTabBar("##ppusegs")) {
+        if (ImGui::BeginTabItem("Pattern Tables")) { ppu_tab = 0; ImGui::EndTabItem(); }
+        if (ImGui::BeginTabItem("Nametables"))     { ppu_tab = 1; ImGui::EndTabItem(); }
+        if (ImGui::BeginTabItem("OAM"))            { ppu_tab = 2; ImGui::EndTabItem(); }
+        ImGui::EndTabBar();
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Pattern Tables tab                                                   */
+    /* ------------------------------------------------------------------ */
+    if (ppu_tab == 0) {
+        static int pt_pal = 0;
+
+        ImGui::Text("Palette:");
+        const char *pal_labels[] = {
+            "BG 0", "BG 1", "BG 2", "BG 3",
+            "Spr 0", "Spr 1", "Spr 2", "Spr 3"
+        };
+        for (int i = 0; i < 8; i++) {
+            ImGui::SameLine();
+            if (ImGui::RadioButton(pal_labels[i], pt_pal == i)) pt_pal = i;
+        }
+        ImGui::Spacing();
+
+        /* Force a refresh when the palette selection changes even mid-throttle. */
+        bool pal_changed = (pt_pal != pt_pal_prev);
+        if (should_refresh || pal_changed) {
+            pt_pal_prev = pt_pal;
+
+            /* Snapshot CHR only when we're about to redraw. */
+            uint8_t chr_snapshot[0x2000];
+            if (ppu->cart && ppu->cart->ppu_read) {
+                for (int i = 0; i < 0x2000; i++)
+                    chr_snapshot[i] = ppu->cart->ppu_read(ppu->cart, (uint16_t)i);
+            } else {
+                memcpy(chr_snapshot, ppu->pattern_table, 0x2000);
+            }
+
+            for (int tbl = 0; tbl < 2; tbl++) {
+                void *pv; int pitch;
+                if (SDL_LockTexture(pt_tex[tbl], nullptr, &pv, &pitch) == 0) {
+                    int stride   = pitch / 4;
+                    uint32_t *px = static_cast<uint32_t *>(pv);
+                    for (int tile = 0; tile < 256; tile++) {
+                        int tc            = tile % 16;
+                        int tr            = tile / 16;
+                        const uint8_t *td = chr_snapshot + tbl * 0x1000 + tile * 16;
+                        uint32_t *dst     = px + tr * 8 * stride + tc * 8;
+                        ppu_decode_tile(td, ppu->palette_table, pt_pal, dst, stride);
+                    }
+                    SDL_UnlockTexture(pt_tex[tbl]);
+                }
+            }
+        }
+
+        const float pt_scale = 2.0f;
+        ImVec2 pt_sz(128 * pt_scale, 128 * pt_scale);
+        for (int tbl = 0; tbl < 2; tbl++) {
+            if (tbl > 0) ImGui::SameLine(0, 16);
+            ImGui::BeginGroup();
+            ImGui::Text("Table %d  ($%04X)", tbl, tbl * 0x1000);
+            ImVec2 tex_origin = ImGui::GetCursorScreenPos();
+            ImGui::Image((ImTextureID)(intptr_t)pt_tex[tbl], pt_sz);
+            if (ImGui::IsItemHovered()) {
+                ImVec2 mp = ImGui::GetMousePos();
+                int tx = (int)((mp.x - tex_origin.x) / (8 * pt_scale));
+                int ty = (int)((mp.y - tex_origin.y) / (8 * pt_scale));
+                if (tx >= 0 && tx < 16 && ty >= 0 && ty < 16) {
+                    int idx = ty * 16 + tx;
+                    ImGui::SetTooltip("Table %d  Tile $%02X\n$%04X\xe2\x80\x93$%04X",
+                        tbl, idx,
+                        tbl * 0x1000 + idx * 16,
+                        tbl * 0x1000 + idx * 16 + 15);
+                }
+            }
+            ImGui::EndGroup();
+        }
+
+    /* ------------------------------------------------------------------ */
+    /* Nametables tab                                                        */
+    /* ------------------------------------------------------------------ */
+    } else if (ppu_tab == 1) {
+        uint8_t mirror = MIRROR_HORIZONTAL;
+        if (ppu->cart && ppu->cart->map) mirror = ppu->cart->map->mirroring;
+        static const char *mirror_names[] = {
+            "Horizontal", "Vertical", "Single-Screen Lo", "Single-Screen Hi"
+        };
+        ImGui::Text("Mirroring: %s", mirror_names[mirror < 4 ? mirror : 0]);
+        ImGui::SameLine(0, 24);
+        ImGui::TextDisabled("BG pattern table: %d", ppu->ppuctrl.bg_pattern_table);
+        ImGui::Spacing();
+
+        /* Physical VRAM offset (0x000 or 0x400) for each logical NT */
+        static const uint16_t nt_off[4][4] = {
+            { 0x000, 0x000, 0x400, 0x400 }, /* HORIZONTAL */
+            { 0x000, 0x400, 0x000, 0x400 }, /* VERTICAL   */
+            { 0x000, 0x000, 0x000, 0x000 }, /* SINGLE_LO  */
+            { 0x400, 0x400, 0x400, 0x400 }, /* SINGLE_HI  */
+        };
+        uint8_t bg_tbl = ppu->ppuctrl.bg_pattern_table;
+        uint8_t m      = mirror < 4 ? mirror : 0;
+
+        if (should_refresh) {
+            /* Snapshot CHR only when we're about to redraw. */
+            uint8_t chr_snapshot[0x2000];
+            if (ppu->cart && ppu->cart->ppu_read) {
+                for (int i = 0; i < 0x2000; i++)
+                    chr_snapshot[i] = ppu->cart->ppu_read(ppu->cart, (uint16_t)i);
+            } else {
+                memcpy(chr_snapshot, ppu->pattern_table, 0x2000);
+            }
+
+            for (int nt = 0; nt < 4; nt++) {
+                void *pv; int pitch;
+                if (SDL_LockTexture(nt_tex[nt], nullptr, &pv, &pitch) != 0) continue;
+                int stride          = pitch / 4;
+                uint32_t *px        = static_cast<uint32_t *>(pv);
+                const uint8_t *ntd  = ppu->nametable + nt_off[m][nt];
+                const uint8_t *attr = ntd + 0x3C0;
+
+                for (int cy = 0; cy < 30; cy++) {
+                    for (int cx = 0; cx < 32; cx++) {
+                        uint8_t tile_id   = ntd[cy * 32 + cx];
+                        uint8_t ab        = attr[(cy / 4) * 8 + (cx / 4)];
+                        int shift         = ((cy & 2) << 1) | (cx & 2);
+                        int pal_slot      = (ab >> shift) & 3;
+                        const uint8_t *td = chr_snapshot + bg_tbl * 0x1000 + tile_id * 16;
+                        uint32_t *dst     = px + cy * 8 * stride + cx * 8;
+                        ppu_decode_tile(td, ppu->palette_table, pal_slot, dst, stride);
+                    }
+                }
+                SDL_UnlockTexture(nt_tex[nt]);
+            }
+        }
+
+        /* 2×2 grid at 45% scale — capture screen positions for scroll rect */
+        const float nt_scale = 0.45f;
+        ImVec2 nt_sz(256 * nt_scale, 240 * nt_scale);
+        ImVec2 nt_pos[4];
+
+        nt_pos[0] = ImGui::GetCursorScreenPos();
+        ImGui::Image((ImTextureID)(intptr_t)nt_tex[0], nt_sz);
+        ImGui::SameLine(0, 1);
+        nt_pos[1] = ImGui::GetCursorScreenPos();
+        ImGui::Image((ImTextureID)(intptr_t)nt_tex[1], nt_sz);
+
+        nt_pos[2] = ImGui::GetCursorScreenPos();
+        ImGui::Image((ImTextureID)(intptr_t)nt_tex[2], nt_sz);
+        ImGui::SameLine(0, 1);
+        nt_pos[3] = ImGui::GetCursorScreenPos();
+        ImGui::Image((ImTextureID)(intptr_t)nt_tex[3], nt_sz);
+
+        /* Scroll viewport rectangle decoded from loopy v + fine-x registers */
+        if (ppu->cart) {
+            uint16_t v   = ppu->v;
+            int ntx      = (v >> 10) & 1;
+            int nty      = (v >> 11) & 1;
+            int coarse_x = v & 0x1F;
+            int coarse_y = (v >> 5) & 0x1F;
+            int fine_y   = (v >> 12) & 7;
+
+            ImVec2 base  = nt_pos[nty * 2 + ntx];
+            float  off_x = (coarse_x * 8 + ppu->x) * nt_scale;
+            float  off_y = (coarse_y * 8 + fine_y)  * nt_scale;
+            ImVec2 r0(base.x + off_x, base.y + off_y);
+            ImVec2 r1(r0.x + 256 * nt_scale, r0.y + 240 * nt_scale);
+            ImGui::GetWindowDrawList()->AddRect(r0, r1, IM_COL32(255, 255, 0, 220), 0, 0, 1.5f);
+        }
+
+    /* ------------------------------------------------------------------ */
+    /* OAM tab                                                               */
+    /* ------------------------------------------------------------------ */
+    } else {
+        ImGui::Text("Sprite size: %s", ppu->ppuctrl.sprite_size ? "8x16" : "8x8");
+        ImGui::Text("Sprite pattern table: %d  ($%04X)",
+            ppu->ppuctrl.sprite_pattern_table,
+            ppu->ppuctrl.sprite_pattern_table ? 0x1000 : 0x0000);
+        ImGui::Spacing();
+
+        ImGuiTableFlags tflags =
+            ImGuiTableFlags_Borders      | ImGuiTableFlags_RowBg      |
+            ImGuiTableFlags_ScrollY      | ImGuiTableFlags_SizingFixedFit;
+        if (ImGui::BeginTable("##oam", 9, tflags)) {
+            ImGui::TableSetupScrollFreeze(0, 1);
+            ImGui::TableSetupColumn("#",    ImGuiTableColumnFlags_WidthFixed, 28);
+            ImGui::TableSetupColumn("Y",    ImGuiTableColumnFlags_WidthFixed, 30);
+            ImGui::TableSetupColumn("X",    ImGuiTableColumnFlags_WidthFixed, 30);
+            ImGui::TableSetupColumn("Tile", ImGuiTableColumnFlags_WidthFixed, 40);
+            ImGui::TableSetupColumn("Pal",  ImGuiTableColumnFlags_WidthFixed, 28);
+            ImGui::TableSetupColumn("Pri",  ImGuiTableColumnFlags_WidthFixed, 35);
+            ImGui::TableSetupColumn("H-Fl", ImGuiTableColumnFlags_WidthFixed, 35);
+            ImGui::TableSetupColumn("V-Fl", ImGuiTableColumnFlags_WidthFixed, 35);
+            ImGui::TableSetupColumn("Vis",  ImGuiTableColumnFlags_WidthFixed, 28);
+            ImGui::TableHeadersRow();
+
+            for (int i = 0; i < 64; i++) {
+                uint8_t y    = ppu->oam[i * 4 + 0];
+                uint8_t tile = ppu->oam[i * 4 + 1];
+                uint8_t attr = ppu->oam[i * 4 + 2];
+                uint8_t x    = ppu->oam[i * 4 + 3];
+                bool visible = (y < 239);
+
+                ImGui::TableNextRow();
+                if (!visible)
+                    ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0,
+                                          IM_COL32(50, 50, 50, 100));
+
+                ImGui::TableNextColumn(); ImGui::Text("%d", i);
+                ImGui::TableNextColumn(); ImGui::Text("%d", y);
+                ImGui::TableNextColumn(); ImGui::Text("%d", x);
+                ImGui::TableNextColumn(); ImGui::Text("$%02X", tile);
+                ImGui::TableNextColumn(); ImGui::Text("%d", attr & 3);
+                ImGui::TableNextColumn(); ImGui::Text("%s", (attr >> 5) & 1 ? "BG" : "FG");
+                ImGui::TableNextColumn(); ImGui::Text("%s", (attr >> 6) & 1 ? "Y" : "-");
+                ImGui::TableNextColumn(); ImGui::Text("%s", (attr >> 7) & 1 ? "Y" : "-");
+                ImGui::TableNextColumn(); ImGui::Text("%s", visible     ? "Y" : "-");
+            }
+            ImGui::EndTable();
+        }
+    }
+
     ImGui::End();
 }
 
