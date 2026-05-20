@@ -44,9 +44,11 @@ add_subdirectory(tests)
 # Build configuration
 set(CMAKE_BUILD_TYPE Debug)
 
-# Enable full debug symbols and disable optimizations for easier debugging
-set(CMAKE_C_FLAGS_DEBUG "-g3 -O0 -Wall -Wextra -fno-omit-frame-pointer")
-set(CMAKE_CXX_FLAGS_DEBUG "-g3 -O0 -Wall -Wextra -fno-omit-frame-pointer")
+# GCC/Clang debug flags — MSVC has its own defaults via the VS generator
+if(NOT MSVC)
+    set(CMAKE_C_FLAGS_DEBUG "-g3 -O0 -Wall -Wextra -fno-omit-frame-pointer")
+    set(CMAKE_CXX_FLAGS_DEBUG "-g3 -O0 -Wall -Wextra -fno-omit-frame-pointer")
+endif()
 
 
 # add the executable
