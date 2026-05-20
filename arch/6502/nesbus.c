@@ -50,6 +50,9 @@ static uint8_t read(uint16_t addr) {
             data = 0xFF;
     }
 
+    if (bus.bp_hook)
+        bus.bp_hook(addr, 0, bus.bp_hook_ud);
+
     return data;
 }
 
@@ -86,6 +89,10 @@ static void write(uint16_t addr, uint8_t data) {
         if (bus.cart)
             bus.cart->cpu_write(bus.cart, addr, data);
     }
+
+    if (bus.bp_hook)
+        bus.bp_hook(addr, 1, bus.bp_hook_ud);
+
     return;
 }
 

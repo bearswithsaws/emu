@@ -13,6 +13,20 @@ struct cpu6502;
 struct ppu2c02;
 struct nesbus;
 
+#define UI_MAX_BREAKPOINTS 16
+
+typedef enum {
+    UI_BP_EXEC  = 0,
+    UI_BP_READ  = 1,
+    UI_BP_WRITE = 2
+} ui_bp_type;
+
+struct ui_breakpoint {
+    uint16_t  addr;
+    ui_bp_type type;
+    int       enabled;
+};
+
 /**
  * Callbacks provided by the emulator core so the menu bar can trigger
  * actions that require access to CPU/bus/cartridge state.
@@ -103,9 +117,15 @@ int ui_debugger_consume_step_over(struct ui_context *ui, uint16_t *out_target);
 int ui_debugger_consume_break(struct ui_context *ui);
 
 /**
- * Returns 1 if addr is in the current breakpoint list, 0 otherwise.
+ * Returns 1 if addr has an enabled EXEC breakpoint, 0 otherwise.
  */
 int ui_debugger_is_breakpoint(struct ui_context *ui, uint16_t addr);
+
+/**
+ * Returns 1 and clears the flag if a read/write breakpoint was hit since the
+ * last call.  The main loop should call this after each emu_tick() and pause.
+ */
+int ui_debugger_consume_rw_bp_hit(struct ui_context *ui);
 
 #ifdef __cplusplus
 }

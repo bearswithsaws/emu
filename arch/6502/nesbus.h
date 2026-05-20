@@ -16,6 +16,10 @@ typedef void (*fp_write)(uint16_t addr, uint8_t data);
 
 typedef uint8_t *(*fp_debug_read)(uint16_t offset, uint8_t *buf, uint16_t len);
 
+/* Breakpoint hook: called after every CPU read (is_write=0) or write (is_write=1).
+ * Set bp_hook to NULL to disable.  ud is forwarded as-is. */
+typedef void (*nesbus_bp_hook_fn)(uint16_t addr, int is_write, void *ud);
+
 struct nesbus {
     fp_read read;
     fp_write write;
@@ -29,6 +33,8 @@ struct nesbus {
     struct controller *controller2;
     struct apu2a03 *apu;
     uint16_t dma_halt_cycles;
+    nesbus_bp_hook_fn bp_hook;
+    void             *bp_hook_ud;
 };
 
 struct nesbus *nesbus_init(struct cpu6502 *cpu, struct ppu2c02 *ppu);

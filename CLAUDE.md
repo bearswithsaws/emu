@@ -624,11 +624,17 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
   - ✅ VBlank synchronization
   - ✅ NMI triggering
 
-### ✅ CPU Debugger (Complete — 2026-05-18, issue #52)
+### ✅ CPU Debugger (Complete — 2026-05-18, issue #52; Breakpoints extended 2026-05-19, issue #53)
 - ✅ 6502 disassembler (`arch/6502/disasm.c/.h`) — flat 256-entry table covering all legal + documented illegal opcodes; all addressing modes; REL branch target computed from PC
 - ✅ `disasm_insn(addr, bytes, out, len)` — returns instruction length (1-3); used by panel and unit tests
 - ✅ CPU Debugger ImGui panel (`lib/ui/`) — register display (PC/A/X/Y/SP editable hex fields; P flags as coloured N V - B D I Z C indicators); 20-line disassembly view scrolling to keep PC visible; step/step-over/run/break/reset controls; scanline/dot/cycle status bar
-- ✅ Breakpoints — click any disassembly line to toggle; shown in red; main loop halts emulation on PC match
+- ✅ Breakpoints (full — issue #53):
+  - Up to 16 breakpoints; `struct ui_breakpoint { addr, type (EXEC/READ/WRITE), enabled }`
+  - Click any disassembly line to toggle an execute breakpoint (shown in red)
+  - Breakpoints panel (table in CPU Debugger): Type dropdown, Address hex input, Enabled checkbox, Delete button, + Add Breakpoint button
+  - Execute breakpoints: checked per-instruction in main loop (`ui_debugger_is_breakpoint`)
+  - Read/Write breakpoints: `nesbus_bp_hook_fn` registered in bus; fires on every CPU read/write; sets `dbg_rw_bp_hit` flag consumed by main loop
+  - All breakpoint types pause emulation when hit; survive panel close/reopen
 - ✅ Step (F7) — executes exactly one CPU instruction then pauses
 - ✅ Step Over (F8) — runs until PC = current PC + instruction length (handles JSR)
 - ✅ Panel toggled from Debug menu; dockable via ImGui docking
@@ -713,6 +719,33 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
 ---
 
 ## Recent Work
+
+### 2026-05-19 Session: Breakpoints — Read/Write + Panel (Issue #53, closes UI epic #59)
+
+**Full breakpoint system implemented. Closes the last remaining item in the UI epic.**
+
+**Architecture:**
+- `struct ui_breakpoint { uint16_t addr; ui_bp_type type; int enabled; }` — up to 16 breakpoints (`UI_MAX_BREAKPOINTS`) stored in a fixed array on `ui_context`
+- `ui_bp_type` enum: `UI_BP_EXEC=0`, `UI_BP_READ=1`, `UI_BP_WRITE=2` (defined in `lib/ui/ui.h`)
+- `nesbus_bp_hook_fn` added to `struct nesbus` (`arch/6502/nesbus.h`): `void (*)(uint16_t addr, int is_write, void *ud)` — called after every CPU read/write in the static `read()`/`write()` in `nesbus.c`
+- `ui_set_debug_context()` registers the hook; the callback checks all enabled READ/WRITE breakpoints and sets `dbg_rw_bp_hit` flag
+- Main loop in `emu.c` checks `ui_debugger_consume_rw_bp_hit()` alongside execute breakpoints and calls `display_set_paused(display, 1)` when either fires
+
+**UI panel (CPU Debugger, `lib/ui/ui.cpp`):**
+- Inline breakpoint chip list replaced with an `ImGui::BeginTable` with 5 columns: Type (dropdown), Address (hex input, Enter to commit), Enabled (checkbox), Hit indicator, Delete (X button)
+- Scrollable child window (`frame_h * 4.5`) contains the table so the disassembly view isn't pushed off-screen
+- `+ Add Breakpoint` button appends an enabled EXEC BP at $0000 for the user to edit
+- Clicking a disassembly line still toggles an EXEC breakpoint (adds if absent, removes if present)
+
+**New public API (`lib/ui/ui.h`):**
+- `struct ui_breakpoint` and `ui_bp_type` enum
+- `int ui_debugger_consume_rw_bp_hit(struct ui_context *ui)` — returns 1 and clears flag if a R/W BP fired
+
+**Files modified:** `arch/6502/nesbus.h`, `arch/6502/nesbus.c`, `lib/ui/ui.h`, `lib/ui/ui.cpp`, `emu.c`
+
+**All 12 test suites pass — no regressions.**
+
+---
 
 ### 2026-05-19 Session: PPU Viewer Panel (Issues #54, #55, #56)
 
@@ -1063,7 +1096,7 @@ All illegal NOP opcodes that consume operand bytes ($04, $0C, $14, $1C, $34, $3C
 - [ ] Screenshot capture
 
 ### Phase 4: Advanced Features
-- [X] ~~Debugger (CPU state, breakpoints, step through)~~ ✅ Complete (2026-05-18, issue #52) — disassembler, editable registers, F7/F8 step/step-over, breakpoints, cycle/scanline/dot display
+- [X] ~~Debugger (CPU state, breakpoints, step through)~~ ✅ Complete (2026-05-18, issue #52; extended 2026-05-19, issue #53) — disassembler, editable registers, F7/F8 step/step-over, execute + read/write breakpoints, cycle/scanline/dot display
 - [X] ~~PPU viewer (nametables, patterns, palettes)~~ ✅ Complete (2026-05-19, issues #54/#55/#56) — Pattern Tables (two 128×128 tile grids, palette selector, hover tooltip), Nametables (2×2 grid with scroll viewport rect overlay + mirroring label), OAM (64-entry table with all sprite attributes)
 - [X] ~~Memory viewer/editor~~ ✅ Complete (2026-05-19, issue #57) — hex viewer with CPU bus, OAM, VRAM, Palette tabs; uses imgui_memory_editor
 - [ ] Rewind functionality (ring buffer of states)
@@ -1110,5 +1143,5 @@ TODO: Add contribution guidelines
 
 ---
 
-**Last Updated:** 2026-05-19 (PPU Viewer complete)
+**Last Updated:** 2026-05-19 (Breakpoints R/W + panel complete; UI epic #59 closed)
 **Emulator Version:** 0.1.0 (pre-alpha)
