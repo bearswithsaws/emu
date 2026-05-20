@@ -239,8 +239,9 @@ int main(int argc, char *argv[]) {
                 while (!ppu->frame_complete) {
                     emu_tick();
 
-                    /* Breakpoint check: pause if PC matches any breakpoint. */
-                    if (ui_debugger_is_breakpoint(ui, cpu->PC)) {
+                    /* Breakpoint check: pause on execute or read/write breakpoint hit. */
+                    if (ui_debugger_is_breakpoint(ui, cpu->PC) ||
+                        ui_debugger_consume_rw_bp_hit(ui)) {
                         display_set_paused(display, 1);
                     }
                 }

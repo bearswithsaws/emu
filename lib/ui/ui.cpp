@@ -97,7 +97,9 @@ struct ui_context {
     int             dbg_step_over_pending;
     uint16_t        dbg_step_over_target;
     int             dbg_break_pending;
-    std::vector<uint16_t> dbg_breakpoints;
+    struct ui_breakpoint dbg_breakpoints[UI_MAX_BREAKPOINTS];
+    int                  dbg_bp_count;
+    int                  dbg_rw_bp_hit;  /* set by nesbus hook, consumed by main loop */
 };
 
 /* ---------- SDL event hook ------------------------------------------------ */
@@ -650,8 +652,9 @@ static void render_cpu_debugger(ui_context *ui, display_context *display) {
     float frame_h  = ImGui::GetFrameHeightWithSpacing();
     float sp       = ImGui::GetStyle().ItemSpacing.y;
     float ctrl_h   = frame_h * 3          /* scroll btns + SeparatorText + step btns */
-                   + line_h  * 2          /* status bar + breakpoints reserve         */
-                   + sp      * 4;         /* spacings + separator                     */
+                   + frame_h * 6          /* breakpoints: header + 4 rows + add btn   */
+                   + line_h  * 2          /* status bar + separator                   */
+                   + sp      * 6;         /* spacings                                  */
     float avail_h  = ImGui::GetContentRegionAvail().y;
     float dasm_h   = std::max(avail_h - ctrl_h, line_h * 4.0f);
 
@@ -672,8 +675,12 @@ static void render_cpu_debugger(ui_context *ui, display_context *display) {
         uint16_t a = dasm_addrs[i];
         bool is_pc = (a == cpu->PC);
         bool is_bp = false;
-        for (auto bp : ui->dbg_breakpoints)
-            if (bp == a) { is_bp = true; break; }
+        for (int bi = 0; bi < ui->dbg_bp_count; bi++) {
+            auto &b = ui->dbg_breakpoints[bi];
+            if (b.type == UI_BP_EXEC && b.enabled && b.addr == a) {
+                is_bp = true; break;
+            }
+        }
 
         /* Raw bytes for display. */
         uint8_t raw[3];
@@ -699,17 +706,28 @@ static void render_cpu_debugger(ui_context *ui, display_context *display) {
         ImVec4 color = is_pc ? col_pc : (is_bp ? col_bp : col_norm);
         ImGui::TextColored(color, "%s", label);
 
-        /* Click to toggle breakpoint. */
+        /* Click to toggle EXEC breakpoint. */
         if (ImGui::IsItemClicked()) {
-            auto &bps = ui->dbg_breakpoints;
-            auto it = std::find(bps.begin(), bps.end(), a);
-            if (it != bps.end())
-                bps.erase(it);
-            else
-                bps.push_back(a);
+            /* Search for an existing EXEC BP at this address. */
+            int found = -1;
+            for (int bi = 0; bi < ui->dbg_bp_count; bi++) {
+                if (ui->dbg_breakpoints[bi].type == UI_BP_EXEC &&
+                    ui->dbg_breakpoints[bi].addr == a) {
+                    found = bi; break;
+                }
+            }
+            if (found >= 0) {
+                /* Remove it by shifting the array down. */
+                for (int bi = found; bi < ui->dbg_bp_count - 1; bi++)
+                    ui->dbg_breakpoints[bi] = ui->dbg_breakpoints[bi + 1];
+                ui->dbg_bp_count--;
+            } else if (ui->dbg_bp_count < UI_MAX_BREAKPOINTS) {
+                ui->dbg_breakpoints[ui->dbg_bp_count] = {a, UI_BP_EXEC, 1};
+                ui->dbg_bp_count++;
+            }
         }
         if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("Click to toggle breakpoint at $%04X", a);
+            ImGui::SetTooltip("Click to toggle execute breakpoint at $%04X", a);
     }
 
     ImGui::EndChild();
@@ -779,19 +797,99 @@ static void render_cpu_debugger(ui_context *ui, display_context *display) {
             ui->callbacks.on_soft_reset(ui->callbacks.userdata);
     }
 
-    /* Breakpoint list. */
-    if (!ui->dbg_breakpoints.empty()) {
-        ImGui::Spacing();
-        ImGui::TextDisabled("Breakpoints:");
-        ImGui::SameLine();
-        for (size_t i = 0; i < ui->dbg_breakpoints.size(); i++) {
-            if (i > 0) ImGui::SameLine(0, 4);
-            char bplabel[16];
-            snprintf(bplabel, sizeof(bplabel), "$%04X##bp%d",
-                     ui->dbg_breakpoints[i], (int)i);
-            if (ImGui::SmallButton(bplabel))
-                ui->dbg_breakpoints.erase(ui->dbg_breakpoints.begin() + (int)i);
+    /* ---- Breakpoint table ---- */
+    ImGui::Spacing();
+    ImGui::SeparatorText("Breakpoints");
+
+    static const char *type_names[] = { "Exec", "Read", "Write" };
+
+    float bp_table_h = frame_h * 4.5f;   /* room for header + ~3 rows */
+    ImGui::BeginChild("##bpchild", ImVec2(-1.0f, bp_table_h), ImGuiChildFlags_None);
+
+    if (ImGui::BeginTable("##bptable", 5,
+            ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
+            ImGuiTableFlags_ScrollY  |
+            ImGuiTableFlags_SizingStretchProp)) {
+        ImGui::TableSetupColumn("Type",    ImGuiTableColumnFlags_WidthFixed,   48.0f);
+        ImGui::TableSetupColumn("Address", ImGuiTableColumnFlags_WidthFixed,   56.0f);
+        ImGui::TableSetupColumn("En",      ImGuiTableColumnFlags_WidthFixed,   24.0f);
+        ImGui::TableSetupColumn("Hit",     ImGuiTableColumnFlags_WidthFixed,   24.0f);
+        ImGui::TableSetupColumn("Del",     ImGuiTableColumnFlags_WidthFixed,   24.0f);
+        ImGui::TableHeadersRow();
+
+        int to_delete = -1;
+        for (int bi = 0; bi < ui->dbg_bp_count; bi++) {
+            struct ui_breakpoint &bp = ui->dbg_breakpoints[bi];
+            ImGui::TableNextRow();
+
+            /* Type dropdown */
+            ImGui::TableSetColumnIndex(0);
+            ImGui::SetNextItemWidth(-1);
+            char combo_id[16];
+            snprintf(combo_id, sizeof(combo_id), "##bptype%d", bi);
+            if (ImGui::BeginCombo(combo_id, type_names[bp.type])) {
+                for (int t = 0; t < 3; t++) {
+                    bool sel = (bp.type == (ui_bp_type)t);
+                    if (ImGui::Selectable(type_names[t], sel))
+                        bp.type = (ui_bp_type)t;
+                    if (sel) ImGui::SetItemDefaultFocus();
+                }
+                ImGui::EndCombo();
+            }
+
+            /* Address hex input */
+            ImGui::TableSetColumnIndex(1);
+            ImGui::SetNextItemWidth(-1);
+            char addr_buf[8];
+            snprintf(addr_buf, sizeof(addr_buf), "%04X", bp.addr);
+            char addr_id[16];
+            snprintf(addr_id, sizeof(addr_id), "##bpaddr%d", bi);
+            if (ImGui::InputText(addr_id, addr_buf, sizeof(addr_buf),
+                                 ImGuiInputTextFlags_CharsHexadecimal |
+                                 ImGuiInputTextFlags_EnterReturnsTrue)) {
+                unsigned v = 0;
+                sscanf(addr_buf, "%X", &v);
+                bp.addr = (uint16_t)(v & 0xFFFF);
+            }
+
+            /* Enabled checkbox */
+            ImGui::TableSetColumnIndex(2);
+            bool en = (bp.enabled != 0);
+            char en_id[16];
+            snprintf(en_id, sizeof(en_id), "##bpen%d", bi);
+            if (ImGui::Checkbox(en_id, &en))
+                bp.enabled = en ? 1 : 0;
+
+            /* Hit indicator (red dot when type != EXEC and rw_bp_hit) */
+            ImGui::TableSetColumnIndex(3);
+            ImGui::TextDisabled("-");
+
+            /* Delete button */
+            ImGui::TableSetColumnIndex(4);
+            char del_id[16];
+            snprintf(del_id, sizeof(del_id), "X##bpdel%d", bi);
+            if (ImGui::SmallButton(del_id))
+                to_delete = bi;
         }
+
+        ImGui::EndTable();
+
+        if (to_delete >= 0) {
+            for (int bi = to_delete; bi < ui->dbg_bp_count - 1; bi++)
+                ui->dbg_breakpoints[bi] = ui->dbg_breakpoints[bi + 1];
+            ui->dbg_bp_count--;
+        }
+    }
+
+    ImGui::EndChild();
+
+    if (ui->dbg_bp_count < UI_MAX_BREAKPOINTS) {
+        if (ImGui::SmallButton("+ Add Breakpoint")) {
+            ui->dbg_breakpoints[ui->dbg_bp_count] = {0x0000, UI_BP_EXEC, 1};
+            ui->dbg_bp_count++;
+        }
+    } else {
+        ImGui::TextDisabled("(max %d breakpoints)", UI_MAX_BREAKPOINTS);
     }
 
     /* ---- Status bar ---- */
@@ -1466,6 +1564,20 @@ void ui_notify_rom_loaded(struct ui_context *ui, int loaded) {
     if (ui) ui->rom_loaded = (loaded != 0);
 }
 
+/* Breakpoint hook called by nesbus on every CPU read/write. */
+static void bp_hook(uint16_t addr, int is_write, void *ud) {
+    ui_context *ui = static_cast<ui_context *>(ud);
+    if (!ui) return;
+    ui_bp_type want = is_write ? UI_BP_WRITE : UI_BP_READ;
+    for (int i = 0; i < ui->dbg_bp_count; i++) {
+        const struct ui_breakpoint &bp = ui->dbg_breakpoints[i];
+        if (bp.type == want && bp.enabled && bp.addr == addr) {
+            ui->dbg_rw_bp_hit = 1;
+            return;
+        }
+    }
+}
+
 void ui_set_debug_context(struct ui_context *ui,
                           struct cpu6502 *cpu,
                           struct ppu2c02 *ppu,
@@ -1475,6 +1587,11 @@ void ui_set_debug_context(struct ui_context *ui,
     ui->dbg_ppu = ppu;
     ui->dbg_bus = bus;
     ui->dbg_scroll_needs_sync = true;
+
+    if (bus) {
+        bus->bp_hook    = bp_hook;
+        bus->bp_hook_ud = ui;
+    }
 }
 
 void ui_debugger_update_cycles(struct ui_context *ui, uint64_t cycles) {
@@ -1502,7 +1619,15 @@ int ui_debugger_consume_break(struct ui_context *ui) {
 
 int ui_debugger_is_breakpoint(struct ui_context *ui, uint16_t addr) {
     if (!ui) return 0;
-    for (auto bp : ui->dbg_breakpoints)
-        if (bp == addr) return 1;
+    for (int i = 0; i < ui->dbg_bp_count; i++) {
+        const struct ui_breakpoint &bp = ui->dbg_breakpoints[i];
+        if (bp.type == UI_BP_EXEC && bp.enabled && bp.addr == addr) return 1;
+    }
     return 0;
+}
+
+int ui_debugger_consume_rw_bp_hit(struct ui_context *ui) {
+    if (!ui || !ui->dbg_rw_bp_hit) return 0;
+    ui->dbg_rw_bp_hit = 0;
+    return 1;
 }
