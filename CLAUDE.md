@@ -191,7 +191,7 @@ Opcode: aaabbbcc
 - ✅ Horizontal and vertical flip (attr bits 6/7)
 - ✅ 8x16 sprite mode (tile bit 0 selects pattern table; top/bottom halves)
 - ✅ Sprite 0 hit detection (both pixels opaque, excludes x=255, left-column clip)
-- ✅ OAM DMA ($4014) — synchronous copy + CPU halt cycles enforced in main loop
+- ✅ OAM DMA ($4014) — synchronous copy + cycle-accurate CPU halt (513 even / 514 odd cycles)
 
 **Partially Implemented:**
 - ⚠️ Sprite overflow flag — hardware has a diagonal-scan bug; we set the flag correctly for the simple case but do not replicate the hardware's incorrect scan behaviour
@@ -422,7 +422,7 @@ Offset  Size  Description
 - APU register routing ($4000-$4017)
 
 **Implemented:**
-- OAM DMA ($4014) — synchronous 256-byte copy + 513-cycle CPU halt enforced in main loop
+- OAM DMA ($4014) — synchronous 256-byte copy + cycle-accurate CPU halt (513 even / 514 odd cycles)
 
 ---
 
@@ -541,9 +541,11 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
   - PPU register interface
   - APU register routing ($4000-$4017)
   - Controller I/O ($4016/$4017)
-- **NES Controller Input** (~80% complete)
+- **NES Controller Input** (~90% complete)
   - Controller structure and shift register logic
-  - Button mapping (Arrow keys, Z=A, X=B, Enter=Start, RShift=Select)
+  - Player 1 mapping: Arrow keys = D-pad, Z=A, X=B, Enter=Start, RShift=Select
+  - Player 2 mapping: WASD = D-pad, N=A, M=B, Y=Start, H=Select
+  - Both controllers documented in Help → Controls Reference popup
   - Read/write implementation
   - See: arch/6502/controller.c, arch/6502/nes_input.c
 - **APU (2A03)** (✅ Complete — 2026-05-17)
@@ -581,7 +583,7 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
   - ✅ Horizontal and vertical flip
   - ✅ Full pixel rendering (priority, palette, transparency compositing)
   - ✅ Sprite 0 hit detection (dot 255 off-by-one bug fixed 2026-05-17)
-  - ✅ OAM DMA CPU halt (513-cycle stall enforced in main loop 2026-05-17)
+  - ✅ OAM DMA CPU halt (cycle-accurate 513/514-cycle stall based on CPU cycle parity — fixed 2026-05-21)
   - ⚠️ Sprite overflow flag — correct for common case; hardware diagonal-scan bug not replicated
 
 - **GUI/Display Integration** (~98% complete)
