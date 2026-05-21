@@ -91,6 +91,20 @@ target_include_directories(test_disasm PRIVATE
     "${PROJECT_BINARY_DIR}"
 )
 
+# ---- Blargg headless runner ------------------------------------------------
+# A single binary that implements the standard Blargg result-reporting protocol
+# ($6001-$6003 magic, $6000 status, $6004+ text). Runs the full NES stack
+# (CPU + PPU + APU + cartridge) without SDL2.
+#
+# To enable CTest entries supply the path to a nes-test-roms checkout:
+#   cmake -DBLARGG_TEST_ROMS_PATH=/path/to/nes-test-roms ..
+add_executable(test_blargg_runner test_blargg_runner.c)
+target_link_libraries(test_blargg_runner PRIVATE lib6502)
+target_include_directories(test_blargg_runner PRIVATE
+    "${PROJECT_SOURCE_DIR}/arch/6502"
+    "${PROJECT_BINARY_DIR}"
+)
+
 enable_testing()
 add_test(NAME ppu_clock    COMMAND test_ppu_clock)
 add_test(NAME apu          COMMAND test_apu)
@@ -104,3 +118,53 @@ add_test(NAME mapper_011   COMMAND test_mapper_011)
 add_test(NAME mapper_066   COMMAND test_mapper_066)
 add_test(NAME cpu_nestest  COMMAND test_cpu_nestest)
 add_test(NAME disasm       COMMAND test_disasm)
+
+# ---- Blargg CTest entries (optional) --------------------------------------
+if(DEFINED BLARGG_TEST_ROMS_PATH AND EXISTS "${BLARGG_TEST_ROMS_PATH}")
+    set(_B "${BLARGG_TEST_ROMS_PATH}")
+
+    # PPU VBL / NMI timing tests — issue #81
+    foreach(_T
+        01-vbl_basics 02-vbl_set_time 03-vbl_clear_time
+        04-nmi_control 05-nmi_timing 06-suppression
+        07-nmi_on_timing 08-nmi_off_timing
+        09-even_odd_frames 10-even_odd_timing
+    )
+        set(_ROM "${_B}/ppu_vbl_nmi/rom_singles/${_T}.nes")
+        if(EXISTS "${_ROM}")
+            add_test(NAME "blargg_ppu_vbl_nmi_${_T}"
+                     COMMAND test_blargg_runner "${_ROM}")
+        endif()
+    endforeach()
+
+    # APU tests — issue #82
+    # apu_test suite (newer, uses $6000 protocol)
+    foreach(_T 1-len_ctr 2-len_table 3-irq_flag 4-jitter
+               5-len_timing 6-irq_flag_timing 7-dmc_basics 8-dmc_rates)
+        set(_ROM "${_B}/apu_test/rom_singles/${_T}.nes")
+        if(EXISTS "${_ROM}")
+            add_test(NAME "blargg_apu_${_T}"
+                     COMMAND test_blargg_runner "${_ROM}")
+        endif()
+    endforeach()
+
+    # APU reset-state tests — runner handles the $81 mid-test reset request
+    foreach(_T 4015_cleared 4017_timing 4017_written
+               irq_flag_cleared len_ctrs_enabled works_immediately)
+        set(_ROM "${_B}/apu_reset/${_T}.nes")
+        if(EXISTS "${_ROM}")
+            add_test(NAME "blargg_apu_reset_${_T}"
+                     COMMAND test_blargg_runner "${_ROM}")
+        endif()
+    endforeach()
+
+    # Note: sprite_hit_tests_2005.10.05 and sprite_overflow_tests are 2005-era
+    # ROMs that report results only via screen/beeps — they do not implement the
+    # $6000 memory protocol and cannot be run headlessly with this runner.
+    # Issue #83 (sprite 0 hit accuracy) must be evaluated manually until a newer
+    # protocol-aware sprite test ROM is available.
+
+    message(STATUS "Blargg tests enabled from: ${BLARGG_TEST_ROMS_PATH}")
+else()
+    message(STATUS "Blargg tests disabled — set -DBLARGG_TEST_ROMS_PATH=<dir> to enable")
+endif()

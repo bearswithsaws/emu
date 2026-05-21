@@ -5,6 +5,7 @@
 
 #include "mapper.h"
 
+void    mapper_000_init(struct mapper *map);
 uint8_t mapper_000_cpu_read(struct mapper *map, uint16_t addr);
 
 void mapper_000_cpu_write(struct mapper *map, uint16_t addr, uint8_t data);

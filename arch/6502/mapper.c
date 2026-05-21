@@ -31,6 +31,7 @@ struct mapper *mapper_init(struct nes_cartridge *cartridge) {
         map.cpu_write = mapper_000_cpu_write;
         map.ppu_read = mapper_000_ppu_read;
         map.ppu_write = mapper_000_ppu_write;
+        mapper_000_init(&map);
         break;
     case 1:
         map.cpu_read = mapper_001_cpu_read;
