@@ -8,7 +8,10 @@ target_include_directories(test_ppu_clock PRIVATE
 )
 
 add_executable(test_apu test_apu.c)
-target_link_libraries(test_apu PRIVATE lib6502 m)
+target_link_libraries(test_apu PRIVATE lib6502)
+if(UNIX)
+    target_link_libraries(test_apu PRIVATE m)
+endif()
 target_include_directories(test_apu PRIVATE
     "${PROJECT_SOURCE_DIR}/arch/6502"
     "${PROJECT_BINARY_DIR}"

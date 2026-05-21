@@ -1,7 +1,11 @@
 cmake_minimum_required(VERSION 3.10)
 
 # set the project name
-project(emu VERSION 0.1 LANGUAGES C CXX)
+project(emu VERSION 0.1.0 LANGUAGES C CXX)
+
+# Require C11 globally — needed for stdatomic.h (_Atomic) on all platforms
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
 
 # Ensure ImGui submodule is present
 if(NOT EXISTS "${CMAKE_SOURCE_DIR}/lib/ui/vendor/imgui/imgui.h")
@@ -10,9 +14,17 @@ if(NOT EXISTS "${CMAKE_SOURCE_DIR}/lib/ui/vendor/imgui/imgui.h")
         "  git submodule update --init --recursive")
 endif()
 
-INCLUDE(FindPkgConfig)
-PKG_SEARCH_MODULE(SDL2 REQUIRED sdl2)
-include_directories(${SDL2_INCLUDE_DIRS})
+# SDL2: vcpkg imported targets on MSVC, pkg-config on Linux/MinGW
+if(MSVC)
+    find_package(SDL2 CONFIG REQUIRED)
+    # SDL2::SDL2-static carries its own include dirs; SDL2::SDL2main provides
+    # the WinMain shim required for WIN32 subsystem executables.
+    set(SDL2_LIBRARIES SDL2::SDL2-static SDL2::SDL2main)
+else()
+    include(FindPkgConfig)
+    pkg_search_module(SDL2 REQUIRED sdl2)
+    include_directories(${SDL2_INCLUDE_DIRS})
+endif()
 
 configure_file(emu_config.h.in emu_config.h)
 
@@ -36,9 +48,11 @@ add_subdirectory(tests)
 # Build configuration
 set(CMAKE_BUILD_TYPE Debug)
 
-# Enable full debug symbols and disable optimizations for easier debugging
-set(CMAKE_C_FLAGS_DEBUG "-g3 -O0 -Wall -Wextra -fno-omit-frame-pointer")
-set(CMAKE_CXX_FLAGS_DEBUG "-g3 -O0 -Wall -Wextra -fno-omit-frame-pointer")
+# GCC/Clang debug flags — MSVC has its own defaults via the VS generator
+if(NOT MSVC)
+    set(CMAKE_C_FLAGS_DEBUG "-g3 -O0 -Wall -Wextra -fno-omit-frame-pointer")
+    set(CMAKE_CXX_FLAGS_DEBUG "-g3 -O0 -Wall -Wextra -fno-omit-frame-pointer")
+endif()
 
 
 # add the executable
@@ -53,19 +67,23 @@ target_include_directories(emu PUBLIC
                            "${PROJECT_SOURCE_DIR}/lib/ui"
                            )
 
-# Windows-specific: suppress console window and static-link GCC/C++ runtimes.
-# libwinpthread cannot be statically linked because SDL2.dll itself carries a
-# runtime dependency on it — Windows would still require the DLL when loading
-# SDL2. We therefore bundle all required MinGW DLLs next to emu.exe instead.
-# Issue #64 (Windows packaging) will replace this with an ntldd-based full
-# dependency walk in the GitHub Actions release workflow.
-if(MINGW)
+# Install targets (used by AppImage and Linux packaging)
+install(TARGETS emu DESTINATION bin)
+install(FILES assets/emu.desktop DESTINATION share/applications)
+install(FILES assets/icon.png    DESTINATION share/pixmaps RENAME emu.png)
+install(FILES assets/icon.png    DESTINATION share/icons/hicolor/256x256/apps RENAME emu.png)
+
+# Windows: suppress console window.
+# MSVC: SDL2 is statically linked via vcpkg x64-windows-static — no extra DLLs needed.
+# MinGW: static-link GCC/C++ runtimes; SDL2.dll + libwinpthread-1.dll must be
+#         copied next to the exe for local dev builds (release packaging is done
+#         by the GitHub Actions workflow).
+if(MSVC)
+    set_target_properties(emu PROPERTIES WIN32_EXECUTABLE TRUE)
+elseif(MINGW)
     target_link_options(emu PRIVATE -mwindows -static-libgcc -static-libstdc++)
 
-    # DLLs that must ship alongside emu.exe.  SDL2 is the main dependency;
-    # libwinpthread is a transitive dependency of SDL2.dll itself.
     set(_MINGW_DLLS SDL2.dll libwinpthread-1.dll)
-
     foreach(_DLL ${_MINGW_DLLS})
         find_file(_DLL_PATH "${_DLL}"
             HINTS "${SDL2_LIBDIR}/../bin"

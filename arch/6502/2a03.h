@@ -3,7 +3,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-#ifndef __cplusplus
+#if !defined(__cplusplus) && !defined(_MSC_VER)
 #include <stdatomic.h>
 #endif
 
@@ -121,7 +121,7 @@ struct apu2a03 {
 
     /* SPSC ring buffer — written by main thread, drained by SDL audio callback */
     float ring_buf[APU_RING_SIZE];
-#ifdef __cplusplus
+#if defined(__cplusplus) || defined(_MSC_VER)
     volatile int ring_write; /* producer index (main thread) */
     volatile int ring_read;  /* consumer index (audio thread) */
 #else

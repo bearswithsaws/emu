@@ -645,7 +645,7 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
 
 ### Code Quality Status
 - ✅ .clang-format configuration
-- ✅ Travis CI build automation
+- ✅ GitHub Actions CI (ubuntu-latest + windows-latest matrix; replaces Travis CI)
 - ✅ **Comprehensive PPU documentation** (added 2025-11-12)
   - PPU_ARCHITECTURE_COMPLETE.md (51,000+ tokens)
   - PPU_REGISTERS_REFERENCE.md
@@ -719,6 +719,33 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
 ---
 
 ## Recent Work
+
+### 2026-05-19 Session: Build System & Distribution (Issues #60–#65, closes Build epic #66)
+
+**Full CI pipeline and release packaging implemented. Closes the Build System & Distribution epic.**
+
+**Issues #60 and #61 were already complete** — `.github/workflows/ci.yml` existed with an ubuntu-latest + windows-latest matrix running all 12 CTest suites on every push and PR.
+
+**New assets (`assets/`):**
+- `assets/icon.png` — 256×256 RGBA NES controller icon
+- `assets/emu.desktop` — freedesktop.org application entry (`Categories=Game;Emulator;`, `MimeType=application/x-nes-rom;`)
+
+**CMakeLists.txt changes:**
+- Version bumped from `0.1` to `0.1.0` (adds PATCH component)
+- `install()` targets: binary → `bin/`; desktop file → `share/applications/`; icon → `share/pixmaps/` and `share/icons/hicolor/256x256/apps/`
+
+**emu_config.h.in:**
+- Added `emu_VERSION_PATCH` and `EMU_VERSION` string macro (`"MAJOR.MINOR.PATCH"`) for use in About dialog
+
+**`.github/workflows/release.yml` (new — issue #65):**
+- Trigger: `push: tags: ['v*']`
+- **Linux job**: Release build → CTest → `cmake --install` into `AppDir` → linuxdeploy (extracted, no FUSE needed in Actions) → `emu-vX.Y.Z-linux-x86_64.AppImage`
+- **Windows job**: Release build via MSYS2 → CTest → `ntldd -R` to recursively find all MinGW DLL deps → zip → `emu-vX.Y.Z-windows-x64.zip`
+- **Release job**: downloads both artifacts, runs `gh release create --generate-notes --prerelease` to publish them
+
+**To cut a release:** `git tag v0.1.0 && git push --tags`
+
+---
 
 ### 2026-05-19 Session: Breakpoints — Read/Write + Panel (Issue #53, closes UI epic #59)
 
@@ -1102,7 +1129,14 @@ All illegal NOP opcodes that consume operand bytes ($04, $0C, $14, $1C, $34, $3C
 - [ ] Rewind functionality (ring buffer of states)
 - [ ] TAS (Tool-Assisted Speedrun) input recording
 
-### Phase 5: Accuracy & Compatibility
+### Phase 5: Build System & Distribution
+- [X] ~~GitHub Actions CI (replace Travis CI)~~ ✅ Complete (2026-05-19, issue #60) — ubuntu-latest + windows-latest matrix; all 12 test suites run on every push/PR
+- [X] ~~Run test suites in CI~~ ✅ Complete (2026-05-19, issue #61) — all `add_test()` targets run via `ctest` in CI
+- [X] ~~Linux AppImage packaging~~ ✅ Complete (2026-05-19, issue #63) — `install()` targets, `assets/emu.desktop`, `assets/icon.png`; `release.yml` uses linuxdeploy to produce `emu-vX.Y.Z-linux-x86_64.AppImage`
+- [X] ~~Windows release packaging~~ ✅ Complete (2026-05-19, issue #64) — `ntldd -R` walks all MinGW DLL deps; zips to `emu-vX.Y.Z-windows-x64.zip`
+- [X] ~~GitHub Release workflow~~ ✅ Complete (2026-05-19, issue #65) — `.github/workflows/release.yml` triggers on `v*` tags; runs both build jobs then creates a pre-release with both artifacts and auto-generated notes
+
+### Phase 6: Accuracy & Compatibility
 - [ ] Cycle-accurate PPU rendering edge cases
 - [ ] PPU open bus behavior
 - [ ] Sprite overflow flag accuracy
@@ -1143,5 +1177,5 @@ TODO: Add contribution guidelines
 
 ---
 
-**Last Updated:** 2026-05-19 (Breakpoints R/W + panel complete; UI epic #59 closed)
+**Last Updated:** 2026-05-19 (Build System & Distribution epic #66 complete; release workflow added)
 **Emulator Version:** 0.1.0 (pre-alpha)

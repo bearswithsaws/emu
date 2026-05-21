@@ -1,0 +1,140 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Linux — build + package as AppImage
+  # ---------------------------------------------------------------------------
+  build-linux:
+    name: Build Linux AppImage
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libsdl2-dev libgtk-3-dev pkg-config
+
+      - name: Configure (Release)
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Run tests
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Install into AppDir
+        run: DESTDIR=${{ github.workspace }}/AppDir cmake --install build
+
+      - name: Download linuxdeploy
+        run: |
+          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          chmod +x linuxdeploy-x86_64.AppImage
+          # AppImages need FUSE; extract instead to work in GitHub Actions
+          ./linuxdeploy-x86_64.AppImage --appimage-extract
+          echo "${{ github.workspace }}/squashfs-root/usr/bin" >> $GITHUB_PATH
+
+      - name: Create AppImage
+        env:
+          # LDAI_OUTPUT / LINUXDEPLOY_OUTPUT_VERSION are the current env var
+          # names consumed by the appimage plugin (the old OUTPUT/VERSION names
+          # still work but emit deprecation warnings).
+          LDAI_OUTPUT: emu-${{ github.ref_name }}-linux-x86_64.AppImage
+          LINUXDEPLOY_OUTPUT_VERSION: ${{ github.ref_name }}
+        run: |
+          squashfs-root/AppRun \
+            --appdir AppDir \
+            --desktop-file assets/emu.desktop \
+            --icon-file assets/icon.png \
+            --output appimage
+
+      - name: Upload AppImage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-appimage
+          path: emu-${{ github.ref_name }}-linux-x86_64.AppImage
+
+  # ---------------------------------------------------------------------------
+  # Windows — MSVC x64 + vcpkg static SDL2 → single standalone exe, no DLLs
+  # ---------------------------------------------------------------------------
+  build-windows:
+    name: Build Windows (MSVC x64 static)
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install SDL2 (static) via vcpkg
+        run: vcpkg install sdl2:x64-windows-static
+        shell: pwsh
+
+      - name: Configure (Release)
+        shell: pwsh
+        run: |
+          cmake -B build `
+            -G "Visual Studio 17 2022" -A x64 `
+            -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET=x64-windows-static
+
+      - name: Build
+        shell: pwsh
+        run: cmake --build build --config Release --parallel
+
+      - name: Run tests
+        shell: pwsh
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Package (exe only — no DLLs needed)
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}"
+          New-Item -ItemType Directory -Path dist | Out-Null
+          Copy-Item build/Release/emu.exe dist/
+          Compress-Archive -Path dist/* -DestinationPath "emu-$version-windows-x64.zip"
+
+      - name: Upload Windows zip artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-zip
+          path: emu-${{ github.ref_name }}-windows-x64.zip
+
+  # ---------------------------------------------------------------------------
+  # Create GitHub Release and attach both artifacts
+  # ---------------------------------------------------------------------------
+  release:
+    name: Publish GitHub Release
+    needs: [build-linux, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ github.ref_name }}"
+          gh release create "${VERSION}" \
+            --title "emu ${VERSION}" \
+            --generate-notes \
+            --prerelease \
+            artifacts/linux-appimage/emu-${VERSION}-linux-x86_64.AppImage \
+            artifacts/windows-zip/emu-${VERSION}-windows-x64.zip

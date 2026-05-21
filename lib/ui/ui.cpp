@@ -6,7 +6,11 @@
 #include <cstring>
 #include <fstream>
 #include <string>
+#ifdef _WIN32
+#include <direct.h>   /* _mkdir */
+#else
 #include <sys/stat.h>
+#endif
 #include <vector>
 
 #include "vendor/imgui/imgui.h"
@@ -126,7 +130,7 @@ static std::string recent_roms_path() {
 
 static void create_directory(const char *path) {
 #ifdef _WIN32
-    mkdir(path);
+    _mkdir(path);
 #else
     mkdir(path, 0755);
 #endif

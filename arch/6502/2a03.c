@@ -4,6 +4,17 @@
 
 #include <string.h>
 
+#ifdef _MSC_VER
+/* MSVC doesn't support C11 atomics without /experimental:c11atomics.
+ * On MSVC, volatile already implies acquire/release barriers on x86/x64,
+ * so plain volatile reads/writes give the same correctness guarantees. */
+#define memory_order_relaxed  0
+#define memory_order_acquire  1
+#define memory_order_release  2
+#define atomic_load_explicit(ptr, order)          (*(volatile int *)(ptr))
+#define atomic_store_explicit(ptr, val, order)    ((void)(*(volatile int *)(ptr) = (int)(val)))
+#endif
+
 /* ---------------------------------------------------------------------------
  * Lookup tables
  * --------------------------------------------------------------------------- */
