@@ -749,28 +749,58 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
   - `apu_reset/`: `4015_cleared`, `4017_timing`, `4017_written`, `irq_flag_cleared`, `len_ctrs_enabled`, `works_immediately`
 - 2005-era Blargg ROMs (`blargg_apu_2005.07.30`, `sprite_hit_tests_2005.10.05`, `sprite_overflow_tests`) predate the $6000 protocol — results only via PPU/audio; excluded with comment
 
-**Current Blargg score: 6/24 passing.** Failures expose real PPU/APU accuracy issues tracked in new issues:
+**Current Blargg score: 6/24 passing** as of 2026-05-21. Failures expose real PPU/APU accuracy issues tracked in new issues:
 
 | Issue | Suite | Failure |
 |-------|-------|---------|
-| #115 | ppu_vbl_nmi 01 | VBL flag basics |
-| #116 | ppu_vbl_nmi 02 | VBL set timing |
-| #117 | ppu_vbl_nmi 03 | VBL clear timing |
-| #118 | ppu_vbl_nmi 06 | NMI suppression |
-| #119 | apu_test 3 | IRQ flag behavior |
-| #120 | apu_reset suite | APU state after reset |
+| #115 | ppu_vbl_nmi 01-03 | VBL flag basics / set / clear timing |
+| #116 | ppu_vbl_nmi 04, 07-08 | NMI enable/disable edge timing |
+| #117 | ppu_vbl_nmi 09-10 | Even/odd frame dot-skip not implemented |
+| #118 | apu_test 4-6 | APU frame counter jitter / first-step timing |
+| #119 | apu_test 7-8 | DMC buffer pre-fill / rate accuracy |
+| #120 | apu_reset suite | APU power-up and reset state |
 
 **New GitHub issues created:**
-- #115 – PPU VBL flag timing (vbl_basics)
-- #116 – PPU VBL set timing (vbl_set_time)
-- #117 – PPU VBL clear timing (vbl_clear_time)
-- #118 – PPU NMI suppression (suppression)
-- #119 – APU IRQ flag behavior (irq_flag)
-- #120 – APU state after CPU reset (apu_reset suite)
+- #115 – PPU VBL flag set/timing (sub-PPU-clock precision)
+- #116 – PPU NMI enable/disable edge timing
+- #117 – PPU even/odd frame clock skip
+- #118 – APU frame counter jitter and first-step timing
+- #119 – DMC sample buffer pre-fill and output rate
+- #120 – APU power-up and reset state
 
 **Files modified:** `arch/6502/mapper_000.c`, `arch/6502/mapper_000.h`, `arch/6502/mapper.c`, `tests/test_blargg_runner.c` (new), `tests/CMakeLists.txt`
 
 **All 12 original test suites still pass — no regressions.**
+
+---
+
+### 2026-05-21 Session: Blargg Accuracy — PPU even/odd frame skip + APU reset (PRs #121, #122)
+
+**Two accuracy fixes from epic #84 implemented; branches and PRs open.**
+
+**PPU even/odd frame dot-skip (issue #117, PR #121):**
+- On NTSC hardware, dot 0 of the pre-render scanline (scanline 261) is skipped every odd frame when background rendering is enabled, making alternate frames 89,341 dots instead of 89,342
+- Fix: added `odd_frame` bit to `struct ppu2c02`; toggled when `scanline` resets to -1; `dot` advanced from 0 to 1 when skip condition is met (`odd_frame && rendering_enabled()`)
+- Target Blargg tests: `09-even_odd_frames`, `10-even_odd_timing`
+- **Files:** `arch/6502/2c02.c`, `arch/6502/2c02.h`
+
+**APU frame counter jitter + reset state (issues #118 + #120, PR #122):**
+
+*Jitter (#118):*
+- Added `uint64_t cycle` counter to `struct apu2a03`; incremented at start of every `apu_clock()` call
+- `$4017` write now computes `reload_delay = (cycle & 1) ? 4 : 3` — real hardware delays the frame counter reset 3 cycles on even writes, 4 on odd
+- Same parity logic used in `apu_reset()` for the post-reset restart
+- Target Blargg tests: `4-jitter`, `5-len_timing`, `6-irq_flag_timing`
+
+*Reset state (#120 partial):*
+- Root cause: `cpu->reset()` was called without a matching `apu_reset()` anywhere in the codebase — test runner, `emu_soft_reset`, `emu_power_cycle`, `emu_load_rom`
+- `apu_reset()` now also clears `len.enabled` for all four channels so `$4015` reads `$00` immediately after reset
+- Added `apu_reset(bus->apu)` alongside every `cpu->reset()` call in `test_blargg_runner.c` and `emu.c`
+- `$4017` power-on write simulation (`4017_written`, `works_immediately` sub-tests) left for a follow-up branch — the change shifts all frame counter timing and needs its own unit test adjustments
+
+**Files modified:** `arch/6502/2a03.h`, `arch/6502/2a03.c`, `tests/test_blargg_runner.c`, `emu.c`
+
+**All 12 test suites still pass — no regressions.**
 
 ---
 
@@ -1192,12 +1222,16 @@ All illegal NOP opcodes that consume operand bytes ($04, $0C, $14, $1C, $34, $3C
 
 ### Phase 6: Accuracy & Compatibility
 - [X] ~~Blargg headless test runner~~ ✅ Complete (2026-05-21, issues #81/#82) — `test_blargg_runner.c`; full NES stack without SDL2; 24 CTest entries; 6/24 passing
-- [ ] Cycle-accurate PPU rendering edge cases (tracked in issues #115–#118)
+- [X] ~~PPU even/odd frame dot-skip~~ ✅ PR #121 (issue #117) — `odd_frame` toggle + pre-render scanline skip
+- [X] ~~APU frame counter jitter~~ ✅ PR #122 (issue #118) — cycle-parity delay on `$4017` write
+- [X] ~~APU reset state ($4015 cleared, IRQ flag cleared)~~ ✅ PR #122 (issue #120 partial) — `apu_reset()` wired to CPU reset in all call sites
+- [ ] PPU VBL flag set/NMI edge timing (issues #115, #116) — sub-PPU-clock accuracy needed
+- [ ] APU power-on `$4017=$00` write simulation (issue #120 remainder) — `4017_written`/`works_immediately` sub-tests
+- [ ] DMC buffer pre-fill and rate accuracy (issue #119)
 - [ ] PPU open bus behavior
 - [ ] Sprite overflow flag accuracy
-- [ ] APU sweep unit edge cases (tracked in issues #119–#120)
 - [ ] More mappers (5, etc.) — Mapper 9 (PxROM/MMC2) already complete
-- [ ] Improve Blargg test pass rate (currently 6/24 — see issues #115–#120 for root causes)
+- [ ] Improve Blargg test pass rate (currently 6/24 → target higher after PRs #121/#122 merge)
 
 ---
 
@@ -1232,5 +1266,5 @@ TODO: Add contribution guidelines
 
 ---
 
-**Last Updated:** 2026-05-21 (Blargg headless runner; mapper 000 PRG-RAM fix; 24 new CTest entries; issues #115–#120)
+**Last Updated:** 2026-05-21 (PPU even/odd frame skip PR #121; APU jitter+reset PR #122; issues #117, #118, #120)
 **Emulator Version:** 0.1.0 (pre-alpha)
