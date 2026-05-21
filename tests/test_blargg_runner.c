@@ -134,6 +134,7 @@ int main(int argc, char *argv[]) {
             reset_delay++;
             if (reset_delay >= RESET_DELAY_FRAMES) {
                 cpu->reset();
+                apu_reset(bus->apu); /* APU resets with the CPU on real hardware */
                 reset_delay = 0;
                 result = -1; /* wait for the test to run again after reset */
             } else {

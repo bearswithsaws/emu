@@ -62,13 +62,18 @@ static void emu_step_over(uint16_t target) {
 
 static void emu_soft_reset(void *userdata) {
     (void)userdata;
-    if (cpu && cartridge_global) cpu->reset();
+    if (cpu && cartridge_global) {
+        cpu->reset();
+        apu_reset(bus->apu);
+    }
 }
 
 static void emu_power_cycle(void *userdata) {
     (void)userdata;
-    if (cpu && cartridge_global) cpu->reset();
-    /* Full hardware reinit is deferred until save-state support is added. */
+    if (cpu && cartridge_global) {
+        cpu->reset();
+        apu_reset(bus->apu);
+    }
 }
 
 static void emu_save_state(int slot, void *userdata) {
@@ -95,6 +100,7 @@ static void emu_load_rom(const char *path, void *userdata) {
     bus->connect_cartridge(new_cart);
     ppu->connect_cartridge(new_cart);
     cpu->reset();
+    apu_reset(bus->apu);
 
     /* Update window title to show the loaded filename. */
     const char *slash = strrchr(path, '/');
