@@ -595,6 +595,13 @@ static void clock(void) {
         ppu.scanline++;
         if (ppu.scanline > 260) {
             ppu.scanline = -1;
+            ppu.odd_frame ^= 1;
+            // NTSC: dot 0 of the pre-render scanline is skipped on odd frames
+            // when background (or sprite) rendering is enabled, making the frame
+            // 89,341 dots instead of 89,342.
+            if (ppu.odd_frame && rendering_enabled()) {
+                ppu.dot = 1;
+            }
         }
     }
 }
