@@ -115,6 +115,7 @@ int main(int argc, char *argv[]) {
     bus->connect_cartridge(cart);
     ppu->connect_cartridge(cart);
     cpu->reset();
+    apu_reset(bus->apu);  /* simulate power-on $4017=$00 write (3-cycle delay) */
 
     int result      = -1;
     int frame       = 0;

@@ -196,6 +196,7 @@ int main(int argc, char *argv[]) {
             bus->debug_read(cpu->PC, buf, 0x20);
             hex_dump(buf, 0x20);
             cpu->reset();
+            apu_reset(bus->apu);
 
             /* Pre-run one frame of CPU+APU so the APU frame counter and channel
              * timers are in a sane state before the main loop starts. */
