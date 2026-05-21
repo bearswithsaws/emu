@@ -138,6 +138,9 @@ struct ppu2c02 {
     // NMI signal (set by PPU, read by CPU via nesbus)
     uint8_t nmi_triggered;  // 1 when NMI should fire, cleared when CPU reads it
 
+    // Even/odd frame tracking for the pre-render scanline clock skip
+    uint8_t odd_frame;  // toggles each frame; odd frames skip dot 0 of scanline -1
+
     // PPUDATA read buffer (internal buffering for reads from $0000-$3EFF)
     // Reads from $3F00-$3FFF (palette) bypass the buffer
     uint8_t ppudata_read_buffer;
