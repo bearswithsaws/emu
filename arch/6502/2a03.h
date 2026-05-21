@@ -133,6 +133,8 @@ struct apu2a03 {
 
     int pulse_clock_toggle; /* alternates each CPU cycle for pulse/noise clocking */
 
+    uint64_t cycle; /* total CPU cycles clocked; used for $4017 write jitter */
+
     /* CPU memory read callback (for DMC) */
     uint8_t (*cpu_read)(uint16_t addr);
 };

@@ -252,25 +252,35 @@ void apu_init(struct apu2a03 *apu, uint8_t (*cpu_read_fn)(uint16_t addr)) {
 }
 
 void apu_reset(struct apu2a03 *apu) {
-    /* Silence all channels */
-    apu->pulse1.len.counter  = 0;
-    apu->pulse2.len.counter  = 0;
-    apu->triangle.len.counter = 0;
-    apu->noise.len.counter   = 0;
-    apu->dmc.enabled = false;
-    apu->dmc.bytes_remaining = 0;
-    apu->frame.cycles = 0;
-    apu->frame.irq_pending = false;
-    apu->dmc.irq_pending = false;
-    apu->irq_pending = false;
-    apu->sample_cycles = 0.0f;
+    /* $4015 is cleared — disable all channels and zero their length counters */
+    apu->pulse1.len.enabled    = false;
+    apu->pulse1.len.counter    = 0;
+    apu->pulse2.len.enabled    = false;
+    apu->pulse2.len.counter    = 0;
+    apu->triangle.len.enabled  = false;
+    apu->triangle.len.counter  = 0;
+    apu->noise.len.enabled     = false;
+    apu->noise.len.counter     = 0;
+    apu->dmc.enabled           = false;
+    apu->dmc.bytes_remaining   = 0;
+    apu->dmc.irq_pending       = false;
+    /* Frame counter IRQ flag is cleared on reset */
+    apu->frame.irq_pending     = false;
+    apu->irq_pending           = false;
+    apu->sample_cycles         = 0.0f;
     apu_ring_reset(apu);
-    /* Noise LFSR stays as-is per hardware; frame counter reset like power-on */
-    apu->frame.mode = false;
+    /* Frame counter restarts as if $4017=$00 was written — mode 0, no inhibit,
+     * with the same 3-4 cycle jitter delay as a real $4017 write at reset. */
+    apu->frame.mode        = false;
     apu->frame.irq_inhibit = false;
+    apu->frame.cycles      = 0;
+    apu->frame.reload_delay = (apu->cycle & 1) ? 4 : 3;
+    /* Noise LFSR state is preserved across reset (per hardware). */
 }
 
 void apu_clock(struct apu2a03 *apu) {
+    apu->cycle++;
+
     /* Triangle clocks every CPU cycle */
     if (apu->triangle.timer == 0) {
         apu->triangle.timer = apu->triangle.timer_period;
@@ -577,8 +587,9 @@ void apu_write(struct apu2a03 *apu, uint16_t addr, uint8_t data) {
         if (apu->frame.irq_inhibit) {
             apu->frame.irq_pending = false;
         }
-        /* Reset takes effect after 3-4 cycles; approximate as 3 */
-        apu->frame.reload_delay = 3;
+        /* If written on an odd CPU cycle the reset is delayed one extra cycle
+         * (3 cycles on even, 4 on odd) — this is the hardware jitter. */
+        apu->frame.reload_delay = (apu->cycle & 1) ? 4 : 3;
         break;
 
     default:
