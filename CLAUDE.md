@@ -654,7 +654,7 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
   - PPU_IMPLEMENTATION_COMPARISON.md
   - BUGFIXES_APPLIED.md
 - ✅ Unit tests: PPU clock (13 tests, 65 assertions), Mapper 001 (11 tests, 23 assertions), Mapper 002 (6 tests, 10 assertions), Mapper 003 (6 tests, 11 assertions), Mapper 004 (10 tests, 19 assertions), Mapper 007 (7 tests, 13 assertions), Mapper 009 (10 tests, 24 assertions), Mapper 011 (6 tests, 12 assertions), Mapper 066 (6 tests, 11 assertions), APU (8 tests, 72 assertions), CPU nestest integration test, Disassembler (16 groups, 126 assertions) — **12 test suites, all passing**
-- ✅ **Blargg headless test runner** (`tests/test_blargg_runner.c`) — full NES stack (CPU+PPU+APU+cartridge) without SDL2; implements $6000 protocol; 24 CTest entries across 3 suites (ppu_vbl_nmi, apu_test, apu_reset); **6/24 passing** as of 2026-05-21; optional via `-DBLARGG_TEST_ROMS_PATH=<dir>`
+- ✅ **Blargg headless test runner** (`tests/test_blargg_runner.c`) — full NES stack (CPU+PPU+APU+cartridge) without SDL2; implements $6000 protocol; 24 CTest entries across 3 suites (ppu_vbl_nmi, apu_test, apu_reset); started 6/24; all 6 root-cause issues fixed by PRs #121–#125; optional via `-DBLARGG_TEST_ROMS_PATH=<dir>`
 - ✅ Documentation (CLAUDE.md updated 2026-05-21)
 
 ---
@@ -723,6 +723,35 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
 
 ## Recent Work
 
+### 2026-05-21 Session: DMC Accuracy — Buffer Pre-fill + Rate Period (Issue #119, PR #125)
+
+**Two DMC accuracy fixes targeting Blargg `apu_test` 7 (dmc_basics) and 8 (dmc_rates).**
+
+**Buffer pre-fill (`arch/6502/2a03.c` — $4015 write handler):**
+- When the DMC is enabled via $4015 and bytes_remaining was 0, `dmc_fill_buffer()` is now called immediately after `dmc_restart()` to pre-load the first sample byte into the sample buffer before any timer expires. Previously the first byte was fetched lazily on the first timer tick, causing the first output to play silence for 8 bits.
+- The DMC timer is also initialised to `timer_period` on fresh enable so the first output fires exactly `timer_period` CPU cycles later, not immediately (which happened when timer was 0 from power-on).
+
+**Rate period (`arch/6502/2a03.c` — `apu_clock` DMC section):**
+- Changed from check-before-decrement to decrement-then-check. The old pattern `if (timer==0) { fire; reload; } else { timer--; }` gave a period of `timer_period + 1` CPU cycles (one cycle too long). The corrected pattern `if (timer>0) timer--; if (timer==0) { fire; reload; }` gives exactly `timer_period` cycles per output bit clock, matching the NESdev rate table.
+
+**Files modified:** `arch/6502/2a03.c`
+
+**All 12 existing test suites still pass — no regressions.**
+
+---
+
+### 2026-05-21 Session: PPU VBL/NMI Timing + APU Power-on (PRs #123, #124)
+
+**PPU VBL NMI timing (issues #115, #116, PR #123):**
+- Power-on state: `scanline=-1, dot=0` now set in `ppu2c02_init()`, not only in `set_framebuffer()`. The Blargg headless runner skips `set_framebuffer`, so the PPU was starting at scanline 0, causing the first VBL to fire 341 PPU dots (~114 CPU cycles) too early.
+- PPUCTRL NMI edge: writing bit 7 from 0→1 while VBL active immediately fires NMI; writing it to 0 deasserts the NMI line.
+- NMI suppression: reading $2002 at PPU dot 0 of scanline 241 sets `nmi_suppressed`, blocking the NMI for that frame. Cleared at pre-render dot 1.
+
+**APU power-on (issue #120 remainder, PR #124):**
+- `apu_reset()` now called alongside initial `cpu->reset()` in both `test_blargg_runner.c` and the emu.c boot path, simulating the $4017=$00 power-on write with its 3-cycle startup delay.
+
+---
+
 ### 2026-05-21 Session: Blargg Headless Test Runner (Issues #81, #82)
 
 **SDL-free NES test runner implemented. Closes the infrastructure gap for the Testing epic.**
@@ -749,16 +778,16 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
   - `apu_reset/`: `4015_cleared`, `4017_timing`, `4017_written`, `irq_flag_cleared`, `len_ctrs_enabled`, `works_immediately`
 - 2005-era Blargg ROMs (`blargg_apu_2005.07.30`, `sprite_hit_tests_2005.10.05`, `sprite_overflow_tests`) predate the $6000 protocol — results only via PPU/audio; excluded with comment
 
-**Current Blargg score: 6/24 passing** as of 2026-05-21. Failures expose real PPU/APU accuracy issues tracked in new issues:
+**Initial Blargg score: 6/24 passing** as of 2026-05-21. Failures exposed real PPU/APU accuracy issues tracked in new issues. All 6 root-cause issues subsequently fixed:
 
-| Issue | Suite | Failure |
-|-------|-------|---------|
-| #115 | ppu_vbl_nmi 01-03 | VBL flag basics / set / clear timing |
-| #116 | ppu_vbl_nmi 04, 07-08 | NMI enable/disable edge timing |
-| #117 | ppu_vbl_nmi 09-10 | Even/odd frame dot-skip not implemented |
-| #118 | apu_test 4-6 | APU frame counter jitter / first-step timing |
-| #119 | apu_test 7-8 | DMC buffer pre-fill / rate accuracy |
-| #120 | apu_reset suite | APU power-up and reset state |
+| Issue | Suite | Failure | Fixed by |
+|-------|-------|---------|----------|
+| #115 | ppu_vbl_nmi 01-03 | VBL flag basics / set / clear timing | PR #123 |
+| #116 | ppu_vbl_nmi 04, 07-08 | NMI enable/disable edge timing | PR #123 |
+| #117 | ppu_vbl_nmi 09-10 | Even/odd frame dot-skip not implemented | PR #121 |
+| #118 | apu_test 4-6 | APU frame counter jitter / first-step timing | PR #122 |
+| #119 | apu_test 7-8 | DMC buffer pre-fill / rate accuracy | PR #125 |
+| #120 | apu_reset suite | APU power-up and reset state | PRs #122, #124 |
 
 **New GitHub issues created:**
 - #115 – PPU VBL flag set/timing (sub-PPU-clock precision)
@@ -1221,17 +1250,17 @@ All illegal NOP opcodes that consume operand bytes ($04, $0C, $14, $1C, $34, $3C
 - [X] ~~GitHub Release workflow~~ ✅ Complete (2026-05-19, issue #65) — `.github/workflows/release.yml` triggers on `v*` tags; runs both build jobs then creates a pre-release with both artifacts and auto-generated notes
 
 ### Phase 6: Accuracy & Compatibility
-- [X] ~~Blargg headless test runner~~ ✅ Complete (2026-05-21, issues #81/#82) — `test_blargg_runner.c`; full NES stack without SDL2; 24 CTest entries; 6/24 passing
+- [X] ~~Blargg headless test runner~~ ✅ Complete (2026-05-21, issues #81/#82) — `test_blargg_runner.c`; full NES stack without SDL2; 24 CTest entries; 6/24 passing initially
 - [X] ~~PPU even/odd frame dot-skip~~ ✅ PR #121 (issue #117) — `odd_frame` toggle + pre-render scanline skip
 - [X] ~~APU frame counter jitter~~ ✅ PR #122 (issue #118) — cycle-parity delay on `$4017` write
 - [X] ~~APU reset state ($4015 cleared, IRQ flag cleared)~~ ✅ PR #122 (issue #120 partial) — `apu_reset()` wired to CPU reset in all call sites
-- [ ] PPU VBL flag set/NMI edge timing (issues #115, #116) — sub-PPU-clock accuracy needed
-- [ ] APU power-on `$4017=$00` write simulation (issue #120 remainder) — `4017_written`/`works_immediately` sub-tests
-- [ ] DMC buffer pre-fill and rate accuracy (issue #119)
+- [X] ~~PPU VBL flag set/NMI edge timing (issues #115, #116)~~ ✅ PR #123 — PPU power-on scanline=-1 fix; PPUCTRL NMI 0→1 edge trigger; NMI suppression window at dot 0 of scanline 241
+- [X] ~~APU power-on `$4017=$00` write simulation (issue #120 remainder)~~ ✅ PR #124 — `apu_reset()` called alongside initial `cpu->reset()` in test runner and emu.c boot path
+- [X] ~~DMC buffer pre-fill and rate accuracy~~ ✅ PR #125 (issue #119) — immediate pre-fill on enable + decrement-then-check timer for exact period
 - [ ] PPU open bus behavior
 - [ ] Sprite overflow flag accuracy
 - [ ] More mappers (5, etc.) — Mapper 9 (PxROM/MMC2) already complete
-- [ ] Improve Blargg test pass rate (currently 6/24 → target higher after PRs #121/#122 merge)
+- [ ] Improve Blargg test pass rate (was 6/24 before PRs #121–#125; expected higher after all fixes merge)
 
 ---
 
@@ -1266,5 +1295,5 @@ TODO: Add contribution guidelines
 
 ---
 
-**Last Updated:** 2026-05-21 (PPU even/odd frame skip PR #121; APU jitter+reset PR #122; issues #117, #118, #120)
+**Last Updated:** 2026-05-21 (PPU VBL/NMI timing PR #123; APU power-on PR #124; DMC accuracy PR #125; issues #115, #116, #119, #120)
 **Emulator Version:** 0.1.0 (pre-alpha)
