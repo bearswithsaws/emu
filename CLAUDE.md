@@ -244,6 +244,7 @@ Offset  Size  Description
 
 **Specifications:**
 - PRG-ROM: 16KB or 32KB (no banking)
+- PRG-RAM: 8KB at $6000-$7FFF (work RAM; backed by `nrom_ctx` allocation — fixed 2026-05-21)
 - CHR-ROM: 8KB (or CHR-RAM)
 - 16KB PRG-ROM is mirrored to fill 32KB space
 - Nametable mirroring: Horizontal or Vertical
@@ -534,7 +535,7 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
   - iNES 1.0 format parsing
   - PRG-ROM and CHR-ROM extraction
   - Trainer support
-  - Mapper 000 (NROM) fully functional
+  - Mapper 000 (NROM) fully functional (PRG-RAM $6000-$7FFF fixed 2026-05-21)
 - **Bus Architecture** (100% complete)
   - Memory-mapped I/O routing
   - PPU register interface
@@ -653,7 +654,8 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
   - PPU_IMPLEMENTATION_COMPARISON.md
   - BUGFIXES_APPLIED.md
 - ✅ Unit tests: PPU clock (13 tests, 65 assertions), Mapper 001 (11 tests, 23 assertions), Mapper 002 (6 tests, 10 assertions), Mapper 003 (6 tests, 11 assertions), Mapper 004 (10 tests, 19 assertions), Mapper 007 (7 tests, 13 assertions), Mapper 009 (10 tests, 24 assertions), Mapper 011 (6 tests, 12 assertions), Mapper 066 (6 tests, 11 assertions), APU (8 tests, 72 assertions), CPU nestest integration test, Disassembler (16 groups, 126 assertions) — **12 test suites, all passing**
-- ✅ Documentation (CLAUDE.md updated 2026-05-19)
+- ✅ **Blargg headless test runner** (`tests/test_blargg_runner.c`) — full NES stack (CPU+PPU+APU+cartridge) without SDL2; implements $6000 protocol; 24 CTest entries across 3 suites (ppu_vbl_nmi, apu_test, apu_reset); **6/24 passing** as of 2026-05-21; optional via `-DBLARGG_TEST_ROMS_PATH=<dir>`
+- ✅ Documentation (CLAUDE.md updated 2026-05-21)
 
 ---
 
@@ -664,6 +666,7 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
 - ~~**PPUSTATUS VBlank hack**~~ ✅ **Fixed 2025-11-12** - Removed hardcoded vblank flag, frame timing now correct
 - ~~**PPUDATA read buffer missing**~~ ✅ **Fixed 2025-11-12** - Implemented proper buffering for CHR/nametable reads
 - ~~**Coarse X increment timing off by one cycle**~~ ✅ **Fixed 2025-11-12** - Eliminated 8-pixel viewport offset
+- ~~**Mapper 000 PRG-RAM missing**~~ ✅ **Fixed 2026-05-21** - `$6000-$7FFF` was mirroring PRG-ROM; now backed by a proper 8KB `nrom_ctx` work RAM; write path also fixed
 
 ### High Priority (Remaining)
 1. **Real-game ROM testing** - Mappers 0-4, 7, 11, 66 implemented; none have been verified with actual ROMs yet
@@ -719,6 +722,57 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
 ---
 
 ## Recent Work
+
+### 2026-05-21 Session: Blargg Headless Test Runner (Issues #81, #82)
+
+**SDL-free NES test runner implemented. Closes the infrastructure gap for the Testing epic.**
+
+**Architecture (`tests/test_blargg_runner.c`):**
+- Full NES stack without SDL2: `load_rom` → `cpu6502_init` → `ppu2c02_init` → `nesbus_init` → `connect_cartridge` → PPU cartridge connect → `cpu->reset()`
+- PPU frame buffer pointer left NULL — `2c02.c` guards all pixel writes with `if (ppu.frame_buffer)`, so the PPU still clocks correctly (timing, NMI, sprite-0 hit) without allocating a display buffer
+- APU ring buffer is non-blocking SPSC; samples are produced but never consumed (wraps silently); no SDL audio device opened
+- `emu_tick()`: 3× `ppu->clock()`, then CPU or DMA stall, then `apu_clock()`, then IRQ check — exact cadence as `emu.c`
+- **Blargg $6000 protocol**: validates magic `$DE $B0 $61` at `$6001-$6003`; polls `$6000` for `$00`=pass / `$01-$7F`=fail / `$80`=running / `$81`=reset-request
+- **$81 reset handling**: 6-frame delay then `cpu->reset()` — enables the entire `apu_reset` suite to run headlessly
+- 600-frame timeout (≈10 NES seconds); prints diagnostic text from `$6004+` on failure
+
+**Mapper 000 PRG-RAM fix (`arch/6502/mapper_000.c`):**
+- **Root cause**: `$6000-$7FFF` was applying the PRG-ROM address mask (`addr & 0x3FFF` / `0x7FFF`) to all addresses, including the work RAM window — returning PRG-ROM bytes instead of writable RAM
+- **Fix**: Added `struct nrom_ctx { uint8_t prg_ram[0x2000]; }` context; read path returns `ctx->prg_ram[addr & 0x1FFF]` for `$6000-$7FFF`; write path stores to same; `mapper_000_init()` added and wired into `mapper.c`
+- This is an emulation accuracy bug (not just a test issue) — any NROM game using work RAM was broken
+
+**Test infrastructure (`tests/CMakeLists.txt`):**
+- `test_blargg_runner` target linked against `lib6502` (no SDL2 dependency)
+- Optional via `-DBLARGG_TEST_ROMS_PATH=<dir>`; 24 CTest entries registered only if ROM files exist:
+  - `ppu_vbl_nmi/rom_singles/`: `01-vbl_basics` through `10-even_odd_timing`
+  - `apu_test/rom_singles/`: `1-len_ctr` through `8-dmc_rates`
+  - `apu_reset/`: `4015_cleared`, `4017_timing`, `4017_written`, `irq_flag_cleared`, `len_ctrs_enabled`, `works_immediately`
+- 2005-era Blargg ROMs (`blargg_apu_2005.07.30`, `sprite_hit_tests_2005.10.05`, `sprite_overflow_tests`) predate the $6000 protocol — results only via PPU/audio; excluded with comment
+
+**Current Blargg score: 6/24 passing.** Failures expose real PPU/APU accuracy issues tracked in new issues:
+
+| Issue | Suite | Failure |
+|-------|-------|---------|
+| #115 | ppu_vbl_nmi 01 | VBL flag basics |
+| #116 | ppu_vbl_nmi 02 | VBL set timing |
+| #117 | ppu_vbl_nmi 03 | VBL clear timing |
+| #118 | ppu_vbl_nmi 06 | NMI suppression |
+| #119 | apu_test 3 | IRQ flag behavior |
+| #120 | apu_reset suite | APU state after reset |
+
+**New GitHub issues created:**
+- #115 – PPU VBL flag timing (vbl_basics)
+- #116 – PPU VBL set timing (vbl_set_time)
+- #117 – PPU VBL clear timing (vbl_clear_time)
+- #118 – PPU NMI suppression (suppression)
+- #119 – APU IRQ flag behavior (irq_flag)
+- #120 – APU state after CPU reset (apu_reset suite)
+
+**Files modified:** `arch/6502/mapper_000.c`, `arch/6502/mapper_000.h`, `arch/6502/mapper.c`, `tests/test_blargg_runner.c` (new), `tests/CMakeLists.txt`
+
+**All 12 original test suites still pass — no regressions.**
+
+---
 
 ### 2026-05-19 Session: Build System & Distribution (Issues #60–#65, closes Build epic #66)
 
@@ -1137,12 +1191,13 @@ All illegal NOP opcodes that consume operand bytes ($04, $0C, $14, $1C, $34, $3C
 - [X] ~~GitHub Release workflow~~ ✅ Complete (2026-05-19, issue #65) — `.github/workflows/release.yml` triggers on `v*` tags; runs both build jobs then creates a pre-release with both artifacts and auto-generated notes
 
 ### Phase 6: Accuracy & Compatibility
-- [ ] Cycle-accurate PPU rendering edge cases
+- [X] ~~Blargg headless test runner~~ ✅ Complete (2026-05-21, issues #81/#82) — `test_blargg_runner.c`; full NES stack without SDL2; 24 CTest entries; 6/24 passing
+- [ ] Cycle-accurate PPU rendering edge cases (tracked in issues #115–#118)
 - [ ] PPU open bus behavior
 - [ ] Sprite overflow flag accuracy
-- [ ] APU sweep unit edge cases
+- [ ] APU sweep unit edge cases (tracked in issues #119–#120)
 - [ ] More mappers (5, etc.) — Mapper 9 (PxROM/MMC2) already complete
-- [ ] Pass test ROM suites (blargg's tests, etc.)
+- [ ] Improve Blargg test pass rate (currently 6/24 — see issues #115–#120 for root causes)
 
 ---
 
@@ -1177,5 +1232,5 @@ TODO: Add contribution guidelines
 
 ---
 
-**Last Updated:** 2026-05-19 (Build System & Distribution epic #66 complete; release workflow added)
+**Last Updated:** 2026-05-21 (Blargg headless runner; mapper 000 PRG-RAM fix; 24 new CTest entries; issues #115–#120)
 **Emulator Version:** 0.1.0 (pre-alpha)

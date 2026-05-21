@@ -1,51 +1,46 @@
 #include "mapper_000.h"
-#include <stdio.h>
+
+#include <stdlib.h>
+#include <string.h>
+
+struct nrom_ctx {
+    uint8_t prg_ram[0x2000]; /* 8 KB work RAM at $6000-$7FFF */
+};
+
+void mapper_000_init(struct mapper *map) {
+    struct nrom_ctx *ctx = calloc(1, sizeof(struct nrom_ctx));
+    if (!ctx) return;
+    map->ctx      = ctx;
+    map->ctx_size = sizeof(struct nrom_ctx);
+}
 
 uint8_t mapper_000_cpu_read(struct mapper *map, uint16_t addr) {
-    // If one bank, the memory at 0x8000 is mirrored at 0xc000
-    // otherwise its fully mapped at 0x8000
-    uint16_t map_addr = addr & ((map->num_prg_rom > 1) ? 0x7fff : 0x3fff);
-    uint8_t data = map->cartridge->prg_rom[map_addr];
-    return data;
+    if (addr >= 0x6000 && addr <= 0x7FFF) {
+        struct nrom_ctx *ctx = map->ctx;
+        return ctx ? ctx->prg_ram[addr & 0x1FFF] : 0xFF;
+    }
+    /* $8000-$FFFF: 16 KB mirrored or 32 KB straight */
+    uint16_t map_addr = addr & ((map->num_prg_rom > 1) ? 0x7FFF : 0x3FFF);
+    return map->cartridge->prg_rom[map_addr];
 }
 
 void mapper_000_cpu_write(struct mapper *map, uint16_t addr, uint8_t data) {
-    // PRG-ROM is read-only in NROM (Mapper 0)
-    // On real NES hardware, writes to $8000-$FFFF are ignored (ROM is read-only)
-    // Some test ROMs write to ROM addresses to verify CPU instruction behavior
-    // Attempting to write to mmap'd ROM causes SIGSEGV, so we ignore these writes
-    (void)map;
-    (void)addr;
-    (void)data;
-    return;
+    if (addr >= 0x6000 && addr <= 0x7FFF) {
+        struct nrom_ctx *ctx = map->ctx;
+        if (ctx) ctx->prg_ram[addr & 0x1FFF] = data;
+    }
+    /* writes to $8000-$FFFF: ROM is read-only, ignore */
 }
 
 uint8_t mapper_000_ppu_read(struct mapper *map, uint16_t addr) {
-    uint8_t data = 0;
-
-    if (map->cartridge->chr_rom) {
-        data = map->cartridge->chr_rom[addr];
-    }
-
-    return data;
+    if (map->cartridge->chr_rom)
+        return map->cartridge->chr_rom[addr];
+    return 0;
 }
 
 void mapper_000_ppu_write(struct mapper *map, uint16_t addr, uint8_t data) {
-    // Only allow writes if this is CHR-RAM (allocated memory)
-    // CHR-ROM from file is read-only and writes should be ignored
-    if (!map || !map->cartridge) {
-        return;  // Invalid mapper
-    }
-
-    // Only write if CHR-RAM was allocated (not mmap'd ROM)
-    if (!map->cartridge->chr_ram_allocated) {
-        // This is CHR-ROM (read-only), ignore writes
-        return;
-    }
-
-    // This is CHR-RAM, allow writes with bounds checking
-    if (map->cartridge->chr_rom && addr < map->cartridge->chr_rom_len) {
+    if (!map || !map->cartridge) return;
+    if (!map->cartridge->chr_ram_allocated) return;
+    if (map->cartridge->chr_rom && addr < map->cartridge->chr_rom_len)
         map->cartridge->chr_rom[addr] = data;
-    }
-    return;
 }
