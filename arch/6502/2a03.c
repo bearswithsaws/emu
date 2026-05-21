@@ -326,14 +326,13 @@ void apu_clock(struct apu2a03 *apu) {
         }
     }
 
-    /* DMC */
+    /* DMC — decrement then check so the period matches the table value exactly */
     if (apu->dmc.enabled) {
+        if (apu->dmc.timer > 0) apu->dmc.timer--;
         if (apu->dmc.timer == 0) {
             apu->dmc.timer = apu->dmc.timer_period;
             dmc_clock_output(&apu->dmc);
             dmc_fill_buffer(apu);
-        } else {
-            apu->dmc.timer--;
         }
     }
 
@@ -575,6 +574,12 @@ void apu_write(struct apu2a03 *apu, uint16_t addr, uint8_t data) {
             apu->dmc.enabled = true;
             if (apu->dmc.bytes_remaining == 0) {
                 dmc_restart(&apu->dmc);
+                /* Immediately pre-fill the sample buffer so the first output
+                 * byte is ready before the timer expires. */
+                dmc_fill_buffer(apu);
+                /* Start the timer from the full period so the first output
+                 * fires exactly timer_period CPU cycles after enable. */
+                apu->dmc.timer = apu->dmc.timer_period;
             }
         }
         break;
