@@ -100,6 +100,11 @@ static uint8_t cpu_read(uint16_t addr) {
         data = (ppu.ppustatus.reg & 0xE0) | (ppu.ppudata_read_buffer & 0x1F);
         ppu.ppustatus.vblank_started = 0;
         ppu.w = 0;
+        // Reading $2002 one PPU clock before VBL fires (dot 0 of scanline 241)
+        // suppresses the NMI for that frame.
+        if (ppu.scanline == 241 && ppu.dot == 0) {
+            ppu.nmi_suppressed = 1;
+        }
         break;
 
     case 0x0004: // OAMDATA
@@ -135,11 +140,21 @@ static uint8_t cpu_read(uint16_t addr) {
 
 static void cpu_write(uint16_t addr, uint8_t data) {
     switch (addr & 0x0007) {
-    case 0x0000: // PPUCTRL
+    case 0x0000: { // PPUCTRL
+        uint8_t old_nmi = ppu.ppuctrl.nmi;
         ppu.ppuctrl.reg = data;
         // Nametable select goes into t bits 11-10
         ppu.t = (ppu.t & 0xF3FF) | ((uint16_t)(data & 0x03) << 10);
+        // NMI enable rising edge while VBL is active → trigger NMI immediately
+        if (!old_nmi && ppu.ppuctrl.nmi && ppu.ppustatus.vblank_started) {
+            ppu.nmi_triggered = 1;
+        }
+        // NMI enable falling edge → deassert NMI line (suppress pending NMI)
+        if (!ppu.ppuctrl.nmi) {
+            ppu.nmi_triggered = 0;
+        }
         break;
+    }
 
     case 0x0001: // PPUMASK
         ppu.ppumask.reg = data;
@@ -488,6 +503,7 @@ static void clock(void) {
             ppu.ppustatus.sprite_0_hit   = 0;
             ppu.ppustatus.sprite_overflow = 0;
             ppu.frame_complete = 0;
+            ppu.nmi_suppressed = 0;  // reset suppression window for next VBL
         }
 
         // --- Background tile fetch pipeline ---------------------------------
@@ -583,7 +599,9 @@ static void clock(void) {
     if (ppu.scanline == 241 && ppu.dot == 1) {
         ppu.ppustatus.vblank_started = 1;
         ppu.frame_complete = 1;
-        if (ppu.ppuctrl.nmi) {
+        // Trigger NMI unless: NMI enable is off, or $2002 was read the previous
+        // PPU clock (dot 0 of scanline 241), which suppresses the NMI for this frame.
+        if (ppu.ppuctrl.nmi && !ppu.nmi_suppressed) {
             ppu.nmi_triggered = 1;
         }
     }
@@ -648,5 +666,11 @@ struct ppu2c02 *ppu2c02_init(void) {
     ppu.reset             = reset;
     ppu.connect_cartridge = connect_cartridge;
     ppu.set_framebuffer   = set_framebuffer;
+    // Power-on timing state: start at pre-render scanline so the first VBL
+    // fires at the correct time even without calling set_framebuffer().
+    ppu.scanline      = -1;
+    ppu.dot           = 0;
+    ppu.frame_complete = 0;
+    ppu.palette_table[0] = 0x0F;  // black on power-on
     return &ppu;
 }
