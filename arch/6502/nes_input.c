@@ -48,3 +48,28 @@ void nes_input_init(struct controller *ctrl1, struct controller *ctrl2) {
 }
 
 input_callback_t nes_get_input_handler(void) { return nes_input_handler; }
+
+void nes_input_refresh(void) {
+    if (!g_controller1 || !g_controller2) return;
+    const uint8_t *k = SDL_GetKeyboardState(NULL);
+
+    g_controller1->buttons =
+        ((k[SDL_SCANCODE_UP])     ? CONTROLLER_UP     : 0) |
+        ((k[SDL_SCANCODE_DOWN])   ? CONTROLLER_DOWN   : 0) |
+        ((k[SDL_SCANCODE_LEFT])   ? CONTROLLER_LEFT   : 0) |
+        ((k[SDL_SCANCODE_RIGHT])  ? CONTROLLER_RIGHT  : 0) |
+        ((k[SDL_SCANCODE_Z])      ? CONTROLLER_A      : 0) |
+        ((k[SDL_SCANCODE_X])      ? CONTROLLER_B      : 0) |
+        ((k[SDL_SCANCODE_RETURN]) ? CONTROLLER_START  : 0) |
+        ((k[SDL_SCANCODE_RSHIFT]) ? CONTROLLER_SELECT : 0);
+
+    g_controller2->buttons =
+        ((k[SDL_SCANCODE_W]) ? CONTROLLER_UP     : 0) |
+        ((k[SDL_SCANCODE_S]) ? CONTROLLER_DOWN   : 0) |
+        ((k[SDL_SCANCODE_A]) ? CONTROLLER_LEFT   : 0) |
+        ((k[SDL_SCANCODE_D]) ? CONTROLLER_RIGHT  : 0) |
+        ((k[SDL_SCANCODE_N]) ? CONTROLLER_A      : 0) |
+        ((k[SDL_SCANCODE_M]) ? CONTROLLER_B      : 0) |
+        ((k[SDL_SCANCODE_Y]) ? CONTROLLER_START  : 0) |
+        ((k[SDL_SCANCODE_H]) ? CONTROLLER_SELECT : 0);
+}

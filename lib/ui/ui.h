@@ -129,6 +129,12 @@ int ui_debugger_is_breakpoint(struct ui_context *ui, uint16_t addr);
  */
 int ui_debugger_consume_rw_bp_hit(struct ui_context *ui);
 
+/**
+ * Returns 1 while the user is holding the rewind key (Backspace), 0 otherwise.
+ * The main loop uses this to drive rewind_step() instead of normal emulation.
+ */
+int ui_get_rewind_held(const struct ui_context *ui);
+
 #ifdef __cplusplus
 }
 #endif

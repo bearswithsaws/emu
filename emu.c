@@ -23,6 +23,7 @@
 #include "savestate.h"
 #include "sram.h"
 #include "disasm.h"
+#include "rewind.h"
 
 static struct nesbus *bus;
 static struct cpu6502 *cpu;
@@ -33,6 +34,7 @@ static struct nes_cartridge *cartridge_global = NULL;
 static struct display_context *display_global = NULL;
 static uint64_t tick_count_global = 0;
 static char rom_path_global[1024] = {0};  /* path of the currently-loaded ROM */
+static struct rewind_buffer *rewind_buf = NULL;
 
 /* Run one NES clock tick: 3 PPU cycles + 1 CPU cycle + 1 APU cycle. */
 static void emu_tick(void) {
@@ -212,6 +214,7 @@ int main(int argc, char *argv[]) {
     ppu = ppu2c02_init();
     bus = nesbus_init(cpu, ppu);
     nes_input_init(bus->controller1, bus->controller2);
+    rewind_buf = rewind_init();
     ppu->set_framebuffer(display_get_framebuffer(display));
 
     struct ui_callbacks ui_cbs = {
@@ -317,37 +320,65 @@ int main(int argc, char *argv[]) {
                 display_set_paused(display, 1);
             }
 
-            /* --- Normal frame emulation (only when running) --- */
+            /* --- Rewind or normal frame emulation (only when running) --- */
             if (!display_is_paused(display)) {
-                ppu->frame_complete = 0;
+                int rewinding = ui_get_rewind_held(ui);
 
-                while (!ppu->frame_complete) {
-                    emu_tick();
+                if (rewinding) {
+                    /* Mute audio while rewinding to avoid noise. */
+                    if (audio_dev != 0) SDL_PauseAudioDevice(audio_dev, 1);
 
-                    /* Breakpoint check: pause on execute or read/write breakpoint hit.
-                     * Break immediately so the debugger shows the exact PC at the hit,
-                     * not wherever the CPU ends up at the end of the frame. */
-                    if (ui_debugger_is_breakpoint(ui, cpu->PC) ||
-                        ui_debugger_consume_rw_bp_hit(ui)) {
-                        display_set_paused(display, 1);
-                        break;
+                    if (!rewind_step(rewind_buf, bus)) {
+                        /* No more history — stay on the oldest frame. */
                     }
-                }
 
-                if (audio_dev != 0 && effective_speed > 0.0f &&
-                    effective_speed <= 1.0f) {
-                    while (apu_ring_available(bus->apu) > APU_RING_SIZE * 3 / 4) {
-                        SDL_Delay(1);
+                    /* Resync controller state from actual keyboard so bits
+                     * restored by the savestate don't get stuck. */
+                    nes_input_refresh();
+
+                    /* Render one PPU frame so the display reflects the
+                     * restored state — without this the screen freezes. */
+                    ppu->frame_complete = 0;
+                    while (!ppu->frame_complete)
+                        emu_tick();
+                } else {
+                    /* Capture a snapshot before running this frame so that
+                     * rewinding can restore it. */
+                    rewind_push(rewind_buf, bus);
+
+                    /* Unmute audio when not rewinding. */
+                    if (audio_dev != 0) SDL_PauseAudioDevice(audio_dev, 0);
+
+                    ppu->frame_complete = 0;
+
+                    while (!ppu->frame_complete) {
+                        emu_tick();
+
+                        /* Breakpoint check: pause on execute or read/write breakpoint hit.
+                         * Break immediately so the debugger shows the exact PC at the hit,
+                         * not wherever the CPU ends up at the end of the frame. */
+                        if (ui_debugger_is_breakpoint(ui, cpu->PC) ||
+                            ui_debugger_consume_rw_bp_hit(ui)) {
+                            display_set_paused(display, 1);
+                            break;
+                        }
                     }
-                }
-                if (effective_speed > 0.0f && effective_speed < 1.0f) {
-                    SDL_Delay((uint32_t)(16.0f / effective_speed) - 16u);
-                }
 
-                frame_count++;
-                if (frame_count % 60 == 0) {
-                    printf("Frame: %u, Ticks: %llu, PC: 0x%04X\n", frame_count,
-                           (unsigned long long)tick_count_global, cpu->PC);
+                    if (audio_dev != 0 && effective_speed > 0.0f &&
+                        effective_speed <= 1.0f) {
+                        while (apu_ring_available(bus->apu) > APU_RING_SIZE * 3 / 4) {
+                            SDL_Delay(1);
+                        }
+                    }
+                    if (effective_speed > 0.0f && effective_speed < 1.0f) {
+                        SDL_Delay((uint32_t)(16.0f / effective_speed) - 16u);
+                    }
+
+                    frame_count++;
+                    if (frame_count % 60 == 0) {
+                        printf("Frame: %u, Ticks: %llu, PC: 0x%04X\n", frame_count,
+                               (unsigned long long)tick_count_global, cpu->PC);
+                    }
                 }
             }
         } else if (cartridge_global == NULL) {
@@ -365,6 +396,7 @@ int main(int argc, char *argv[]) {
     if (audio_dev != 0) {
         SDL_CloseAudioDevice(audio_dev);
     }
+    rewind_free(rewind_buf);
     ui_shutdown(ui);
     display_cleanup(display);
 

@@ -23,6 +23,7 @@
 #include <string.h>
 #ifdef _WIN32
 #include <direct.h>
+#include <windows.h>
 #else
 #include <sys/stat.h>
 #endif
@@ -155,24 +156,10 @@ char *savestate_path(int slot, char *buf, size_t len) {
 }
 
 /* -------------------------------------------------------------------------
- * Save
+ * Core serialisation helpers (FILE*-based)
  * ---------------------------------------------------------------------- */
 
-int savestate_save(int slot, struct nesbus *bus) {
-    if (!bus || !bus->cpu || !bus->ppu || !bus->cart) {
-        fprintf(stderr, "savestate_save: no ROM loaded\n");
-        return -1;
-    }
-
-    char path[512];
-    savestate_path(slot, path, sizeof(path));
-
-    FILE *f = fopen(path, "wb");
-    if (!f) {
-        fprintf(stderr, "savestate_save: cannot open %s: %s\n", path, strerror(errno));
-        return -1;
-    }
-
+static int savestate_write(FILE *f, struct nesbus *bus) {
     struct nes_cartridge *cart = bus->cart;
     struct mapper        *map  = cart->map;
 
@@ -190,16 +177,16 @@ int savestate_save(int slot, struct nesbus *bus) {
     /* ---- CPU ---- */
     struct cpu6502 *cpu = bus->cpu;
     cpu_snap_t cs = {
-        .flags       = cpu->flags.reg,
-        .A           = cpu->A,
-        .Y           = cpu->Y,
-        .X           = cpu->X,
-        .PC          = cpu->PC,
-        .sp          = cpu->sp,
-        .opcode      = cpu->opcode,
-        .operand     = cpu->operand,
+        .flags        = cpu->flags.reg,
+        .A            = cpu->A,
+        .Y            = cpu->Y,
+        .X            = cpu->X,
+        .PC           = cpu->PC,
+        .sp           = cpu->sp,
+        .opcode       = cpu->opcode,
+        .operand      = cpu->operand,
         .operand_addr = cpu->operand_addr,
-        .cycles      = cpu->cycles,
+        .cycles       = cpu->cycles,
     };
     fwrite(&cs, sizeof(cs), 1, f);
 
@@ -207,7 +194,7 @@ int savestate_save(int slot, struct nesbus *bus) {
     struct ppu2c02 *ppu = bus->ppu;
     ppu_snap_t ps;
     memset(&ps, 0, sizeof(ps));
-    memcpy(ps.nametable,    ppu->nametable,    sizeof(ps.nametable));
+    memcpy(ps.nametable,     ppu->nametable,    sizeof(ps.nametable));
     memcpy(ps.palette_table, ppu->palette_table, sizeof(ps.palette_table));
     ps.ppuctrl         = ppu->ppuctrl.reg;
     ps.ppumask         = ppu->ppumask.reg;
@@ -296,30 +283,10 @@ int savestate_save(int slot, struct nesbus *bus) {
     if (cart->chr_ram_allocated && cart->chr_rom && cart->chr_rom_len > 0)
         fwrite(cart->chr_rom, cart->chr_rom_len, 1, f);
 
-    fclose(f);
-    printf("State saved to slot %d: %s\n", slot, path);
     return 0;
 }
 
-/* -------------------------------------------------------------------------
- * Load
- * ---------------------------------------------------------------------- */
-
-int savestate_load(int slot, struct nesbus *bus) {
-    if (!bus || !bus->cpu || !bus->ppu || !bus->cart) {
-        fprintf(stderr, "savestate_load: no ROM loaded\n");
-        return -1;
-    }
-
-    char path[512];
-    savestate_path(slot, path, sizeof(path));
-
-    FILE *f = fopen(path, "rb");
-    if (!f) {
-        fprintf(stderr, "savestate_load: cannot open %s: %s\n", path, strerror(errno));
-        return -1;
-    }
-
+static int savestate_read(FILE *f, struct nesbus *bus) {
     struct nes_cartridge *cart = bus->cart;
     struct mapper        *map  = cart->map;
 
@@ -327,15 +294,15 @@ int savestate_load(int slot, struct nesbus *bus) {
     save_header_t hdr;
     if (fread(&hdr, sizeof(hdr), 1, f) != 1) goto bad;
     if (hdr.magic != SAVESTATE_MAGIC) {
-        fprintf(stderr, "savestate_load: bad magic in %s\n", path);
+        fprintf(stderr, "savestate_read: bad magic\n");
         goto bad;
     }
     if (hdr.version != SAVESTATE_VERSION) {
-        fprintf(stderr, "savestate_load: unsupported version %u\n", hdr.version);
+        fprintf(stderr, "savestate_read: unsupported version %u\n", hdr.version);
         goto bad;
     }
     if (hdr.mapper_id != cart->mapper_id) {
-        fprintf(stderr, "savestate_load: mapper mismatch (save=%u, rom=%u)\n",
+        fprintf(stderr, "savestate_read: mapper mismatch (save=%u, rom=%u)\n",
                 hdr.mapper_id, cart->mapper_id);
         goto bad;
     }
@@ -468,12 +435,156 @@ int savestate_load(int slot, struct nesbus *bus) {
         }
     }
 
-    fclose(f);
-    printf("State loaded from slot %d: %s\n", slot, path);
     return 0;
 
 bad:
-    fclose(f);
-    fprintf(stderr, "savestate_load: read error or unexpected EOF in %s\n", path);
     return -1;
+}
+
+/* -------------------------------------------------------------------------
+ * Save (slot file)
+ * ---------------------------------------------------------------------- */
+
+int savestate_save(int slot, struct nesbus *bus) {
+    if (!bus || !bus->cpu || !bus->ppu || !bus->cart) {
+        fprintf(stderr, "savestate_save: no ROM loaded\n");
+        return -1;
+    }
+
+    char path[512];
+    savestate_path(slot, path, sizeof(path));
+
+    FILE *f = fopen(path, "wb");
+    if (!f) {
+        fprintf(stderr, "savestate_save: cannot open %s: %s\n", path, strerror(errno));
+        return -1;
+    }
+
+    int rc = savestate_write(f, bus);
+    fclose(f);
+    if (rc == 0)
+        printf("State saved to slot %d: %s\n", slot, path);
+    return rc;
+}
+
+/* -------------------------------------------------------------------------
+ * Load (slot file)
+ * ---------------------------------------------------------------------- */
+
+int savestate_load(int slot, struct nesbus *bus) {
+    if (!bus || !bus->cpu || !bus->ppu || !bus->cart) {
+        fprintf(stderr, "savestate_load: no ROM loaded\n");
+        return -1;
+    }
+
+    char path[512];
+    savestate_path(slot, path, sizeof(path));
+
+    FILE *f = fopen(path, "rb");
+    if (!f) {
+        fprintf(stderr, "savestate_load: cannot open %s: %s\n", path, strerror(errno));
+        return -1;
+    }
+
+    int rc = savestate_read(f, bus);
+    fclose(f);
+    if (rc == 0)
+        printf("State loaded from slot %d: %s\n", slot, path);
+    else
+        fprintf(stderr, "savestate_load: read error or unexpected EOF in %s\n", path);
+    return rc;
+}
+
+/* -------------------------------------------------------------------------
+ * In-memory save/load (used by the rewind system)
+ * ---------------------------------------------------------------------- */
+
+/*
+ * Compute an upper-bound on the serialised size for the given bus.
+ * Used to pre-allocate the buffer passed to fmemopen.
+ */
+static size_t savestate_max_size(struct nesbus *bus) {
+    struct nes_cartridge *cart = bus->cart;
+    struct mapper        *map  = cart->map;
+    size_t sz = sizeof(save_header_t)
+              + sizeof(cpu_snap_t)
+              + sizeof(ppu_snap_t)
+              + NES_RAM_SIZE
+              + sizeof(apu_snap_t)
+              + sizeof(ctrl_snap_t) * 2
+              + 2  /* mirroring + irq_pending */
+              + (map ? map->ctx_size : 0)
+              + (cart->chr_ram_allocated ? cart->chr_rom_len : 0)
+              + 64;  /* small safety margin */
+    return sz;
+}
+
+uint8_t *savestate_save_mem(struct nesbus *bus, size_t *out_size) {
+    if (!bus || !bus->cpu || !bus->ppu || !bus->cart) return NULL;
+
+    size_t   max_sz = savestate_max_size(bus);
+    uint8_t *buf    = (uint8_t *)malloc(max_sz);
+    if (!buf) return NULL;
+
+#ifdef _WIN32
+    /* Windows does not have fmemopen — write to a temp file then read back. */
+    char tmp_path[512];
+    const char *tmp_dir = getenv("TEMP");
+    if (!tmp_dir) tmp_dir = ".";
+    snprintf(tmp_path, sizeof(tmp_path), "%s\\emu_rewind_w.tmp", tmp_dir);
+
+    FILE *f = fopen(tmp_path, "wb");
+    if (!f) { free(buf); return NULL; }
+    savestate_write(f, bus);
+    fclose(f);
+
+    f = fopen(tmp_path, "rb");
+    if (!f) { free(buf); return NULL; }
+    size_t n = fread(buf, 1, max_sz, f);
+    fclose(f);
+    if (n == 0) { free(buf); return NULL; }
+    *out_size = n;
+#else
+    FILE *f = fmemopen(buf, max_sz, "wb");
+    if (!f) { free(buf); return NULL; }
+    savestate_write(f, bus);
+    /* ftell gives the number of bytes written to the memory buffer. */
+    long written = ftell(f);
+    fclose(f);
+    if (written <= 0) { free(buf); return NULL; }
+    *out_size = (size_t)written;
+#endif
+
+    return buf;
+}
+
+int savestate_load_mem(const uint8_t *buf, size_t size, struct nesbus *bus) {
+    if (!buf || size == 0 || !bus || !bus->cpu || !bus->ppu || !bus->cart)
+        return -1;
+
+#ifdef _WIN32
+    /* Windows: write to temp file then read from it. */
+    char tmp_path[512];
+    const char *tmp_dir = getenv("TEMP");
+    if (!tmp_dir) tmp_dir = ".";
+    snprintf(tmp_path, sizeof(tmp_path), "%s\\emu_rewind_r.tmp", tmp_dir);
+
+    FILE *f = fopen(tmp_path, "wb");
+    if (!f) return -1;
+    fwrite(buf, 1, size, f);
+    fclose(f);
+
+    f = fopen(tmp_path, "rb");
+    if (!f) return -1;
+    int rc = savestate_read(f, bus);
+    fclose(f);
+    return rc;
+#else
+    /* Cast away const: fmemopen with "rb" does not write through the pointer. */
+    FILE *f = fmemopen((void *)buf, size, "rb");
+    if (!f) return -1;
+    int rc = savestate_read(f, bus);
+    fclose(f);
+    return rc;
+#endif
 }

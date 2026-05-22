@@ -795,6 +795,35 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
 
 ## Recent Work
 
+### 2026-05-22 Session: Rewind Functionality (Issue #132)
+
+**Frame-level rewind implemented. Closes Phase 4 rewind item.**
+
+**Architecture:**
+- `arch/6502/savestate.c` — refactored: core save/load logic extracted into `static savestate_write(FILE*, bus)` and `static savestate_read(FILE*, bus)` helpers; both the slot-file API and the new in-memory API delegate to these
+- `savestate_save_mem(bus, *out_size)` — serialises full NES state to a `malloc`'d buffer using `fmemopen` (Linux) or a temp-file round-trip (Windows); caller must `free()` the result
+- `savestate_load_mem(buf, size, bus)` — restores state from a buffer produced by `savestate_save_mem`
+- `arch/6502/rewind.c/.h` — `struct rewind_buffer` ring of 1800 slots (30 s at 60 fps); `rewind_push()` captures one snapshot per frame via `savestate_save_mem`; `rewind_step()` restores the previous slot and frees it; `rewind_free()` cleans up all slots
+
+**Integration (`emu.c`):**
+- `rewind_buf = rewind_init()` allocated after `nesbus_init`
+- Each frame (when not paused, not rewinding): `rewind_push(rewind_buf, bus)` then normal emulation
+- When `ui_get_rewind_held(ui)` is true: audio paused via `SDL_PauseAudioDevice`, `rewind_step()` called, 16 ms delay for ~60 fps rewind; audio resumed on key release
+
+**UI (`lib/ui/ui.cpp`, `lib/ui/ui.h`):**
+- `ui_context::rewind_held` bool — set each frame from `ImGui::IsKeyDown(ImGuiKey_Backspace)`
+- `ui_get_rewind_held(ui)` public query function
+- FPS overlay shows `[RWD]` tag when rewinding (checked before speed multiplier tags)
+- Controls Reference popup updated with "Rewind      Hold Backspace" entry
+
+**Files modified:** `arch/6502/savestate.c`, `arch/6502/savestate.h`, `arch/6502/CMakeLists.txt`, `lib/ui/ui.cpp`, `lib/ui/ui.h`, `emu.c`
+
+**New files:** `arch/6502/rewind.c`, `arch/6502/rewind.h`
+
+**All 12 test suites pass — no regressions.**
+
+---
+
 ### 2026-05-21 Session: Screenshot Capture (Phase 3)
 
 **Screenshot capture implemented. Closes the last Phase 3 item.**
@@ -1356,7 +1385,7 @@ All illegal NOP opcodes that consume operand bytes ($04, $0C, $14, $1C, $34, $3C
 - [X] ~~Debugger (CPU state, breakpoints, step through)~~ ✅ Complete (2026-05-18, issue #52; extended 2026-05-19, issue #53) — disassembler, editable registers, F7/F8 step/step-over, execute + read/write breakpoints, cycle/scanline/dot display
 - [X] ~~PPU viewer (nametables, patterns, palettes)~~ ✅ Complete (2026-05-19, issues #54/#55/#56) — Pattern Tables (two 128×128 tile grids, palette selector, hover tooltip), Nametables (2×2 grid with scroll viewport rect overlay + mirroring label), OAM (64-entry table with all sprite attributes)
 - [X] ~~Memory viewer/editor~~ ✅ Complete (2026-05-19, issue #57) — hex viewer with CPU bus, OAM, VRAM, Palette tabs; uses imgui_memory_editor
-- [ ] Rewind functionality (ring buffer of states)
+- [X] ~~Rewind functionality (ring buffer of states)~~ ✅ Complete (2026-05-22, issue #132) — hold Backspace to rewind; 30-second ring buffer; audio muted during rewind; `[RWD]` tag in FPS overlay
 - [ ] TAS (Tool-Assisted Speedrun) input recording
 
 ### Phase 5: Build System & Distribution
@@ -1413,5 +1442,5 @@ TODO: Add contribution guidelines
 
 ---
 
-**Last Updated:** 2026-05-22 (Mappers 019/069/071 implemented and unit-tested; 15 test suites)
+**Last Updated:** 2026-05-22 (Rewind #132; Mappers 019/069/071; PPU open bus #134; 15 test suites)
 **Emulator Version:** 0.1.0 (pre-alpha)
