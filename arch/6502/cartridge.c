@@ -161,6 +161,7 @@ struct nes_cartridge *load_rom(const char *filename) {
 
     cartridge->mapper_id = MAPPER_ADDR(cartridge->hdr->flags7.mapper_upper,
                                        cartridge->hdr->flags6.mapper_lower);
+    cartridge->has_battery = cartridge->hdr->flags6.persistent_mem ? 1 : 0;
     cartridge->map = mapper_init(cartridge);
 
     return cartridge;

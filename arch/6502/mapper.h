@@ -37,6 +37,8 @@ struct mapper {
     fp_mapper_scanline scanline; // PPU scanline hook — NULL if unused
     void    *ctx;               // per-mapper private state (allocated by mapper init)
     uint32_t ctx_size;          // sizeof(*ctx), set by mapper init; 0 if no ctx
+    uint8_t *prg_ram;           // pointer into ctx for battery-backed PRG-RAM; NULL if none
+    uint32_t prg_ram_size;      // size in bytes of prg_ram; 0 if none
 };
 
 struct mapper *mapper_init(struct nes_cartridge *cartridge);

@@ -10,7 +10,7 @@ endif()
 
 add_library(lib6502 6502.c 2c02.c nesbus.c 2a03.c cartridge.c mapper.c controller.c
 			nes_input.c mapper_000.c mapper_001.c mapper_002.c mapper_003.c mapper_004.c mapper_007.c mapper_009.c mapper_011.c mapper_066.c
-			savestate.c debug.c disasm.c)
+			savestate.c sram.c debug.c disasm.c)
 
 if(MSVC)
     # On Linux, SDL2 includes are added globally via include_directories().
