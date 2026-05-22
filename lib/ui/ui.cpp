@@ -373,17 +373,21 @@ static void render_controls_popup() {
     if (ImGui::BeginPopupModal("Controls Reference##modal", nullptr,
                                ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::SeparatorText("Player 1 Controller");
-        ImGui::Text("D-Pad       Arrow Keys");
-        ImGui::Text("A           Z");
-        ImGui::Text("B           X");
-        ImGui::Text("Start       Enter");
-        ImGui::Text("Select      Right Shift");
+        ImGui::Text("D-Pad       Arrow Keys  /  Left Stick or D-Pad (gamepad)");
+        ImGui::Text("A           Z           /  A or Y button (gamepad)");
+        ImGui::Text("B           X           /  B or X button (gamepad)");
+        ImGui::Text("Start       Enter       /  Start button (gamepad)");
+        ImGui::Text("Select      Right Shift /  Back/Select button (gamepad)");
         ImGui::SeparatorText("Player 2 Controller");
-        ImGui::Text("D-Pad       W / A / S / D");
-        ImGui::Text("A           N");
-        ImGui::Text("B           M");
-        ImGui::Text("Start       Y");
-        ImGui::Text("Select      H");
+        ImGui::Text("D-Pad       W / A / S / D  /  Left Stick or D-Pad (2nd gamepad)");
+        ImGui::Text("A           N              /  A or Y button (2nd gamepad)");
+        ImGui::Text("B           M              /  B or X button (2nd gamepad)");
+        ImGui::Text("Start       Y              /  Start button (2nd gamepad)");
+        ImGui::Text("Select      H              /  Back/Select button (2nd gamepad)");
+        ImGui::SeparatorText("Gamepad");
+        ImGui::Text("Hot-plug    Connect/disconnect at any time");
+        ImGui::Text("P1          First connected USB/Bluetooth controller");
+        ImGui::Text("P2          Second connected controller (if present)");
         ImGui::SeparatorText("Emulator");
         ImGui::Text("Pause       Space");
         ImGui::Text("Reset       R");

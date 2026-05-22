@@ -611,13 +611,14 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
   - PPU register interface
   - APU register routing ($4000-$4017)
   - Controller I/O ($4016/$4017)
-- **NES Controller Input** (~90% complete)
+- **NES Controller Input** (~98% complete)
   - Controller structure and shift register logic
   - Player 1 mapping: Arrow keys = D-pad, Z=A, X=B, Enter=Start, RShift=Select
   - Player 2 mapping: WASD = D-pad, N=A, M=B, Y=Start, H=Select
-  - Both controllers documented in Help → Controls Reference popup
+  - ✅ Gamepad/joystick support (issue #146): SDL_GameController API; hot-plug; analog stick → d-pad; A/Y→NES A, B/X→NES B; first connected = P1, second = P2
+  - Both controllers documented in Help → Controls Reference popup (keyboard + gamepad side-by-side)
   - Read/write implementation
-  - See: arch/6502/controller.c, arch/6502/nes_input.c
+  - See: arch/6502/controller.c, arch/6502/nes_input.c, arch/6502/gamepad.c
 - **APU (2A03)** (✅ Complete — 2026-05-17)
   - ✅ Pulse 1 & 2: duty sequencer, envelope, sweep unit, length counter
   - ✅ Triangle: linear counter, length counter, 32-step sequencer
@@ -794,6 +795,35 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
 ---
 
 ## Recent Work
+
+### 2026-05-22 Session: Gamepad/Joystick Support (Issue #146)
+
+**USB/Bluetooth gamepad support added. Retrolink SNES USB controller and any SDL2-recognized gamepad now works out of the box.**
+
+**Architecture (`arch/6502/gamepad.c/.h`):**
+- `struct gamepad_context` holding up to 2 `SDL_GameController` handles
+- `gamepad_init()` — allocates context; `gamepad_refresh()` called once per frame re-scans `SDL_NumJoysticks()` for hot-plug (connect/disconnect mid-session)
+- `gamepad_get_buttons(ctx, player)` — polls current button/axis state via `SDL_GameControllerGetButton` and `SDL_GameControllerGetAxis`; returns NES bitmask
+- Button mapping: A/Y → NES A; B/X → NES B; Start → Start; Back/Select → Select; D-pad → D-pad
+- Left analog stick → D-pad with 8000 dead zone (24% of axis range)
+
+**Integration (`emu.c`, `lib/display/display.c`):**
+- `SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER` added to `SDL_Init` in `display.c`
+- `gamepad_global = gamepad_init()` after `nesbus_init`; `gamepad_free()` at shutdown
+- `gamepad_refresh()` called each frame after `display_poll_events()`
+- Gamepad buttons OR'd with keyboard buttons each frame (both input sources are additive)
+- TAS playback mode bypasses gamepad (deterministic replay takes precedence)
+
+**UI (`lib/ui/ui.cpp`):**
+- Controls Reference popup updated: keyboard and gamepad bindings shown side-by-side; new "Gamepad" section explains hot-plug and P1/P2 assignment
+
+**New files:** `arch/6502/gamepad.c`, `arch/6502/gamepad.h`
+
+**Modified:** `arch/6502/CMakeLists.txt`, `emu.c`, `lib/display/display.c`, `lib/ui/ui.cpp`
+
+**All 15 test suites pass — no regressions.**
+
+---
 
 ### 2026-05-22 Session: TAS Input Recording and Playback (Issue #133)
 
@@ -1476,5 +1506,5 @@ TODO: Add contribution guidelines
 
 ---
 
-**Last Updated:** 2026-05-22 (TAS #133; Rewind #132; Sprite overflow #135; Mappers 019/069/071; PPU open bus #134; 15 test suites)
+**Last Updated:** 2026-05-22 (Gamepad #146; TAS #133; Rewind #132; Sprite overflow #135; Mappers 019/069/071; PPU open bus #134; 15 test suites)
 **Emulator Version:** 0.1.0 (pre-alpha)

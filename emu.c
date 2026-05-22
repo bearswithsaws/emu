@@ -25,6 +25,7 @@
 #include "disasm.h"
 #include "rewind.h"
 #include "tas.h"
+#include "gamepad.h"
 
 static struct nesbus *bus;
 static struct cpu6502 *cpu;
@@ -37,6 +38,7 @@ static uint64_t tick_count_global = 0;
 static char rom_path_global[1024] = {0};  /* path of the currently-loaded ROM */
 static struct rewind_buffer *rewind_buf = NULL;
 static struct tas_context   *tas_global = NULL;
+static struct gamepad_context *gamepad_global = NULL;
 
 /* Run one NES clock tick: 3 PPU cycles + 1 CPU cycle + 1 APU cycle. */
 static void emu_tick(void) {
@@ -239,6 +241,7 @@ int main(int argc, char *argv[]) {
     nes_input_init(bus->controller1, bus->controller2);
     rewind_buf = rewind_init();
     tas_global = tas_init();
+    gamepad_global = gamepad_init();
     ppu->set_framebuffer(display_get_framebuffer(display));
 
     struct ui_callbacks ui_cbs = {
@@ -330,6 +333,9 @@ int main(int argc, char *argv[]) {
             break;
         }
 
+        /* Refresh gamepad state (hot-plug + poll current buttons). */
+        gamepad_refresh(gamepad_global);
+
         /* Tab held = uncapped fast-forward; otherwise use the menu selection. */
         const uint8_t *kb = SDL_GetKeyboardState(NULL);
         float effective_speed = kb[SDL_SCANCODE_TAB]
@@ -362,6 +368,8 @@ int main(int argc, char *argv[]) {
                     /* Resync controller state from actual keyboard so bits
                      * restored by the savestate don't get stuck. */
                     nes_input_refresh();
+                    bus->controller1->buttons |= gamepad_get_buttons(gamepad_global, 0);
+                    bus->controller2->buttons |= gamepad_get_buttons(gamepad_global, 1);
 
                     /* Render one PPU frame so the display reflects the
                      * restored state — without this the screen freezes. */
@@ -376,12 +384,15 @@ int main(int argc, char *argv[]) {
                     /* Unmute audio when not rewinding. */
                     if (audio_dev != 0) SDL_PauseAudioDevice(audio_dev, 0);
 
-                    /* TAS playback: override controller inputs for this frame. */
+                    /* TAS playback overrides all input; otherwise merge gamepad. */
                     if (tas_get_mode(tas_global) == TAS_PLAYING) {
                         uint8_t tas_p1 = 0, tas_p2 = 0;
                         tas_get_buttons(tas_global, &tas_p1, &tas_p2);
                         bus->controller1->buttons = tas_p1;
                         bus->controller2->buttons = tas_p2;
+                    } else {
+                        bus->controller1->buttons |= gamepad_get_buttons(gamepad_global, 0);
+                        bus->controller2->buttons |= gamepad_get_buttons(gamepad_global, 1);
                     }
 
                     ppu->frame_complete = 0;
@@ -449,6 +460,7 @@ int main(int argc, char *argv[]) {
     }
     rewind_free(rewind_buf);
     tas_free(tas_global);
+    gamepad_free(gamepad_global);
     ui_shutdown(ui);
     display_cleanup(display);
 
