@@ -81,6 +81,7 @@ struct nes_cartridge {
     uint8_t *pc_inst_rom;
     uint8_t *pc_prom;
     uint8_t mapper_id;
+    uint8_t has_battery;   // 1 if iNES flags6.persistent_mem is set
     int fd;
     struct mapper *map;
     fp_cart_cpu_read cpu_read;

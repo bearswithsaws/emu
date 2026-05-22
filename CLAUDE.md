@@ -723,6 +723,33 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
 
 ## Recent Work
 
+### 2026-05-21 Session: Housekeeping — Controller 2, OAM DMA Timing, PRG-RAM Persistence (Issues #69, #72, #73)
+
+**Three housekeeping items from epic #75 implemented.**
+
+**Controller 2 keyboard mapping (issue #72, `arch/6502/nes_input.c`):**
+- Player 2 key bindings updated to WASD (d-pad) + N (A) + M (B) + Y (Start) + H (Select)
+- Previous P2 bindings (K/L/Return2/RCtrl) replaced per issue spec
+- Controls Reference popup in `lib/ui/ui.cpp` updated with a "Player 2 Controller" section
+- `arch/6502/nes_input.h` header comment updated
+
+**Cycle-accurate OAM DMA timing (issue #73, `arch/6502/nesbus.c`):**
+- `uint64_t total_cycles` field added to `struct nesbus`; incremented once per CPU cycle in `emu_tick()`
+- $4014 write now uses `(bus.total_cycles & 1) ? 514 : 513` for the CPU stall — matching real hardware (one extra idle alignment cycle on odd-cycle DMA start)
+
+**Battery-backed PRG-RAM persistence (issue #69, `arch/6502/sram.c/.h`):**
+- `sram_load(cart, rom_path)` / `sram_save(cart, rom_path)` public API
+- SRAM file path: `~/.local/share/emu/<rom_basename>.sram`; directory created automatically
+- `has_battery` field parsed from iNES flags6.persistent_mem into `struct nes_cartridge`
+- `struct mapper` gains `prg_ram` pointer + `prg_ram_size`; wired in mapper_001 and mapper_004 inits
+- `emu.c`: `sram_load` on ROM open (both argv path and mid-session `emu_load_rom`); `sram_save` before ROM swap and on clean exit
+
+**Files modified:** `arch/6502/nes_input.c`, `arch/6502/nes_input.h`, `lib/ui/ui.cpp`, `arch/6502/nesbus.c`, `arch/6502/nesbus.h`, `emu.c`, `arch/6502/cartridge.c`, `arch/6502/cartridge.h`, `arch/6502/mapper.h`, `arch/6502/mapper_001.c`, `arch/6502/mapper_004.c`, `arch/6502/CMakeLists.txt`
+
+**New files:** `arch/6502/sram.c`, `arch/6502/sram.h`
+
+---
+
 ### 2026-05-21 Session: DMC Accuracy — Buffer Pre-fill + Rate Period (Issue #119, PR #125)
 
 **Two DMC accuracy fixes targeting Blargg `apu_test` 7 (dmc_basics) and 8 (dmc_rates).**
@@ -1233,6 +1260,7 @@ All illegal NOP opcodes that consume operand bytes ($04, $0C, $14, $1C, $34, $3C
 - [X] ~~ROM launcher splash / idle state~~ ✅ Complete (2026-05-18, issue #50) — shown on startup with no ROM; drag-and-drop supported
 - [X] ~~Pause/reset controls~~ ✅ Complete (2026-05-17) — wired through Emulation menu
 - [X] ~~Fast forward / slow motion~~ ✅ Complete (2026-05-18, issue #58) — Speed menu (50%/100%/200%/Uncapped) + Tab key for instant fast-forward
+- [X] ~~Battery-backed PRG-RAM persistence~~ ✅ Complete (2026-05-21, issue #69) — `arch/6502/sram.c/.h`; `sram_load`/`sram_save` API; loads on ROM open, saves on exit and ROM swap; path `~/.local/share/emu/<rom>.sram`; Mapper 001 (MMC1) and Mapper 004 (MMC3) expose `prg_ram` pointer via `struct mapper`
 - [ ] Screenshot capture
 
 ### Phase 4: Advanced Features
@@ -1295,5 +1323,5 @@ TODO: Add contribution guidelines
 
 ---
 
-**Last Updated:** 2026-05-21 (PPU VBL/NMI timing PR #123; APU power-on PR #124; DMC accuracy PR #125; issues #115, #116, #119, #120)
+**Last Updated:** 2026-05-21 (Controller 2 mapping #72; OAM DMA timing #73; PRG-RAM persistence #69; PRs #123–#125)
 **Emulator Version:** 0.1.0 (pre-alpha)

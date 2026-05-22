@@ -16,6 +16,7 @@
 
 #include "debug.h"
 #include "savestate.h"
+#include "sram.h"
 #include "disasm.h"
 
 static struct nesbus *bus;
@@ -26,6 +27,7 @@ static SDL_AudioDeviceID audio_dev = 0;
 static struct nes_cartridge *cartridge_global = NULL;
 static struct display_context *display_global = NULL;
 static uint64_t tick_count_global = 0;
+static char rom_path_global[1024] = {0};  /* path of the currently-loaded ROM */
 
 /* Run one NES clock tick: 3 PPU cycles + 1 CPU cycle + 1 APU cycle. */
 static void emu_tick(void) {
@@ -95,12 +97,20 @@ static void emu_load_rom(const char *path, void *userdata) {
         fprintf(stderr, "Failed to load ROM: %s\n", path);
         return;
     }
+    /* Save SRAM for the outgoing ROM before swapping. */
+    if (cartridge_global && rom_path_global[0])
+        sram_save(cartridge_global, rom_path_global);
+
     /* Swap cartridge — old one is intentionally leaked (no free API yet). */
     cartridge_global = new_cart;
+    snprintf(rom_path_global, sizeof(rom_path_global), "%s", path);
     bus->connect_cartridge(new_cart);
     ppu->connect_cartridge(new_cart);
     cpu->reset();
     apu_reset(bus->apu);
+
+    /* Load battery-backed SRAM if the cartridge supports it. */
+    sram_load(new_cart, path);
 
     /* Update window title to show the loaded filename. */
     const char *slash = strrchr(path, '/');
@@ -184,6 +194,7 @@ int main(int argc, char *argv[]) {
                     argv[1]);
         } else {
             cartridge_global = cartridge;
+            snprintf(rom_path_global, sizeof(rom_path_global), "%s", argv[1]);
             cartridge_info(cartridge);
             bus->connect_cartridge(cartridge);
             ppu->connect_cartridge(cartridge);
@@ -207,6 +218,9 @@ int main(int argc, char *argv[]) {
             }
             apu_ring_reset(bus->apu);
             printf("CPU initialization complete.\n");
+
+            /* Load battery-backed SRAM if the cartridge supports it. */
+            sram_load(cartridge, argv[1]);
 
             ui_notify_rom_loaded(ui, 1);
         }
@@ -290,8 +304,10 @@ int main(int argc, char *argv[]) {
     ui_shutdown(ui);
     display_cleanup(display);
 
-    if (cartridge_global)
+    if (cartridge_global) {
+        sram_save(cartridge_global, rom_path_global);
         cartridge_free(cartridge_global);
+    }
 
     return EXIT_SUCCESS;
 }

@@ -46,8 +46,10 @@ void mapper_001_init(struct mapper *map) {
     // Power-up state: control = $0C (fix last PRG bank, 8 KB CHR mode)
     ctx->control = 0x0C;
     mmc1_update_control(map, ctx);
-    map->ctx      = ctx;
-    map->ctx_size = sizeof(struct mmc1_ctx);
+    map->ctx          = ctx;
+    map->ctx_size     = sizeof(struct mmc1_ctx);
+    map->prg_ram      = ctx->prg_ram;
+    map->prg_ram_size = sizeof(ctx->prg_ram);
 }
 
 static void mmc1_write_register(struct mapper *map, struct mmc1_ctx *ctx,
