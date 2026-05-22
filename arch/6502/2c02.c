@@ -93,11 +93,12 @@ static void ppu_write(uint16_t addr, uint8_t data) {
 // ---------------------------------------------------------------------------
 
 static uint8_t cpu_read(uint16_t addr) {
-    uint8_t data = 0;
+    uint8_t data = ppu.ppu_open_bus;
 
     switch (addr & 0x0007) {
-    case 0x0002: // PPUSTATUS
-        data = (ppu.ppustatus.reg & 0xE0) | (ppu.ppudata_read_buffer & 0x1F);
+    case 0x0002: // PPUSTATUS — upper 3 bits real, lower 5 from open bus
+        data = (ppu.ppustatus.reg & 0xE0) | (ppu.ppu_open_bus & 0x1F);
+        ppu.ppu_open_bus = data;
         ppu.ppustatus.vblank_started = 0;
         ppu.w = 0;
         // Reading $2002 one PPU clock before VBL fires (dot 0 of scanline 241)
@@ -107,11 +108,12 @@ static uint8_t cpu_read(uint16_t addr) {
         }
         break;
 
-    case 0x0004: // OAMDATA
+    case 0x0004: // OAMDATA — full 8-bit read, updates open bus
         data = ppu.oam[ppu.oamaddr];
+        ppu.ppu_open_bus = data;
         break;
 
-    case 0x0007: // PPUDATA
+    case 0x0007: // PPUDATA — full 8-bit read (via buffer), updates open bus
     {
         uint16_t v_addr = ppu.v & 0x3FFF;
         if (v_addr >= 0x3F00) {
@@ -127,10 +129,12 @@ static uint8_t cpu_read(uint16_t addr) {
             data = ppu.ppudata_read_buffer;
             ppu.ppudata_read_buffer = ppu_read(v_addr);
         }
+        ppu.ppu_open_bus = data;
         ppu.v += ppu.ppuctrl.vram_addr_increment ? 32 : 1;
         break;
     }
 
+    // Write-only registers ($2000, $2001, $2003, $2005, $2006): return open bus unchanged
     default:
         break;
     }
@@ -139,6 +143,7 @@ static uint8_t cpu_read(uint16_t addr) {
 }
 
 static void cpu_write(uint16_t addr, uint8_t data) {
+    ppu.ppu_open_bus = data;
     switch (addr & 0x0007) {
     case 0x0000: { // PPUCTRL
         uint8_t old_nmi = ppu.ppuctrl.nmi;
