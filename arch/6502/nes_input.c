@@ -22,15 +22,15 @@ static void nes_input_handler(int sdl_keycode, int is_pressed, void *userdata) {
     case SDLK_RETURN:   ctrl = g_controller1; button = CONTROLLER_START;  break;
     case SDLK_RSHIFT:   ctrl = g_controller1; button = CONTROLLER_SELECT; break;
 
-    // Player 2: WASD + D/F/Tab/Q
+    // Player 2: WASD + N/M/Y/H
     case SDLK_w:        ctrl = g_controller2; button = CONTROLLER_UP;     break;
     case SDLK_s:        ctrl = g_controller2; button = CONTROLLER_DOWN;   break;
     case SDLK_a:        ctrl = g_controller2; button = CONTROLLER_LEFT;   break;
     case SDLK_d:        ctrl = g_controller2; button = CONTROLLER_RIGHT;  break;
-    case SDLK_k:        ctrl = g_controller2; button = CONTROLLER_A;      break;
-    case SDLK_l:        ctrl = g_controller2; button = CONTROLLER_B;      break;
-    case SDLK_RETURN2:  ctrl = g_controller2; button = CONTROLLER_START;  break;
-    case SDLK_RCTRL:    ctrl = g_controller2; button = CONTROLLER_SELECT; break;
+    case SDLK_n:        ctrl = g_controller2; button = CONTROLLER_A;      break;
+    case SDLK_m:        ctrl = g_controller2; button = CONTROLLER_B;      break;
+    case SDLK_y:        ctrl = g_controller2; button = CONTROLLER_START;  break;
+    case SDLK_h:        ctrl = g_controller2; button = CONTROLLER_SELECT; break;
 
     default:
         return;

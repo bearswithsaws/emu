@@ -16,8 +16,8 @@
  *
  * Player 2 (controller 2):
  * - WASD → D-pad
- * - D → A, F → B
- * - Tab → Start, Q → Select
+ * - N → A, M → B
+ * - Y → Start, H → Select
  */
 
 /**

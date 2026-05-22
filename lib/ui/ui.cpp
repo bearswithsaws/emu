@@ -339,12 +339,18 @@ static void render_controls_popup() {
 
     if (ImGui::BeginPopupModal("Controls Reference##modal", nullptr,
                                ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::SeparatorText("Controller");
+        ImGui::SeparatorText("Player 1 Controller");
         ImGui::Text("D-Pad       Arrow Keys");
         ImGui::Text("A           Z");
         ImGui::Text("B           X");
         ImGui::Text("Start       Enter");
         ImGui::Text("Select      Right Shift");
+        ImGui::SeparatorText("Player 2 Controller");
+        ImGui::Text("D-Pad       W / A / S / D");
+        ImGui::Text("A           N");
+        ImGui::Text("B           M");
+        ImGui::Text("Start       Y");
+        ImGui::Text("Select      H");
         ImGui::SeparatorText("Emulator");
         ImGui::Text("Pause       Space");
         ImGui::Text("Reset       R");
