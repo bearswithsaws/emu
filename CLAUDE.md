@@ -211,14 +211,14 @@ Opcode: aaabbbcc
 
 ### Cartridge System ([arch/6502/cartridge.c](arch/6502/cartridge.c))
 
-**Implementation Status:** ~90% complete
+**Implementation Status:** ~95% complete
 
 **Features:**
 - iNES 1.0 format parsing
-- iNES 2.0 detection (not fully supported)
+- iNES 2.0 header parsing (issue #71, 2026-05-21): full 12-bit mapper number, submapper, extended PRG/CHR-ROM sizes, PRG-RAM/NVRAM sizes, CHR-RAM/NVRAM sizes, timing mode
 - PRG-ROM and CHR-ROM extraction
 - Trainer support (512-byte region)
-- Mapper ID detection
+- Mapper ID detection (full 12-bit for iNES 2.0 via `mapper_number` field)
 - Mirroring mode detection
 - Memory-mapped file loading (mmap)
 
@@ -506,7 +506,7 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
 
 ### Supported Features
 - ✅ iNES 1.0 format
-- ⚠️ iNES 2.0 detection (not fully parsed)
+- ✅ iNES 2.0 header parsing (mapper 12-bit, submapper, extended sizes, timing — issue #71)
 - ✅ Trainer support
 - ✅ PRG-ROM up to 8MB
 - ✅ CHR-ROM up to 8MB

@@ -5,6 +5,11 @@
 #include "cartridge.h"
 #include "debug.h"
 
+/* iNES 2.0 size shift formula: 64 << shift_count bytes; 0 shift => 0 bytes */
+static uint32_t nes20_ram_size(uint8_t shift) {
+    return (shift == 0) ? 0 : (64u << shift);
+}
+
 void cartridge_info(struct nes_cartridge *cartridge) {
     LOG_CART("prg_rom_size: %02x\n", cartridge->hdr->prg_rom_size * 0x4000);
     LOG_CART("program rom at %08lx in cartridge\n",
@@ -43,20 +48,13 @@ void cartridge_info(struct nes_cartridge *cartridge) {
              (cartridge->hdr->flags7.ines_version == 2) ? "iNES 2.0"
                                                         : "iNES 1.0");
     if (cartridge->hdr->flags7.ines_version == 2) {
-        LOG_CART("flags8.prg_ram_size: %02x\n",
-                 cartridge->hdr->flags8.prg_ram_size);
-        switch (cartridge->hdr->flags10.tv_system) {
-        case 0:
-            LOG_CART("tv system: NTSC\n");
-            break;
-        case 1:
-        case 3:
-            LOG_CART("tv system: Dual compatible\n");
-            break;
-        case 2:
-            LOG_CART("tv system: PAL\n");
-            break;
-        }
+        static const char *timing_str[] = {"NTSC", "PAL", "Multi-region", "Dendy"};
+        LOG_CART("iNES 2.0: mapper=%u submapper=%u timing=%s prg_ram=%uB"
+                 " prg_nvram=%uB chr_ram=%uB chr_nvram=%uB\n",
+                 cartridge->mapper_number, cartridge->submapper,
+                 timing_str[cartridge->timing & 3],
+                 cartridge->prg_ram_size, cartridge->prg_nvram_size,
+                 cartridge->chr_ram_size, cartridge->chr_nvram_size);
     }
 }
 
@@ -159,9 +157,59 @@ struct nes_cartridge *load_rom(const char *filename) {
         LOG_CART("Allocated 8KB CHR-RAM for cartridge (chr_rom_size=0)\n");
     }
 
+    /* 8-bit mapper from flags6/7 (always valid for both iNES 1.0 and 2.0) */
     cartridge->mapper_id = MAPPER_ADDR(cartridge->hdr->flags7.mapper_upper,
                                        cartridge->hdr->flags6.mapper_lower);
+    cartridge->mapper_number = cartridge->mapper_id; /* default: same as 8-bit */
     cartridge->has_battery = cartridge->hdr->flags6.persistent_mem ? 1 : 0;
+
+    if (cartridge->hdr->flags7.ines_version == 2) {
+        /* Overlay the iNES 2.0 extended fields on bytes 8-15 */
+        const struct nes20_ext *ex =
+            (const struct nes20_ext *)(cartridge->raw_data + 8);
+
+        /* Full 12-bit mapper number: bits 11-8 from ex->mapper_msb_submapper low nibble */
+        cartridge->mapper_number = (uint16_t)cartridge->mapper_id |
+                                   ((uint16_t)(ex->mapper_msb_submapper & 0x0F) << 8);
+
+        /* Submapper: high nibble of byte 8 */
+        cartridge->submapper = (ex->mapper_msb_submapper >> 4) & 0x0F;
+
+        /* Extended PRG-ROM size: MSB nibble from byte 9 low nibble */
+        uint8_t prg_msb = ex->rom_size_msb & 0x0F;
+        if (prg_msb != 0x0F) {
+            /* Standard formula: (MSB << 8 | LSB) * 16KB */
+            cartridge->prg_rom_len =
+                ((uint32_t)prg_msb << 8 | cartridge->hdr->prg_rom_size) * 0x4000;
+        }
+        /* else: exponent notation (rare, skip for now — prg_rom_len stays as-is) */
+
+        /* Extended CHR-ROM size: MSB nibble from byte 9 high nibble */
+        uint8_t chr_msb = (ex->rom_size_msb >> 4) & 0x0F;
+        if (chr_msb != 0x0F && cartridge->hdr->chr_rom_size > 0) {
+            cartridge->chr_rom_len =
+                ((uint32_t)chr_msb << 8 | cartridge->hdr->chr_rom_size) * 0x2000;
+        }
+
+        /* PRG-RAM and PRG-NVRAM sizes (shift-count formula) */
+        cartridge->prg_ram_size  = nes20_ram_size(ex->prg_ram_size & 0x0F);
+        cartridge->prg_nvram_size = nes20_ram_size((ex->prg_ram_size >> 4) & 0x0F);
+
+        /* CHR-RAM and CHR-NVRAM sizes */
+        cartridge->chr_ram_size  = nes20_ram_size(ex->chr_ram_size & 0x0F);
+        cartridge->chr_nvram_size = nes20_ram_size((ex->chr_ram_size >> 4) & 0x0F);
+
+        /* Timing mode */
+        cartridge->timing = ex->timing & 0x03;
+
+        /* Print iNES 2.0 summary */
+        static const char *timing_str[] = {"NTSC", "PAL", "Multi-region", "Dendy"};
+        printf("iNES 2.0: mapper=%u submapper=%u timing=%s prg_ram=%uKB\n",
+               cartridge->mapper_number, cartridge->submapper,
+               timing_str[cartridge->timing],
+               cartridge->prg_ram_size / 1024);
+    }
+
     cartridge->map = mapper_init(cartridge);
 
     return cartridge;
