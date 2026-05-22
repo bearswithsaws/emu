@@ -804,6 +804,8 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
 
 **Architecture:**
 - `arch/6502/tas.c/.h` — `struct tas_context` with `tas_mode_t` (IDLE/RECORDING/PLAYING); `tas_init()`, `tas_free()`, `tas_start_record()`, `tas_stop()`, `tas_start_play()`, `tas_tick()` (writes/reads one frame record per call), `tas_get_buttons()` (returns current playback inputs), `tas_get_mode()`, `tas_get_frame()`
+**Architecture (`arch/6502/tas.c/.h`):**
+- `struct tas_context` with `tas_mode_t` (IDLE/RECORDING/PLAYING); `tas_init()`, `tas_free()`, `tas_start_record()`, `tas_stop()`, `tas_start_play()`, `tas_tick()` (writes/reads one frame record per call), `tas_get_buttons()` (returns current playback inputs), `tas_get_mode()`, `tas_get_frame()`
 - `tas_start_play()` pre-reads the first frame record so button state is valid on frame 0
 - `tas_tick()` returns 1 at EOF (playback done), 0 otherwise; calls `tas_stop()` internally at EOF
 
@@ -825,6 +827,15 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
 **Files modified:** `emu.c`, `lib/ui/ui.h`, `lib/ui/ui.cpp`, `arch/6502/CMakeLists.txt`
 
 **New files:** `arch/6502/tas.c`, `arch/6502/tas.h`
+
+- `ui_context` gains `tas_mode`, `tas_frame`, dialog-request fields
+- Emulation menu additions (after Speed submenu, with separator): "Record Input…" (NFD save dialog, `*.tasr`), "Stop Recording" (enabled only while recording), "Play Input…" (NFD open dialog, `*.tasr`)
+- FPS overlay shows `[REC]` when recording, `[PLAY N]` (with frame number) when playing
+- Controls Reference popup updated: "TAS Record  Emulation → Record Input"
+
+**New files:** `arch/6502/tas.c`, `arch/6502/tas.h`
+
+**Modified:** `arch/6502/CMakeLists.txt`, `lib/ui/ui.h`, `lib/ui/ui.cpp`, `emu.c`
 
 **All 15 test suites pass — no regressions.**
 
@@ -1477,5 +1488,5 @@ TODO: Add contribution guidelines
 
 ---
 
-**Last Updated:** 2026-05-22 (TAS #133; Rewind #132; Mappers 019/069/071; PPU open bus #134; 15 test suites)
+**Last Updated:** 2026-05-22 (TAS #133; Rewind #132; Sprite overflow #135; Mappers 019/069/071; PPU open bus #134; 15 test suites)
 **Emulator Version:** 0.1.0 (pre-alpha)

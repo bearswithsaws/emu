@@ -2,6 +2,7 @@
 #define UI_H
 
 #include <stdint.h>
+#include "tas.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -35,6 +36,9 @@ typedef void (*ui_reset_fn)(void *userdata);
 typedef void (*ui_load_rom_fn)(const char *path, void *userdata);
 typedef void (*ui_savestate_fn)(int slot, void *userdata);
 typedef void (*ui_screenshot_fn)(void *userdata);
+typedef void (*ui_tas_record_fn)(const char *path, void *userdata);
+typedef void (*ui_tas_stop_fn)(void *userdata);
+typedef void (*ui_tas_play_fn)(const char *path, void *userdata);
 
 struct ui_callbacks {
     ui_reset_fn      on_soft_reset;   /* CPU reset, RAM preserved */
@@ -43,6 +47,9 @@ struct ui_callbacks {
     ui_savestate_fn  on_save_state;   /* Save state to numbered slot */
     ui_savestate_fn  on_load_state;   /* Load state from numbered slot */
     ui_screenshot_fn on_screenshot;   /* Save a screenshot to disk */
+    ui_tas_record_fn on_tas_record;   /* Start TAS recording to path */
+    ui_tas_stop_fn   on_tas_stop;     /* Stop TAS recording/playback */
+    ui_tas_play_fn   on_tas_play;     /* Start TAS playback from path */
     void            *userdata;
 };
 
@@ -134,6 +141,12 @@ int ui_debugger_consume_rw_bp_hit(struct ui_context *ui);
  * The main loop uses this to drive rewind_step() instead of normal emulation.
  */
 int ui_get_rewind_held(const struct ui_context *ui);
+
+/**
+ * Update the TAS mode and frame counter displayed in the FPS overlay.
+ * Call once per frame from the main loop.
+ */
+void ui_set_tas_state(struct ui_context *ui, int mode, uint32_t frame);
 
 #ifdef __cplusplus
 }

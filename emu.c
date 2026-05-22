@@ -24,6 +24,7 @@
 #include "sram.h"
 #include "disasm.h"
 #include "rewind.h"
+#include "tas.h"
 
 static struct nesbus *bus;
 static struct cpu6502 *cpu;
@@ -35,6 +36,7 @@ static struct display_context *display_global = NULL;
 static uint64_t tick_count_global = 0;
 static char rom_path_global[1024] = {0};  /* path of the currently-loaded ROM */
 static struct rewind_buffer *rewind_buf = NULL;
+static struct tas_context   *tas_global = NULL;
 
 /* Run one NES clock tick: 3 PPU cycles + 1 CPU cycle + 1 APU cycle. */
 static void emu_tick(void) {
@@ -155,6 +157,27 @@ static void emu_screenshot(void *userdata) {
     SDL_FreeSurface(surf);
 }
 
+static void emu_tas_record_start(const char *path, void *userdata) {
+    (void)userdata;
+    if (!tas_global || !cartridge_global) return;
+    if (tas_start_record(tas_global, path) == 0)
+        printf("TAS: recording to '%s'\n", path);
+}
+
+static void emu_tas_stop(void *userdata) {
+    (void)userdata;
+    if (!tas_global) return;
+    tas_stop(tas_global);
+    printf("TAS: stopped\n");
+}
+
+static void emu_tas_play(const char *path, void *userdata) {
+    (void)userdata;
+    if (!tas_global || !cartridge_global) return;
+    if (tas_start_play(tas_global, path) == 0)
+        printf("TAS: playing from '%s'\n", path);
+}
+
 static void emu_load_rom(const char *path, void *userdata) {
     (void)userdata;
     struct nes_cartridge *new_cart = load_rom(path);
@@ -215,6 +238,7 @@ int main(int argc, char *argv[]) {
     bus = nesbus_init(cpu, ppu);
     nes_input_init(bus->controller1, bus->controller2);
     rewind_buf = rewind_init();
+    tas_global = tas_init();
     ppu->set_framebuffer(display_get_framebuffer(display));
 
     struct ui_callbacks ui_cbs = {
@@ -224,6 +248,9 @@ int main(int argc, char *argv[]) {
         .on_save_state  = emu_save_state,
         .on_load_state  = emu_load_state,
         .on_screenshot  = emu_screenshot,
+        .on_tas_record  = emu_tas_record_start,
+        .on_tas_stop    = emu_tas_stop,
+        .on_tas_play    = emu_tas_play,
         .userdata       = NULL,
     };
     ui = ui_init(display, &ui_cbs);
@@ -349,6 +376,14 @@ int main(int argc, char *argv[]) {
                     /* Unmute audio when not rewinding. */
                     if (audio_dev != 0) SDL_PauseAudioDevice(audio_dev, 0);
 
+                    /* TAS playback: override controller inputs for this frame. */
+                    if (tas_get_mode(tas_global) == TAS_PLAYING) {
+                        uint8_t tas_p1 = 0, tas_p2 = 0;
+                        tas_get_buttons(tas_global, &tas_p1, &tas_p2);
+                        bus->controller1->buttons = tas_p1;
+                        bus->controller2->buttons = tas_p2;
+                    }
+
                     ppu->frame_complete = 0;
 
                     while (!ppu->frame_complete) {
@@ -363,6 +398,22 @@ int main(int argc, char *argv[]) {
                             break;
                         }
                     }
+
+                    /* TAS tick: record or advance playback after each frame. */
+                    if (tas_global) {
+                        uint8_t p1 = bus->controller1->buttons;
+                        uint8_t p2 = bus->controller2->buttons;
+                        int done = tas_tick(tas_global, p1, p2);
+                        if (done) {
+                            /* Playback finished — tas_tick() already called tas_stop(). */
+                            printf("TAS: playback complete at frame %u\n",
+                                   tas_get_frame(tas_global));
+                        }
+                    }
+
+                    /* Update the UI with current TAS state. */
+                    ui_set_tas_state(ui, (int)tas_get_mode(tas_global),
+                                     tas_get_frame(tas_global));
 
                     if (audio_dev != 0 && effective_speed > 0.0f &&
                         effective_speed <= 1.0f) {
@@ -397,6 +448,7 @@ int main(int argc, char *argv[]) {
         SDL_CloseAudioDevice(audio_dev);
     }
     rewind_free(rewind_buf);
+    tas_free(tas_global);
     ui_shutdown(ui);
     display_cleanup(display);
 
