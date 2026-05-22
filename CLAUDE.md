@@ -795,6 +795,40 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
 
 ## Recent Work
 
+### 2026-05-22 Session: TAS Input Recording and Playback (Issue #133)
+
+**Frame-level TAS input recording and playback implemented. Closes Phase 4 TAS item.**
+
+**File format (`.tasr`):**
+- Binary: 16-byte header (`"TASR"` magic + uint32 version=1 + 8 reserved bytes) followed by 6-byte per-frame records (`uint32_t frame` + `uint8_t p1` + `uint8_t p2`). All frames written (no delta encoding).
+
+**Architecture (`arch/6502/tas.c/.h`):**
+- `struct tas_context` with `tas_mode_t` (IDLE/RECORDING/PLAYING); `tas_init()`, `tas_free()`, `tas_start_record()`, `tas_stop()`, `tas_start_play()`, `tas_tick()` (writes/reads one frame record per call), `tas_get_buttons()` (returns current playback inputs), `tas_get_mode()`, `tas_get_frame()`
+- `tas_start_play()` pre-reads the first frame record so button state is valid on frame 0
+- `tas_tick()` returns 1 at EOF (playback done), 0 otherwise; calls `tas_stop()` internally at EOF
+
+**Integration (`emu.c`):**
+- `tas_global = tas_init()` allocated after `nesbus_init`
+- `emu_tas_record_start()`, `emu_tas_stop()`, `emu_tas_play()` callbacks wired into `ui_callbacks`
+- Per-frame in main loop: playback overrides `bus->controller1->buttons` / `bus->controller2->buttons` before the frame runs; recording captures those bytes after the frame via `tas_tick()`
+- `ui_set_tas_state()` called each frame to propagate mode+frame to UI
+- `tas_free()` called at shutdown
+
+**UI (`lib/ui/ui.cpp`, `lib/ui/ui.h`):**
+- `ui_callbacks` gains `on_tas_record`, `on_tas_stop`, `on_tas_play` function pointers
+- `ui_context` gains `tas_mode`, `tas_frame`, dialog-request fields
+- Emulation menu additions (after Speed submenu, with separator): "Record Input…" (NFD save dialog, `*.tasr`), "Stop Recording" (enabled only while recording), "Play Input…" (NFD open dialog, `*.tasr`)
+- FPS overlay shows `[REC]` when recording, `[PLAY N]` (with frame number) when playing
+- Controls Reference popup updated: "TAS Record  Emulation → Record Input"
+
+**New files:** `arch/6502/tas.c`, `arch/6502/tas.h`
+
+**Modified:** `arch/6502/CMakeLists.txt`, `lib/ui/ui.h`, `lib/ui/ui.cpp`, `emu.c`
+
+**All 15 test suites pass — no regressions.**
+
+---
+
 ### 2026-05-22 Session: Rewind Functionality (Issue #132)
 
 **Frame-level rewind implemented. Closes Phase 4 rewind item.**
@@ -1386,7 +1420,7 @@ All illegal NOP opcodes that consume operand bytes ($04, $0C, $14, $1C, $34, $3C
 - [X] ~~PPU viewer (nametables, patterns, palettes)~~ ✅ Complete (2026-05-19, issues #54/#55/#56) — Pattern Tables (two 128×128 tile grids, palette selector, hover tooltip), Nametables (2×2 grid with scroll viewport rect overlay + mirroring label), OAM (64-entry table with all sprite attributes)
 - [X] ~~Memory viewer/editor~~ ✅ Complete (2026-05-19, issue #57) — hex viewer with CPU bus, OAM, VRAM, Palette tabs; uses imgui_memory_editor
 - [X] ~~Rewind functionality (ring buffer of states)~~ ✅ Complete (2026-05-22, issue #132) — hold Backspace to rewind; 30-second ring buffer; audio muted during rewind; `[RWD]` tag in FPS overlay
-- [ ] TAS (Tool-Assisted Speedrun) input recording
+- [X] ~~TAS (Tool-Assisted Speedrun) input recording~~ ✅ Complete (2026-05-22, issue #133) — `.tasr` binary format; Emulation → Record/Stop/Play Input menus; `[REC]`/`[PLAY N]` FPS overlay tags; `arch/6502/tas.c/.h`
 
 ### Phase 5: Build System & Distribution
 - [X] ~~GitHub Actions CI (replace Travis CI)~~ ✅ Complete (2026-05-19, issue #60) — ubuntu-latest + windows-latest matrix; all 12 test suites run on every push/PR
@@ -1442,5 +1476,5 @@ TODO: Add contribution guidelines
 
 ---
 
-**Last Updated:** 2026-05-22 (Rewind #132; Mappers 019/069/071; PPU open bus #134; 15 test suites)
+**Last Updated:** 2026-05-22 (TAS #133; Rewind #132; Sprite overflow #135; Mappers 019/069/071; PPU open bus #134; 15 test suites)
 **Emulator Version:** 0.1.0 (pre-alpha)
