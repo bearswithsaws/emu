@@ -16,7 +16,8 @@ struct mapper *mapper_init(struct nes_cartridge *cartridge) {
     // Not sure if we need the entire cartridge or just values from it.
     // Saving both for now.
     map.cartridge = cartridge;
-    map.mapper_id = cartridge->mapper_id;
+    /* Use full 12-bit mapper_number for dispatch; it equals mapper_id for iNES 1.0 ROMs */
+    map.mapper_id = (uint8_t)cartridge->mapper_number;
     map.num_prg_rom = cartridge->hdr->prg_rom_size;
     map.num_chr_rom = cartridge->hdr->chr_rom_size;
 
