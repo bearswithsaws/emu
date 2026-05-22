@@ -62,6 +62,9 @@ static void emu_tick(void) {
     apu_clock(bus->apu);
     if (apu_irq_pending(bus->apu))
         cpu->irq();
+    /* Per-CPU-cycle mapper clock (e.g. Sunsoft FME-7 IRQ counter). */
+    if (bus->cart && bus->cart->map && bus->cart->map->clock)
+        bus->cart->map->clock(bus->cart->map);
     bus->total_cycles++;
 }
 
