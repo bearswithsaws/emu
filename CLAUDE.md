@@ -412,6 +412,73 @@ Offset  Size  Description
 
 **Compatible Games:** Punch-Out!!, Mike Tyson's Punch-Out!!
 
+#### Mapper 019 - Namco 163 ([arch/6502/mapper_019.c](arch/6502/mapper_019.c))
+
+**Status:** ✅ Complete (2026-05-22) — 10 unit tests, 35 assertions passing
+
+**Implemented:**
+- ✅ Switchable 8KB PRG banks at $8000/$A000/$C000 via registers $E000/$E800/$F000
+- ✅ Fixed last 8KB PRG bank at $E000-$FFFF
+- ✅ Eight independent 1KB CHR banks (PPU $0000-$1FFF) via registers $8000-$BFFF
+- ✅ Optional CHR-RAM windows: bit 6 of $E800 = lower 4KB ($0000-$0FFF), bit 7 = upper 4KB ($1000-$1FFF)
+- ✅ Mirroring register at $F800 (bits 1-0: 01=H, 10=V, 00/11=single-lo)
+- ✅ 128-byte internal Namco 163 RAM at $4800-$4FFF (addr & 0x7F addressing)
+- ✅ IRQ counter: 15-bit up-counter clocked every CPU cycle via mapper->clock hook; IRQ fires on $7FFF→$0000 wrap; enable/disable via bit 7 of $5800
+- ✅ IRQ counter read/write: $5000 = low 8 bits, $5800 = high 7 bits + enable flag; writes clear irq_pending
+- ✅ 10 unit tests — all passing
+
+**Not implemented (audio):**
+- Namco 163 wavetable audio channels stubbed to silence
+
+**Specifications:**
+- PRG-ROM: up to 512KB (8KB banking at three windows; last bank fixed)
+- CHR-ROM: up to 1MB (eight independent 1KB windows)
+- Optional 8KB CHR-RAM split into two 4KB halves independently switchable
+- 128-byte internal RAM (expansion audio register file)
+
+**Compatible Games:** ~25 games including Splatterhouse: Wanpaku Graffiti, Wagyan Land, Dragon Ninja
+
+#### Mapper 069 - Sunsoft FME-7 ([arch/6502/mapper_069.c](arch/6502/mapper_069.c))
+
+**Status:** ✅ Complete (2026-05-22) — 10 unit tests, 24 assertions passing
+
+**Implemented:**
+- ✅ Command register at $8000; parameter register at $A000 (FME-7 bank/command interface)
+- ✅ Four independently switchable 8KB PRG windows at $8000/$A000/$C000/$E000 (commands $9–$C)
+- ✅ Eight independently switchable 1KB CHR windows at PPU $0000–$1FFF (commands $0–$7)
+- ✅ PRG-RAM: 8KB at $6000–$7FFF; command $8 bit 6 = enable, bit 7 = RAM vs PRG-ROM bank
+- ✅ Dynamic mirroring via command $D (bits 1-0: 00=V, 01=H, 10=single-lo, 11=single-hi)
+- ✅ IRQ: 16-bit down-counter decremented every CPU cycle via `clock` hook; fires when counter reaches 0 with irq_enable=1; command $E sets high byte + control bits, command $F sets low byte
+- ✅ CHR-RAM supported when no CHR-ROM present
+- ✅ 10 unit tests — all passing
+
+**Not implemented (audio):**
+- Sunsoft 5B YM2149/AY-3-8910 audio expansion stubbed to silence
+
+**Specifications:**
+- PRG-ROM: up to 512KB (four independent 8KB switchable windows)
+- CHR-ROM: up to 256KB (eight independent 1KB switchable windows)
+- PRG-RAM: 8KB internal; also supports ROM-backed $6000 window
+
+**Compatible Games:** ~10 games including Gimmick! (Mr. Gimmick), Batman: Return of the Joker, Hebereke, Gremlins 2
+
+#### Mapper 071 - Camerica/Codemasters ([arch/6502/mapper_071.c](arch/6502/mapper_071.c))
+
+**Status:** ✅ Complete (2026-05-22) — 9 unit tests, 20 assertions passing
+
+**Implemented:**
+- ✅ Switchable 16KB PRG bank at $8000–$BFFF via writes to $8000–$FFFF (bits 3-0)
+- ✅ Fixed last 16KB PRG bank at $C000–$FFFF
+- ✅ CHR-RAM 8KB (no banking)
+- ✅ Fire Hawk variant: writes to $9000–$9FFF select single-screen mirroring (bit 4: 0=SINGLE_LO, 1=SINGLE_HI)
+
+**Specifications:**
+- PRG-ROM: Up to 256KB (16KB switchable + 16KB fixed)
+- CHR-RAM: 8KB (no banking)
+- Simple write to $8000–$FFFF selects PRG bank; $9000–$9FFF for Fire Hawk mirroring
+
+**Compatible Games:** ~15 games including Bee 52, Micro Machines, Fire Hawk (Camerica/Codemasters)
+
 ### NES Bus ([arch/6502/nesbus.c](arch/6502/nesbus.c))
 
 **Implementation Status:** ~90% complete
@@ -658,7 +725,7 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
   - PPU_RENDERING_PIPELINE.md
   - PPU_IMPLEMENTATION_COMPARISON.md
   - BUGFIXES_APPLIED.md
-- ✅ Unit tests: PPU clock (13 tests, 65 assertions), Mapper 001 (11 tests, 23 assertions), Mapper 002 (6 tests, 10 assertions), Mapper 003 (6 tests, 11 assertions), Mapper 004 (10 tests, 19 assertions), Mapper 007 (7 tests, 13 assertions), Mapper 009 (10 tests, 24 assertions), Mapper 011 (6 tests, 12 assertions), Mapper 066 (6 tests, 11 assertions), APU (8 tests, 72 assertions), CPU nestest integration test, Disassembler (16 groups, 126 assertions) — **12 test suites, all passing**
+- ✅ Unit tests: PPU clock (13 tests, 65 assertions), Mapper 001 (11 tests, 23 assertions), Mapper 002 (6 tests, 10 assertions), Mapper 003 (6 tests, 11 assertions), Mapper 004 (10 tests, 19 assertions), Mapper 007 (7 tests, 13 assertions), Mapper 009 (10 tests, 24 assertions), Mapper 011 (6 tests, 12 assertions), Mapper 019 (10 tests, 35 assertions), Mapper 066 (6 tests, 11 assertions), Mapper 069 (10 tests, 24 assertions), Mapper 071 (9 tests, 20 assertions), APU (8 tests, 72 assertions), CPU nestest integration test, Disassembler (16 groups, 126 assertions) — **15 test suites, all passing**
 - ✅ **Blargg headless test runner** (`tests/test_blargg_runner.c`) — full NES stack (CPU+PPU+APU+cartridge) without SDL2; implements $6000 protocol; 24 CTest entries across 3 suites (ppu_vbl_nmi, apu_test, apu_reset); started 6/24; all 6 root-cause issues fixed by PRs #121–#125; optional via `-DBLARGG_TEST_ROMS_PATH=<dir>`
 - ✅ Documentation (CLAUDE.md updated 2026-05-21)
 
@@ -1309,7 +1376,8 @@ All illegal NOP opcodes that consume operand bytes ($04, $0C, $14, $1C, $34, $3C
 - [X] ~~DMC buffer pre-fill and rate accuracy~~ ✅ PR #125 (issue #119) — immediate pre-fill on enable + decrement-then-check timer for exact period
 - [X] ~~PPU open bus behavior~~ ✅ Complete (issue #134) — `ppu_open_bus` field; write-only register reads return it; $2002 lower 5 bits; $2004/$2007 reads update it; 2 new unit tests
 - [ ] Sprite overflow flag accuracy
-- [ ] More mappers (5, etc.) — Mapper 9 (PxROM/MMC2) already complete
+- [X] ~~Add Mappers 019, 069, 071~~ ✅ Complete (2026-05-22) — Namco 163, Sunsoft FME-7, Camerica implemented and unit-tested
+- [ ] More mappers (5 MMC5, etc.)
 - [ ] Improve Blargg test pass rate (was 6/24 before PRs #121–#125; expected higher after all fixes merge)
 
 ---
@@ -1345,5 +1413,5 @@ TODO: Add contribution guidelines
 
 ---
 
-**Last Updated:** 2026-05-21 (PPU open bus behavior issue #134)
+**Last Updated:** 2026-05-22 (Mappers 019/069/071 implemented and unit-tested; 15 test suites)
 **Emulator Version:** 0.1.0 (pre-alpha)

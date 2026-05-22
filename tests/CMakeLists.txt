@@ -74,6 +74,27 @@ target_include_directories(test_mapper_009 PRIVATE
     "${PROJECT_BINARY_DIR}"
 )
 
+add_executable(test_mapper_019 test_mapper_019.c)
+target_link_libraries(test_mapper_019 PRIVATE lib6502)
+target_include_directories(test_mapper_019 PRIVATE
+    "${PROJECT_SOURCE_DIR}/arch/6502"
+    "${PROJECT_BINARY_DIR}"
+)
+
+add_executable(test_mapper_069 test_mapper_069.c)
+target_link_libraries(test_mapper_069 PRIVATE lib6502)
+target_include_directories(test_mapper_069 PRIVATE
+    "${PROJECT_SOURCE_DIR}/arch/6502"
+    "${PROJECT_BINARY_DIR}"
+)
+
+add_executable(test_mapper_071 test_mapper_071.c)
+target_link_libraries(test_mapper_071 PRIVATE lib6502)
+target_include_directories(test_mapper_071 PRIVATE
+    "${PROJECT_SOURCE_DIR}/arch/6502"
+    "${PROJECT_BINARY_DIR}"
+)
+
 add_executable(test_cpu_nestest test_cpu_nestest.c)
 target_link_libraries(test_cpu_nestest PRIVATE lib6502)
 target_include_directories(test_cpu_nestest PRIVATE
@@ -116,6 +137,9 @@ add_test(NAME mapper_007   COMMAND test_mapper_007)
 add_test(NAME mapper_009   COMMAND test_mapper_009)
 add_test(NAME mapper_011   COMMAND test_mapper_011)
 add_test(NAME mapper_066   COMMAND test_mapper_066)
+add_test(NAME mapper_019   COMMAND test_mapper_019)
+add_test(NAME mapper_069   COMMAND test_mapper_069)
+add_test(NAME mapper_071   COMMAND test_mapper_071)
 add_test(NAME cpu_nestest  COMMAND test_cpu_nestest)
 add_test(NAME disasm       COMMAND test_disasm)
 

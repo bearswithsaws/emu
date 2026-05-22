@@ -35,6 +35,7 @@ struct mapper {
     uint8_t mirroring;          // one of MIRROR_* above; updated dynamically by mapper
     uint8_t irq_pending;        // set by mapper to request a CPU IRQ; cleared by cpu.irq()
     fp_mapper_scanline scanline; // PPU scanline hook — NULL if unused
+    fp_mapper_scanline clock;   // per-CPU-cycle clock hook — NULL if unused
     void    *ctx;               // per-mapper private state (allocated by mapper init)
     uint32_t ctx_size;          // sizeof(*ctx), set by mapper init; 0 if no ctx
     uint8_t *prg_ram;           // pointer into ctx for battery-backed PRG-RAM; NULL if none
