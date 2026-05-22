@@ -107,6 +107,14 @@ struct ui_context {
 
     /* Rewind: true while Backspace is held */
     bool rewind_held;
+
+    /* TAS state (set by emu.c each frame) */
+    int      tas_mode;   /* tas_mode_t cast to int */
+    uint32_t tas_frame;
+
+    /* Pending TAS file dialog requests */
+    bool tas_record_dialog_requested;
+    bool tas_play_dialog_requested;
 };
 
 /* ---------- SDL event hook ------------------------------------------------ */
@@ -281,6 +289,22 @@ static void render_menu_emulation(ui_context *ui, display_context *display) {
         ImGui::EndMenu();
     }
 
+    ImGui::Separator();
+
+    if (ImGui::MenuItem("Record Input\xe2\x80\xa6"))
+        ui->tas_record_dialog_requested = true;
+
+    bool is_recording = (ui->tas_mode == (int)TAS_RECORDING);
+    ImGui::BeginDisabled(!is_recording);
+    if (ImGui::MenuItem("Stop Recording") && is_recording) {
+        if (ui->callbacks.on_tas_stop)
+            ui->callbacks.on_tas_stop(ui->callbacks.userdata);
+    }
+    ImGui::EndDisabled();
+
+    if (ImGui::MenuItem("Play Input\xe2\x80\xa6"))
+        ui->tas_play_dialog_requested = true;
+
     ImGui::EndMenu();
 }
 
@@ -371,6 +395,7 @@ static void render_controls_popup() {
         ImGui::Text("Save State  F2-F6 (slot 1-5)");
         ImGui::Text("Load State  Shift+F2-F6 (slot 1-5)");
         ImGui::Text("Rewind      Hold Backspace");
+        ImGui::Text("TAS Record  Emulation -> Record Input");
         ImGui::Spacing();
         if (ImGui::Button("Close", ImVec2(120, 0)))
             ImGui::CloseCurrentPopup();
@@ -1464,10 +1489,15 @@ void ui_render_frame(struct ui_context *ui, struct display_context *display) {
             render_menu_view(ui, display);
             render_menu_help(ui);
 
-            /* FPS counter right-aligned in the menu bar, with speed/rewind annotation. */
+            /* FPS counter right-aligned in the menu bar, with speed/rewind/TAS annotation. */
             if (ui->show_fps) {
-                char buf[48];
-                if (ui->rewind_held)
+                char buf[64];
+                if (ui->tas_mode == (int)TAS_RECORDING)
+                    snprintf(buf, sizeof(buf), "%.1f FPS [REC]", ui->fps);
+                else if (ui->tas_mode == (int)TAS_PLAYING)
+                    snprintf(buf, sizeof(buf), "%.1f FPS [PLAY %u]",
+                             ui->fps, ui->tas_frame);
+                else if (ui->rewind_held)
                     snprintf(buf, sizeof(buf), "%.1f FPS [RWD]", ui->fps);
                 else if (ui->speed_multiplier < 0.0f)
                     snprintf(buf, sizeof(buf), "%.1f FPS [>>]", ui->fps);
@@ -1552,6 +1582,32 @@ void ui_render_frame(struct ui_context *ui, struct display_context *display) {
         nfdresult_t result = NFD_OpenDialog(&path, filters, 1, nullptr);
         if (result == NFD_OKAY) {
             do_load_rom(ui, path);
+            NFD_FreePath(path);
+        }
+    }
+
+    /* ------ TAS record file dialog ---------------------------------------- */
+    if (ui && ui->tas_record_dialog_requested) {
+        ui->tas_record_dialog_requested = false;
+        nfdchar_t *path = nullptr;
+        nfdfilteritem_t filters[1] = {{"TAS Recording", "tasr"}};
+        nfdresult_t result = NFD_SaveDialog(&path, filters, 1, nullptr, "recording.tasr");
+        if (result == NFD_OKAY) {
+            if (ui->callbacks.on_tas_record)
+                ui->callbacks.on_tas_record(path, ui->callbacks.userdata);
+            NFD_FreePath(path);
+        }
+    }
+
+    /* ------ TAS play file dialog ------------------------------------------ */
+    if (ui && ui->tas_play_dialog_requested) {
+        ui->tas_play_dialog_requested = false;
+        nfdchar_t *path = nullptr;
+        nfdfilteritem_t filters[1] = {{"TAS Recording", "tasr"}};
+        nfdresult_t result = NFD_OpenDialog(&path, filters, 1, nullptr);
+        if (result == NFD_OKAY) {
+            if (ui->callbacks.on_tas_play)
+                ui->callbacks.on_tas_play(path, ui->callbacks.userdata);
             NFD_FreePath(path);
         }
     }
@@ -1663,4 +1719,10 @@ int ui_debugger_consume_rw_bp_hit(struct ui_context *ui) {
 
 int ui_get_rewind_held(const struct ui_context *ui) {
     return ui ? (ui->rewind_held ? 1 : 0) : 0;
+}
+
+void ui_set_tas_state(struct ui_context *ui, int mode, uint32_t frame) {
+    if (!ui) return;
+    ui->tas_mode  = mode;
+    ui->tas_frame = frame;
 }
