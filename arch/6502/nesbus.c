@@ -25,29 +25,41 @@ static uint8_t read(uint16_t addr) {
 
     if (addr < 0x800) {
         data = ram[addr];
+        bus.last_bus_value = data;
     } else if ((addr >= 0x800) && (addr < 0x2000)) {
         // mirroring
         data = ram[addr & 0x7ff];
+        bus.last_bus_value = data;
     } else if ((addr >= 0x2000) && (addr < 0x3fff)) {
         // So wrong but need to implement PPU later
         data = bus.ppu->cpu_read(addr);
+        bus.last_bus_value = data;
     } else if (addr == 0x3fff) {
         // ppu read
+        data = bus.last_bus_value;
+    } else if (addr == 0x4015) {
+        // APU status — readable register
+        data = apu_read(&apu_chip, addr);
+        bus.last_bus_value = data;
+    } else if ((addr >= 0x4000) && (addr <= 0x4014)) {
+        // Write-only APU registers: return open bus value
+        data = bus.last_bus_value;
     } else if (addr == 0x4016) {
         // Controller 1 read
         data = controller_read(&ctrl1);
+        bus.last_bus_value = data;
         // printf("Controller 1 read: bit=0x%02X (buttons=0x%02X)\n", data,
         // ctrl1.buttons);
     } else if (addr == 0x4017) {
         // Controller 2 read
         data = controller_read(&ctrl2);
-    } else if ((addr >= 0x4000) && (addr <= 0x4015)) {
-        data = apu_read(&apu_chip, addr);
+        bus.last_bus_value = data;
     } else {
         if (bus.cart)
             data = bus.cart->cpu_read(bus.cart, addr);
         else
             data = 0xFF;
+        bus.last_bus_value = data;
     }
 
     if (bus.bp_hook)

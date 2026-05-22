@@ -34,6 +34,7 @@ struct nesbus {
     struct apu2a03 *apu;
     uint16_t dma_halt_cycles;
     uint64_t total_cycles;   /* incremented once per CPU cycle in emu_tick() */
+    uint8_t  last_bus_value; /* open bus: last value returned by a real read */
     nesbus_bp_hook_fn bp_hook;
     void             *bp_hook_ud;
 };

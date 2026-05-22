@@ -412,7 +412,7 @@ Offset  Size  Description
 
 ### NES Bus ([arch/6502/nesbus.c](arch/6502/nesbus.c))
 
-**Implementation Status:** ~85% complete
+**Implementation Status:** ~90% complete
 
 **Features:**
 - 2KB internal RAM with mirroring
@@ -423,6 +423,7 @@ Offset  Size  Description
 
 **Implemented:**
 - OAM DMA ($4014) — synchronous 256-byte copy + cycle-accurate CPU halt (513 even / 514 odd cycles)
+- Open bus tracking (`last_bus_value`) — write-only APU registers ($4000–$4014) return the last real bus value instead of 0; updated on all RAM, PPU, $4015, controller, and cartridge reads
 
 ---
 
