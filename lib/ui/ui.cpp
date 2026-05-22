@@ -104,6 +104,9 @@ struct ui_context {
     struct ui_breakpoint dbg_breakpoints[UI_MAX_BREAKPOINTS];
     int                  dbg_bp_count;
     int                  dbg_rw_bp_hit;  /* set by nesbus hook, consumed by main loop */
+
+    /* Rewind: true while Backspace is held */
+    bool rewind_held;
 };
 
 /* ---------- SDL event hook ------------------------------------------------ */
@@ -367,6 +370,7 @@ static void render_controls_popup() {
         ImGui::Text("Screenshot  F9");
         ImGui::Text("Save State  F2-F6 (slot 1-5)");
         ImGui::Text("Load State  Shift+F2-F6 (slot 1-5)");
+        ImGui::Text("Rewind      Hold Backspace");
         ImGui::Spacing();
         if (ImGui::Button("Close", ImVec2(120, 0)))
             ImGui::CloseCurrentPopup();
@@ -1440,6 +1444,10 @@ void ui_render_frame(struct ui_context *ui, struct display_context *display) {
         }
     }
 
+    /* Rewind — track Backspace held state */
+    if (ui)
+        ui->rewind_held = ImGui::IsKeyDown(ImGuiKey_Backspace);
+
     /* ------ Demo window (dev helper) ------------------------------------ */
     if (ui && ui->show_demo)
         ImGui::ShowDemoWindow(&ui->show_demo);
@@ -1456,11 +1464,12 @@ void ui_render_frame(struct ui_context *ui, struct display_context *display) {
             render_menu_view(ui, display);
             render_menu_help(ui);
 
-            /* FPS counter right-aligned in the menu bar, with speed annotation
-             * when running at a non-default multiplier. */
+            /* FPS counter right-aligned in the menu bar, with speed/rewind annotation. */
             if (ui->show_fps) {
-                char buf[40];
-                if (ui->speed_multiplier < 0.0f)
+                char buf[48];
+                if (ui->rewind_held)
+                    snprintf(buf, sizeof(buf), "%.1f FPS [RWD]", ui->fps);
+                else if (ui->speed_multiplier < 0.0f)
                     snprintf(buf, sizeof(buf), "%.1f FPS [>>]", ui->fps);
                 else if (ui->speed_multiplier != 1.0f)
                     snprintf(buf, sizeof(buf), "%.1f FPS [%.0f%%]",
@@ -1650,4 +1659,8 @@ int ui_debugger_consume_rw_bp_hit(struct ui_context *ui) {
     if (!ui || !ui->dbg_rw_bp_hit) return 0;
     ui->dbg_rw_bp_hit = 0;
     return 1;
+}
+
+int ui_get_rewind_held(const struct ui_context *ui) {
+    return ui ? (ui->rewind_held ? 1 : 0) : 0;
 }
