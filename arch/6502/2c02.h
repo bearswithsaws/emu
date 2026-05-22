@@ -145,6 +145,10 @@ struct ppu2c02 {
     // PPUDATA read buffer (internal buffering for reads from $0000-$3EFF)
     // Reads from $3F00-$3FFF (palette) bypass the buffer
     uint8_t ppudata_read_buffer;
+
+    // Open bus: last value written to the PPU data bus.
+    // Write-only register reads and unused bits of $2002 return this value.
+    uint8_t ppu_open_bus;
 };
 
 struct ppu2c02 *ppu2c02_init();

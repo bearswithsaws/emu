@@ -196,8 +196,10 @@ Opcode: aaabbbcc
 **Partially Implemented:**
 - ⚠️ Sprite overflow flag — hardware has a diagonal-scan bug; we set the flag correctly for the simple case but do not replicate the hardware's incorrect scan behaviour
 
+**Fully Implemented (recent additions):**
+- ✅ Open bus behavior (issue #134) — `ppu_open_bus` field; every cpu_write updates it; write-only register reads return it; $2002 lower 5 bits come from it; $2004/$2007 reads update it
+
 **NOT Yet Implemented:**
-- ❌ Open bus behavior (returns last value on bus)
 - ❌ Some PPU read/write side effects edge cases
 
 **PPU Timing:**
@@ -1372,7 +1374,7 @@ All illegal NOP opcodes that consume operand bytes ($04, $0C, $14, $1C, $34, $3C
 - [X] ~~PPU VBL flag set/NMI edge timing (issues #115, #116)~~ ✅ PR #123 — PPU power-on scanline=-1 fix; PPUCTRL NMI 0→1 edge trigger; NMI suppression window at dot 0 of scanline 241
 - [X] ~~APU power-on `$4017=$00` write simulation (issue #120 remainder)~~ ✅ PR #124 — `apu_reset()` called alongside initial `cpu->reset()` in test runner and emu.c boot path
 - [X] ~~DMC buffer pre-fill and rate accuracy~~ ✅ PR #125 (issue #119) — immediate pre-fill on enable + decrement-then-check timer for exact period
-- [ ] PPU open bus behavior
+- [X] ~~PPU open bus behavior~~ ✅ Complete (issue #134) — `ppu_open_bus` field; write-only register reads return it; $2002 lower 5 bits; $2004/$2007 reads update it; 2 new unit tests
 - [ ] Sprite overflow flag accuracy
 - [X] ~~Add Mappers 019, 069, 071~~ ✅ Complete (2026-05-22) — Namco 163, Sunsoft FME-7, Camerica implemented and unit-tested
 - [ ] More mappers (5 MMC5, etc.)

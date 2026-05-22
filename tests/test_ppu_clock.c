@@ -782,6 +782,99 @@ static void test_sprite_zero_hit(void) {
 }
 
 // ---------------------------------------------------------------------------
+// Open bus tests
+// ---------------------------------------------------------------------------
+
+/*
+ * test_open_bus_write_only_registers
+ *
+ * Reading a write-only PPU register ($2000, $2001, $2003, $2005, $2006)
+ * must return the last value written to any PPU register (the open bus).
+ */
+static void test_open_bus_write_only_registers(void) {
+    printf("\n[test_open_bus_write_only_registers]\n");
+
+    struct ppu2c02 *ppu = ppu2c02_init();
+    static uint32_t fb[256 * 240];
+    ppu->connect_cartridge(&fake_cart);
+    ppu->set_framebuffer(fb);
+    ppu->reset();
+
+    /* Write a known value to PPUCTRL — this sets open bus to 0x42 */
+    ppu->cpu_write(0x2000, 0x42);
+    ASSERT(ppu->ppu_open_bus == 0x42, "cpu_write sets ppu_open_bus");
+
+    /* Reading PPUCTRL ($2000, write-only) must return open bus unchanged */
+    uint8_t r = ppu->cpu_read(0x2000);
+    ASSERT(r == 0x42, "read of write-only $2000 returns open bus");
+
+    /* Write a different value via PPUMASK */
+    ppu->cpu_write(0x2001, 0x1E);
+    ASSERT(ppu->ppu_open_bus == 0x1E, "cpu_write $2001 updates ppu_open_bus");
+
+    /* Read PPUMASK ($2001, write-only) → open bus */
+    r = ppu->cpu_read(0x2001);
+    ASSERT(r == 0x1E, "read of write-only $2001 returns open bus");
+
+    /* Read PPUSCROLL ($2005, write-only) → still 0x1E */
+    r = ppu->cpu_read(0x2005);
+    ASSERT(r == 0x1E, "read of write-only $2005 returns open bus");
+
+    /* Read PPUADDR ($2006, write-only) → still 0x1E */
+    r = ppu->cpu_read(0x2006);
+    ASSERT(r == 0x1E, "read of write-only $2006 returns open bus");
+
+    /* Read OAMADDR ($2003, write-only) → still 0x1E */
+    r = ppu->cpu_read(0x2003);
+    ASSERT(r == 0x1E, "read of write-only $2003 returns open bus");
+}
+
+/*
+ * test_open_bus_ppustatus_lower_bits
+ *
+ * PPUSTATUS ($2002) lower 5 bits should reflect the open bus value; upper 3
+ * bits are real flags.  Confirm that the lower 5 bits come from the last write.
+ */
+static void test_open_bus_ppustatus_lower_bits(void) {
+    printf("\n[test_open_bus_ppustatus_lower_bits]\n");
+
+    struct ppu2c02 *ppu = ppu2c02_init();
+    static uint32_t fb[256 * 240];
+    ppu->connect_cartridge(&fake_cart);
+    ppu->set_framebuffer(fb);
+    ppu->reset();
+
+    /* Enable NMI first so open bus is updated by PPUCTRL write */
+    ppu->cpu_write(0x2000, 0x80); /* NMI enable; sets open bus = 0x80 */
+
+    /* Advance to VBlank so vblank_started = 1 (upper bit of $2002 = 1).
+     * Starting at (-1, 0): after 341*242 = 82522 calls we're at (241, 0).
+     * One more call processes (241,0) and ends at (241,1).
+     * One more call processes (241,1) — VBL fires during that call.
+     * So 82524 total calls guarantee vblank_started is set. */
+    int dots_to_vbl = (241 + 1) * 341 + 2; /* 82524: processes scanline 241 dot 1 */
+    for (int i = 0; i < dots_to_vbl; i++) ppu->clock();
+
+    /* Now set open bus lower bits to a known pattern (0x1B = 0b00011011).
+     * Write to OAMADDR (write-only, harmless) to update open bus without
+     * disturbing NMI or rendering state. */
+    ppu->cpu_write(0x2003, 0x1B); /* sets open bus = 0x1B, oamaddr = 0x1B */
+
+    ASSERT(ppu->ppustatus.vblank_started == 1, "VBlank active for open bus test");
+
+    /* Read PPUSTATUS: bit 7 = vblank (real flag = 1),
+     * lower 5 bits = open bus lower 5 bits = 0x1B & 0x1F = 0x1B.
+     * Bits 5-6 (sprite_overflow, sprite_0_hit) may be set from earlier
+     * rendering, so only check bit 7 and the lower 5 bits individually. */
+    uint8_t status = ppu->cpu_read(0x2002);
+    ASSERT((status & 0x80) != 0, "PPUSTATUS bit 7 (vblank) is set");
+    ASSERT((status & 0x1F) == 0x1B, "PPUSTATUS lower 5 bits come from open bus");
+
+    /* Reading $2002 also updates open bus to the combined value */
+    ASSERT(ppu->ppu_open_bus == status, "PPUSTATUS read updates ppu_open_bus");
+}
+
+// ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
 
@@ -801,6 +894,8 @@ int main(void) {
     test_sprite_horizontal_flip();
     test_sprite_vertical_flip();
     test_sprite_zero_hit();
+    test_open_bus_write_only_registers();
+    test_open_bus_ppustatus_lower_bits();
 
     printf("\n=== Results: %d passed, %d failed ===\n", test_pass, test_fail);
     return test_fail ? 1 : 0;
