@@ -62,6 +62,7 @@ static void emu_tick(void) {
     apu_clock(bus->apu);
     if (apu_irq_pending(bus->apu))
         cpu->irq();
+    bus->total_cycles++;
 }
 
 /* Returns result code (0=pass, 1+=fail), RESET_REQUEST_STATUS, or -1 if

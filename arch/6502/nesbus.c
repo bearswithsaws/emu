@@ -73,8 +73,9 @@ static void write(uint16_t addr, uint8_t data) {
         for (int i = 0; i < 256; i++) {
             bus.ppu->oam[i] = read(src_addr + i);
         }
-        // Stall the CPU for 513 cycles (514 on an odd cycle — approximated as 513).
-        bus.dma_halt_cycles = 513;
+        /* Real hardware: 513 cycles on even CPU cycle, 514 on odd (one extra
+         * idle alignment cycle inserted before the 512 read/write cycles). */
+        bus.dma_halt_cycles = (bus.total_cycles & 1) ? 514 : 513;
     } else if (addr == 0x4016) {
         // Controller strobe (writes to both controllers)
         controller_write(&ctrl1, data);

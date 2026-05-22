@@ -42,6 +42,7 @@ static void emu_tick(void) {
         cpu->irq();
     }
     tick_count_global++;
+    bus->total_cycles++;
 }
 
 /* Step exactly one CPU instruction (finishes any partial instruction first). */
