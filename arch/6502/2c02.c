@@ -367,14 +367,22 @@ static void evaluate_sprites_for_scanline(int16_t next_scanline) {
     }
 
     if (ppu.sprite_count == 8) {
+        // Hardware-accurate diagonal scan bug:
+        // After finding 8 sprites, the PPU increments both the sprite index AND
+        // the byte-within-sprite counter simultaneously.  So it reads OAM byte
+        // (n*4 + m) instead of byte 0 (Y) — causing false positives and false
+        // negatives.  The byte counter m starts at 0 and increments mod 4 after
+        // every check, regardless of whether the check resulted in a hit.
+        uint8_t m = 0;
         for (int i = 8; i < 64; i++) {
-            uint8_t sy   = ppu.oam[i * 4 + 0];
-            int16_t top  = (int16_t)sy + 1;
-            int16_t bot  = top + height;
+            uint8_t val = ppu.oam[i * 4 + m];
+            int16_t top = (int16_t)val + 1;
+            int16_t bot = top + height;
             if (next_scanline >= top && next_scanline < bot) {
                 ppu.ppustatus.sprite_overflow = 1;
                 break;
             }
+            m = (m + 1) & 3;
         }
     }
 }
