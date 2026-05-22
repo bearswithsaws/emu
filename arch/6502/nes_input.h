@@ -40,4 +40,14 @@ typedef void (*input_callback_t)(int sdl_keycode, int is_pressed,
                                  void *userdata);
 input_callback_t nes_get_input_handler(void);
 
+/**
+ * Refresh both controllers from the current SDL keyboard snapshot.
+ *
+ * The event-driven input handler only updates buttons on KEYDOWN/KEYUP.
+ * After a savestate restore (e.g. rewind), previously-set bits can get
+ * stuck because SDL never generates a KEYUP for keys it didn't see pressed.
+ * Call this once after restoring state to resync with physical key state.
+ */
+void nes_input_refresh(void);
+
 #endif /* __NES_INPUT_H__ */

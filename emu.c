@@ -331,8 +331,16 @@ int main(int argc, char *argv[]) {
                     if (!rewind_step(rewind_buf, bus)) {
                         /* No more history — stay on the oldest frame. */
                     }
-                    /* Throttle to ~60 fps so the rewind is watchable. */
-                    SDL_Delay(16);
+
+                    /* Resync controller state from actual keyboard so bits
+                     * restored by the savestate don't get stuck. */
+                    nes_input_refresh();
+
+                    /* Render one PPU frame so the display reflects the
+                     * restored state — without this the screen freezes. */
+                    ppu->frame_complete = 0;
+                    while (!ppu->frame_complete)
+                        emu_tick();
                 } else {
                     /* Capture a snapshot before running this frame so that
                      * rewinding can restore it. */
