@@ -316,6 +316,12 @@ static void render_menu_view(ui_context *ui, display_context *display) {
     if (ImGui::MenuItem("Toggle Menubar", "F1"))
         ui->show_menubar = !ui->show_menubar;
 
+    ImGui::Separator();
+
+    if (ImGui::MenuItem("Save Screenshot", "F9"))
+        if (ui->callbacks.on_screenshot)
+            ui->callbacks.on_screenshot(ui->callbacks.userdata);
+
     ImGui::EndMenu();
 }
 
@@ -358,6 +364,7 @@ static void render_controls_popup() {
         ImGui::SeparatorText("UI");
         ImGui::Text("Menubar     F1");
         ImGui::Text("Fullscreen  F11");
+        ImGui::Text("Screenshot  F9");
         ImGui::Text("Save State  F2-F6 (slot 1-5)");
         ImGui::Text("Load State  Shift+F2-F6 (slot 1-5)");
         ImGui::Spacing();
@@ -1408,6 +1415,9 @@ void ui_render_frame(struct ui_context *ui, struct display_context *display) {
     /* ------ Keyboard shortcuts handled here (after NewFrame) ------------ */
     if (ImGui::IsKeyPressed(ImGuiKey_F1))
         ui->show_menubar = !ui->show_menubar;
+    if (ImGui::IsKeyPressed(ImGuiKey_F9))
+        if (ui->callbacks.on_screenshot)
+            ui->callbacks.on_screenshot(ui->callbacks.userdata);
     if (ImGui::IsKeyPressed(ImGuiKey_F11))
         display_toggle_fullscreen(display);
 

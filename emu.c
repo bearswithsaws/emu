@@ -1,6 +1,11 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
+#include <sys/stat.h>
+#ifdef _WIN32
+#include <direct.h>
+#endif
 
 #include <SDL2/SDL.h>
 
@@ -91,6 +96,60 @@ static void emu_load_state(int slot, void *userdata) {
     savestate_load(slot, bus);
 }
 
+static void emu_screenshot(void *userdata) {
+    (void)userdata;
+    uint32_t *fb = display_get_framebuffer(display_global);
+    if (!fb) return;
+
+    /* Build ~/.local/share/emu/screenshots/ path. */
+    const char *home = getenv("HOME");
+#ifdef _WIN32
+    if (!home) home = getenv("USERPROFILE");
+#endif
+    if (!home) return;
+
+    char dir[512];
+    snprintf(dir, sizeof(dir), "%s/.local/share/emu/screenshots", home);
+    /* Create directory hierarchy (ignore errors if it already exists). */
+    {
+        char tmp[512];
+        const char *segs[] = { "/.local", "/.local/share", "/.local/share/emu",
+                                "/.local/share/emu/screenshots" };
+        for (int i = 0; i < 4; i++) {
+            snprintf(tmp, sizeof(tmp), "%s%s", home, segs[i]);
+#ifdef _WIN32
+            _mkdir(tmp);
+#else
+            mkdir(tmp, 0755);
+#endif
+        }
+    }
+
+    /* Timestamped filename: emu_YYYYMMDD_HHMMSS.bmp */
+    time_t now = time(NULL);
+    struct tm *t = localtime(&now);
+    char path[600];
+    snprintf(path, sizeof(path),
+             "%s/emu_%04d%02d%02d_%02d%02d%02d.bmp",
+             dir,
+             t->tm_year + 1900, t->tm_mon + 1, t->tm_mday,
+             t->tm_hour, t->tm_min, t->tm_sec);
+
+    /* Wrap the ARGB8888 framebuffer in an SDL_Surface and save as BMP. */
+    SDL_Surface *surf = SDL_CreateRGBSurfaceWithFormatFrom(
+        fb, 256, 240, 32, 256 * 4, SDL_PIXELFORMAT_ARGB8888);
+    if (!surf) {
+        fprintf(stderr, "screenshot: SDL_CreateRGBSurface failed: %s\n",
+                SDL_GetError());
+        return;
+    }
+    if (SDL_SaveBMP(surf, path) != 0)
+        fprintf(stderr, "screenshot: SDL_SaveBMP failed: %s\n", SDL_GetError());
+    else
+        printf("Screenshot saved: %s\n", path);
+    SDL_FreeSurface(surf);
+}
+
 static void emu_load_rom(const char *path, void *userdata) {
     (void)userdata;
     struct nes_cartridge *new_cart = load_rom(path);
@@ -158,6 +217,7 @@ int main(int argc, char *argv[]) {
         .on_load_rom    = emu_load_rom,
         .on_save_state  = emu_save_state,
         .on_load_state  = emu_load_state,
+        .on_screenshot  = emu_screenshot,
         .userdata       = NULL,
     };
     ui = ui_init(display, &ui_cbs);

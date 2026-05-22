@@ -726,6 +726,23 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
 
 ## Recent Work
 
+### 2026-05-21 Session: Screenshot Capture (Phase 3)
+
+**Screenshot capture implemented. Closes the last Phase 3 item.**
+
+**Implementation (`emu.c`, `lib/ui/ui.cpp`, `lib/ui/ui.h`):**
+- F9 key and View → Save Screenshot menu item trigger `emu_screenshot()` via the `on_screenshot` callback in `struct ui_callbacks`
+- Screenshot saved as BMP to `~/.local/share/emu/screenshots/emu_YYYYMMDD_HHMMSS.bmp`; directory created automatically
+- `SDL_CreateRGBSurfaceWithFormatFrom` wraps the existing ARGB8888 framebuffer (no extra copy), `SDL_SaveBMP` writes the file
+- Controls Reference popup updated with "Screenshot  F9" entry
+
+**Also in this session: Open bus + iNES 2.0 (PRs #129, #130):**
+- PRs #129 (APU open bus, issue #70) and #130 (iNES 2.0 header parsing, issue #71) merged
+
+**Files modified:** `emu.c`, `lib/ui/ui.cpp`, `lib/ui/ui.h`, `CLAUDE.md`
+
+---
+
 ### 2026-05-21 Session: Housekeeping — Controller 2, OAM DMA Timing, PRG-RAM Persistence (Issues #69, #72, #73)
 
 **Three housekeeping items from epic #75 implemented.**
@@ -1264,7 +1281,7 @@ All illegal NOP opcodes that consume operand bytes ($04, $0C, $14, $1C, $34, $3C
 - [X] ~~Pause/reset controls~~ ✅ Complete (2026-05-17) — wired through Emulation menu
 - [X] ~~Fast forward / slow motion~~ ✅ Complete (2026-05-18, issue #58) — Speed menu (50%/100%/200%/Uncapped) + Tab key for instant fast-forward
 - [X] ~~Battery-backed PRG-RAM persistence~~ ✅ Complete (2026-05-21, issue #69) — `arch/6502/sram.c/.h`; `sram_load`/`sram_save` API; loads on ROM open, saves on exit and ROM swap; path `~/.local/share/emu/<rom>.sram`; Mapper 001 (MMC1) and Mapper 004 (MMC3) expose `prg_ram` pointer via `struct mapper`
-- [ ] Screenshot capture
+- [X] ~~Screenshot capture~~ ✅ Complete (2026-05-21) — F9 or View → Save Screenshot; BMP saved to `~/.local/share/emu/screenshots/emu_YYYYMMDD_HHMMSS.bmp`; `on_screenshot` callback in `ui_callbacks`; `emu_screenshot()` in `emu.c`
 
 ### Phase 4: Advanced Features
 - [X] ~~Debugger (CPU state, breakpoints, step through)~~ ✅ Complete (2026-05-18, issue #52; extended 2026-05-19, issue #53) — disassembler, editable registers, F7/F8 step/step-over, execute + read/write breakpoints, cycle/scanline/dot display
@@ -1326,5 +1343,5 @@ TODO: Add contribution guidelines
 
 ---
 
-**Last Updated:** 2026-05-21 (Controller 2 mapping #72; OAM DMA timing #73; PRG-RAM persistence #69; PRs #123–#125)
+**Last Updated:** 2026-05-21 (Screenshot capture Phase 3; APU open bus #70 PR #129; iNES 2.0 parsing #71 PR #130; Controller 2 #72; OAM DMA #73; PRG-RAM #69)
 **Emulator Version:** 0.1.0 (pre-alpha)

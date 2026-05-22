@@ -34,14 +34,16 @@ struct ui_breakpoint {
 typedef void (*ui_reset_fn)(void *userdata);
 typedef void (*ui_load_rom_fn)(const char *path, void *userdata);
 typedef void (*ui_savestate_fn)(int slot, void *userdata);
+typedef void (*ui_screenshot_fn)(void *userdata);
 
 struct ui_callbacks {
-    ui_reset_fn     on_soft_reset;   /* CPU reset, RAM preserved */
-    ui_reset_fn     on_power_cycle;  /* Full hardware reinit */
-    ui_load_rom_fn  on_load_rom;     /* Load a new ROM file by path */
-    ui_savestate_fn on_save_state;   /* Save state to numbered slot */
-    ui_savestate_fn on_load_state;   /* Load state from numbered slot */
-    void           *userdata;
+    ui_reset_fn      on_soft_reset;   /* CPU reset, RAM preserved */
+    ui_reset_fn      on_power_cycle;  /* Full hardware reinit */
+    ui_load_rom_fn   on_load_rom;     /* Load a new ROM file by path */
+    ui_savestate_fn  on_save_state;   /* Save state to numbered slot */
+    ui_savestate_fn  on_load_state;   /* Load state from numbered slot */
+    ui_screenshot_fn on_screenshot;   /* Save a screenshot to disk */
+    void            *userdata;
 };
 
 /**
