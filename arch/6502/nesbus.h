@@ -33,6 +33,7 @@ struct nesbus {
     struct controller *controller2;
     struct apu2a03 *apu;
     uint16_t dma_halt_cycles;
+    uint64_t total_cycles;   /* incremented once per CPU cycle in emu_tick() */
     nesbus_bp_hook_fn bp_hook;
     void             *bp_hook_ud;
 };
