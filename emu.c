@@ -333,12 +333,19 @@ int main(int argc, char *argv[]) {
             break;
         }
 
-        /* Refresh gamepad state (hot-plug + poll current buttons). */
+        /* Refresh gamepad state (hot-plug + detect connect/disconnect). */
         gamepad_refresh(gamepad_global);
 
-        /* Tab held = uncapped fast-forward; otherwise use the menu selection. */
+        /* Read gamepad emulator actions before building effective_speed so
+         * FAST_FORWARD can override the menu setting this frame. */
+        uint32_t gp_actions = gamepad_get_emulator_actions(gamepad_global, 0);
+        /* One-shot actions fire only on the button's rising edge. */
+        uint32_t gp_edges   = gamepad_consume_action_edges(gamepad_global, 0);
+
+        /* Tab held or gamepad FAST_FORWARD → uncapped speed. */
         const uint8_t *kb = SDL_GetKeyboardState(NULL);
-        float effective_speed = kb[SDL_SCANCODE_TAB]
+        int gp_ff = !!(gp_actions & GAMEPAD_ACTION_FAST_FORWARD);
+        float effective_speed = (kb[SDL_SCANCODE_TAB] || gp_ff)
                                     ? -1.0f
                                     : ui_get_speed_multiplier(ui);
 
@@ -353,9 +360,25 @@ int main(int argc, char *argv[]) {
                 display_set_paused(display, 1);
             }
 
+            /* Handle one-shot gamepad actions (save/load state, screenshot).
+             * These are processed regardless of pause state. */
+            if (cartridge_global != NULL) {
+                if ((gp_edges & GAMEPAD_ACTION_SAVE_STATE) &&
+                    ui_cbs.on_save_state)
+                    ui_cbs.on_save_state(1, ui_cbs.userdata);
+                if ((gp_edges & GAMEPAD_ACTION_LOAD_STATE) &&
+                    ui_cbs.on_load_state)
+                    ui_cbs.on_load_state(1, ui_cbs.userdata);
+                if ((gp_edges & GAMEPAD_ACTION_SCREENSHOT) &&
+                    ui_cbs.on_screenshot)
+                    ui_cbs.on_screenshot(ui_cbs.userdata);
+            }
+
             /* --- Rewind or normal frame emulation (only when running) --- */
             if (!display_is_paused(display)) {
-                int rewinding = ui_get_rewind_held(ui);
+                /* Gamepad L-shoulder or UI key triggers rewind. */
+                int rewinding = ui_get_rewind_held(ui) ||
+                                !!(gp_actions & GAMEPAD_ACTION_REWIND);
 
                 if (rewinding) {
                     /* Mute audio while rewinding to avoid noise. */
@@ -365,8 +388,9 @@ int main(int argc, char *argv[]) {
                         /* No more history — stay on the oldest frame. */
                     }
 
-                    /* Resync controller state from actual keyboard so bits
-                     * restored by the savestate don't get stuck. */
+                    /* Resync controller state: overwrite from keyboard scan then
+                     * OR gamepad bits. Using |= alone would leave stale bits set
+                     * when buttons are released. */
                     nes_input_refresh();
                     bus->controller1->buttons |= gamepad_get_buttons(gamepad_global, 0);
                     bus->controller2->buttons |= gamepad_get_buttons(gamepad_global, 1);
@@ -384,13 +408,19 @@ int main(int argc, char *argv[]) {
                     /* Unmute audio when not rewinding. */
                     if (audio_dev != 0) SDL_PauseAudioDevice(audio_dev, 0);
 
-                    /* TAS playback overrides all input; otherwise merge gamepad. */
+                    /* TAS playback overrides all input; otherwise merge keyboard
+                     * and gamepad. nes_input_refresh() does a full overwrite from
+                     * current keyboard scan state, which clears any stale bits
+                     * left over from previously pressed keys. The gamepad bits are
+                     * then OR-ed in on top. Using |= alone (without the refresh)
+                     * would cause gamepad buttons to stay "stuck" after release. */
                     if (tas_get_mode(tas_global) == TAS_PLAYING) {
                         uint8_t tas_p1 = 0, tas_p2 = 0;
                         tas_get_buttons(tas_global, &tas_p1, &tas_p2);
                         bus->controller1->buttons = tas_p1;
                         bus->controller2->buttons = tas_p2;
                     } else {
+                        nes_input_refresh();
                         bus->controller1->buttons |= gamepad_get_buttons(gamepad_global, 0);
                         bus->controller2->buttons |= gamepad_get_buttons(gamepad_global, 1);
                     }
