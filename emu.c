@@ -410,75 +410,92 @@ int main(int argc, char *argv[]) {
                     while (!ppu->frame_complete)
                         emu_tick();
                 } else {
-                    /* Capture a snapshot before running this frame so that
-                     * rewinding can restore it. */
+                    /* Capture a snapshot before this render cycle. */
                     rewind_push(rewind_buf, bus);
 
                     /* Unmute audio when not rewinding. */
                     if (audio_dev != 0) SDL_PauseAudioDevice(audio_dev, 0);
 
-                    /* TAS playback overrides all input; otherwise merge keyboard
-                     * and gamepad. nes_input_refresh() does a full overwrite from
-                     * current keyboard scan state, which clears any stale bits
-                     * left over from previously pressed keys. The gamepad bits are
-                     * then OR-ed in on top. Using |= alone (without the refresh)
-                     * would cause gamepad buttons to stay "stuck" after release. */
-                    if (tas_get_mode(tas_global) == TAS_PLAYING) {
-                        uint8_t tas_p1 = 0, tas_p2 = 0;
-                        tas_get_buttons(tas_global, &tas_p1, &tas_p2);
-                        bus->controller1->buttons = tas_p1;
-                        bus->controller2->buttons = tas_p2;
-                    } else {
-                        nes_input_refresh();
-                        bus->controller1->buttons |= gamepad_get_buttons(gamepad_global, 0);
-                        bus->controller2->buttons |= gamepad_get_buttons(gamepad_global, 1);
+                    /* How many NES frames to emulate per render cycle:
+                     *   1x  → 1 frame   (vsync + audio backpressure throttle)
+                     *   2x  → 2 frames  (two NES frames per display frame)
+                     *   0.5x→ 1 frame   (extra delay added after render)
+                     *   -1  → time-box  (run as many frames as fit in 50 ms) */
+                    int nes_frames_to_run = 1;
+                    Uint64 uncapped_deadline = 0;
+                    if (effective_speed >= 2.0f) {
+                        nes_frames_to_run = (int)effective_speed;
+                    } else if (effective_speed < 0.0f) {
+                        uncapped_deadline = SDL_GetPerformanceCounter() +
+                            SDL_GetPerformanceFrequency() / 20; /* 50 ms */
                     }
 
-                    ppu->frame_complete = 0;
-
-                    while (!ppu->frame_complete) {
-                        emu_tick();
-
-                        /* Breakpoint check: pause on execute or read/write breakpoint hit.
-                         * Break immediately so the debugger shows the exact PC at the hit,
-                         * not wherever the CPU ends up at the end of the frame. */
-                        if (ui_debugger_is_breakpoint(ui, cpu->PC) ||
-                            ui_debugger_consume_rw_bp_hit(ui)) {
-                            display_set_paused(display, 1);
-                            break;
+                    int frames_ran = 0;
+                    int bp_hit = 0;
+                    do {
+                        /* Latch input once per render cycle (first NES frame only). */
+                        if (frames_ran == 0) {
+                            if (tas_get_mode(tas_global) == TAS_PLAYING) {
+                                uint8_t tas_p1 = 0, tas_p2 = 0;
+                                tas_get_buttons(tas_global, &tas_p1, &tas_p2);
+                                bus->controller1->buttons = tas_p1;
+                                bus->controller2->buttons = tas_p2;
+                            } else {
+                                nes_input_refresh();
+                                bus->controller1->buttons |= gamepad_get_buttons(gamepad_global, 0);
+                                bus->controller2->buttons |= gamepad_get_buttons(gamepad_global, 1);
+                            }
                         }
-                    }
 
-                    /* TAS tick: record or advance playback after each frame. */
-                    if (tas_global) {
-                        uint8_t p1 = bus->controller1->buttons;
-                        uint8_t p2 = bus->controller2->buttons;
-                        int done = tas_tick(tas_global, p1, p2);
-                        if (done) {
-                            /* Playback finished — tas_tick() already called tas_stop(). */
-                            printf("TAS: playback complete at frame %u\n",
-                                   tas_get_frame(tas_global));
+                        ppu->frame_complete = 0;
+                        while (!ppu->frame_complete) {
+                            emu_tick();
+                            if (ui_debugger_is_breakpoint(ui, cpu->PC) ||
+                                ui_debugger_consume_rw_bp_hit(ui)) {
+                                display_set_paused(display, 1);
+                                bp_hit = 1;
+                                break;
+                            }
                         }
-                    }
 
-                    /* Update the UI with current TAS state. */
+                        /* TAS tick: record inputs or advance playback pointer. */
+                        if (tas_global && !bp_hit) {
+                            uint8_t p1 = bus->controller1->buttons;
+                            uint8_t p2 = bus->controller2->buttons;
+                            int done = tas_tick(tas_global, p1, p2);
+                            if (done)
+                                printf("TAS: playback complete at frame %u\n",
+                                       tas_get_frame(tas_global));
+                        }
+
+                        frames_ran++;
+                        frame_count++;
+
+                        if (frame_count % 60 == 0) {
+                            printf("Frame: %u, Ticks: %llu, PC: 0x%04X\n",
+                                   frame_count,
+                                   (unsigned long long)tick_count_global,
+                                   cpu->PC);
+                        }
+                    } while (!bp_hit && (effective_speed < 0.0f
+                        ? SDL_GetPerformanceCounter() < uncapped_deadline
+                        : frames_ran < nes_frames_to_run));
+
                     ui_set_tas_state(ui, (int)tas_get_mode(tas_global),
                                      tas_get_frame(tas_global));
 
+                    /* Audio backpressure: single check (not a spin-loop).
+                     * SDL_Delay(1) on Linux can sleep 2-15 ms; looping it
+                     * was the primary cause of sub-60 FPS at normal speed. */
                     if (audio_dev != 0 && effective_speed > 0.0f &&
-                        effective_speed <= 1.0f) {
-                        while (apu_ring_available(bus->apu) > APU_RING_SIZE * 3 / 4) {
-                            SDL_Delay(1);
-                        }
-                    }
-                    if (effective_speed > 0.0f && effective_speed < 1.0f) {
-                        SDL_Delay((uint32_t)(16.0f / effective_speed) - 16u);
+                        effective_speed <= 1.0f &&
+                        apu_ring_available(bus->apu) > APU_RING_SIZE * 3 / 4) {
+                        SDL_Delay(2);
                     }
 
-                    frame_count++;
-                    if (frame_count % 60 == 0) {
-                        printf("Frame: %u, Ticks: %llu, PC: 0x%04X\n", frame_count,
-                               (unsigned long long)tick_count_global, cpu->PC);
+                    /* Slow-motion extra delay (0.5x → add ~16 ms on top of vsync). */
+                    if (effective_speed > 0.0f && effective_speed < 1.0f) {
+                        SDL_Delay((uint32_t)(16.667f / effective_speed) - 17u);
                     }
                 }
             }
