@@ -875,6 +875,212 @@ static void test_open_bus_ppustatus_lower_bits(void) {
 }
 
 // ---------------------------------------------------------------------------
+// Sprite overflow tests
+// ---------------------------------------------------------------------------
+
+/*
+ * test_sprite_overflow_normal
+ *
+ * Place 9 sprites all on the same scanline.  The first 8 fill secondary OAM
+ * and the 9th should trigger the overflow flag even with the diagonal scan bug,
+ * because at i=8 the byte counter m=0 so byte 0 (Y) is read correctly.
+ */
+static void test_sprite_overflow_normal(void) {
+    printf("\n[test_sprite_overflow_normal]\n");
+
+    struct ppu2c02 *ppu = ppu2c02_init();
+    static uint32_t fb[256 * 240];
+    memset(fb, 0, sizeof(fb));
+    ppu->connect_cartridge(&fake_cart);
+    ppu->set_framebuffer(fb);
+    ppu->reset();
+
+    // Enable sprite rendering
+    ppu->cpu_write(0x2000, 0x00); // 8x8 sprites
+    ppu->cpu_write(0x2001, 0x10); // sprite rendering enabled
+
+    // Place 9 sprites all on scanline 50 (Y=49 → appears on scanline 50)
+    // Spread X positions so they don't overlap, but all on the same scanline row
+    for (int i = 0; i < 9; i++) {
+        ppu->oam[i * 4 + 0] = 49; // Y=49 → visible on scanline 50
+        ppu->oam[i * 4 + 1] = 0;  // tile 0
+        ppu->oam[i * 4 + 2] = 0;  // attr
+        ppu->oam[i * 4 + 3] = (uint8_t)(i * 8); // X: 0, 8, 16, ...
+    }
+
+    // Run two frames; the overflow flag is set during rendering and survives
+    // until the pre-render scanline clears it.  Sample it at VBlank.
+    uint8_t overflow_at_vblank = 0;
+    for (int i = 0; i < 89342 * 2; i++) {
+        ppu->clock();
+        if (ppu->frame_complete) {
+            overflow_at_vblank = ppu->ppustatus.sprite_overflow;
+            break;
+        }
+    }
+    ASSERT(overflow_at_vblank == 1, "overflow set when 9 sprites on same scanline");
+
+    // Confirm the flag clears at pre-render dot 1
+    while (!(ppu->scanline == -1 && ppu->dot == 0)) ppu->clock();
+    ppu->clock(); // dot 0
+    ppu->clock(); // dot 1 — clears flags
+    ASSERT(ppu->ppustatus.sprite_overflow == 0, "overflow cleared at pre-render dot 1");
+}
+
+/*
+ * test_sprite_overflow_diagonal_false_negative
+ *
+ * Arrange exactly 9 sprites so that after the 8th is found the diagonal scan
+ * reads a non-Y byte of the 9th sprite that falls OUTSIDE the current scanline
+ * window, causing the overflow flag to NOT be set despite 9 sprites being
+ * present on the scanline.
+ *
+ * Scanline under test: 100
+ * Sprites 0-7: Y=99 → all on scanline 100 (fill secondary OAM)
+ * Sprite 8: Y=99 (byte 0) → on scanline 100 BUT the diagonal scan reads
+ *   byte m=0+0=0 first at i=8... wait, m starts at 0 for i=8.
+ *
+ * Actually m=0 at i=8, so sprite 8 IS read correctly.  To get a false negative
+ * we need to engineer things so that the byte read at some i>=9 (where m>0)
+ * is out-of-window, AND sprite 8 (m=0) is also out of window.
+ *
+ * Strategy:
+ *   - Sprites 0-7: Y=99 → scanline 100 ✓ (fill secondary OAM)
+ *   - Sprite 8 (i=8, m=0): Y value must NOT be on scanline 100
+ *     → set Y=0 (appears on scanline 1 only)
+ *   - Sprite 9 (i=9, m=1): reads byte 1 (tile index) of sprite 9.
+ *     Set sprite 9's tile byte to a value such that tile+1 is NOT in [100, 108)
+ *     e.g. tile = 200 → top = 201, bot = 209 → not in [100,108)
+ *   - ...continue for sprites 10-63: all have non-Y bytes outside window
+ *   - Add a 9th "real" sprite on scanline 100 at OAM index 9: Y=99 (byte 0),
+ *     but since m=1 at i=9, byte 1 (tile=200) is read instead.
+ *
+ * This creates a false negative: the 9th sprite is genuinely on scanline 100
+ * but the diagonal scan misses it because it reads the tile byte instead of Y.
+ */
+static void test_sprite_overflow_diagonal_false_negative(void) {
+    printf("\n[test_sprite_overflow_diagonal_false_negative]\n");
+
+    struct ppu2c02 *ppu = ppu2c02_init();
+    static uint32_t fb[256 * 240];
+    memset(fb, 0, sizeof(fb));
+    ppu->connect_cartridge(&fake_cart);
+    ppu->set_framebuffer(fb);
+    ppu->reset();
+
+    ppu->cpu_write(0x2000, 0x00); // 8x8 sprites
+    ppu->cpu_write(0x2001, 0x10); // sprite rendering enabled
+
+    // Zero out all OAM first
+    for (int i = 0; i < 256; i++) ppu->oam[i] = 0xFF; // off-screen Y=255
+
+    // Sprites 0-7: all on scanline 100 (Y=99)
+    for (int i = 0; i < 8; i++) {
+        ppu->oam[i * 4 + 0] = 99;        // Y=99 → scanline 100
+        ppu->oam[i * 4 + 1] = 0;         // tile
+        ppu->oam[i * 4 + 2] = 0;         // attr
+        ppu->oam[i * 4 + 3] = (uint8_t)(i * 8); // X
+    }
+
+    // Sprite 8 (i=8, m=0): Y must be off scanline 100.  Use Y=0 (scanline 1).
+    ppu->oam[8 * 4 + 0] = 0;   // Y=0 → off scanline 100
+    ppu->oam[8 * 4 + 1] = 200; // tile=200 (byte 1 will be read at i=9 via m=1)
+    ppu->oam[8 * 4 + 2] = 0;   // attr
+    ppu->oam[8 * 4 + 3] = 64;  // X
+
+    // Sprite 9 (i=9, m=1 after the miss at i=8): reads byte 1 (tile) of sprite 9.
+    // Set Y=99 (genuinely on scanline 100) but tile=200 so the diagonal scan
+    // reads 200+1=201 which is outside [100,108).
+    ppu->oam[9 * 4 + 0] = 99;  // Y=99 → genuinely on scanline 100
+    ppu->oam[9 * 4 + 1] = 200; // tile=200; diagonal reads this as "Y" → top=201 ∉ [100,108)
+    ppu->oam[9 * 4 + 2] = 0;   // attr
+    ppu->oam[9 * 4 + 3] = 72;  // X
+
+    // Sprites 10-63: keep Y=255 (off-screen); remaining diagonal reads will also miss.
+
+    // Run and sample overflow at VBlank
+    uint8_t overflow_at_vblank = 0;
+    for (int i = 0; i < 89342 * 2; i++) {
+        ppu->clock();
+        if (ppu->frame_complete) {
+            overflow_at_vblank = ppu->ppustatus.sprite_overflow;
+            break;
+        }
+    }
+    // The diagonal scan should MISS the 9th sprite → false negative (no overflow)
+    ASSERT(overflow_at_vblank == 0,
+           "diagonal scan false negative: 9th sprite missed because m>0 reads non-Y byte");
+}
+
+/*
+ * test_sprite_overflow_diagonal_false_positive
+ *
+ * Arrange ≤8 sprites so that the diagonal scan reads a non-Y byte of a later
+ * sprite that happens to fall within the scanline window, setting the overflow
+ * flag despite fewer than 9 sprites being on the scanline.
+ *
+ * Scanline under test: 50
+ * Sprites 0-7: all on scanline 50 (Y=49) → fill secondary OAM
+ * Sprite 8 (i=8, m=0): Y byte must be OFF scanline 50; use Y=0.
+ * Sprite 9 (i=9, m=1): byte 1 (tile index) of sprite 9 read as "Y".
+ *   We need tile+1 ∈ [50, 58) i.e. tile ∈ [49, 57).
+ *   Use tile=49 → top=50, bot=58 → IN window → false positive!
+ *   The actual Y of sprite 9 = 255 (off-screen), so it is NOT a real hit.
+ */
+static void test_sprite_overflow_diagonal_false_positive(void) {
+    printf("\n[test_sprite_overflow_diagonal_false_positive]\n");
+
+    struct ppu2c02 *ppu = ppu2c02_init();
+    static uint32_t fb[256 * 240];
+    memset(fb, 0, sizeof(fb));
+    ppu->connect_cartridge(&fake_cart);
+    ppu->set_framebuffer(fb);
+    ppu->reset();
+
+    ppu->cpu_write(0x2000, 0x00); // 8x8 sprites
+    ppu->cpu_write(0x2001, 0x10); // sprite rendering enabled
+
+    // Zero out all OAM to off-screen
+    for (int i = 0; i < 256; i++) ppu->oam[i] = 0xFF;
+
+    // Sprites 0-7: all on scanline 50 (Y=49)
+    for (int i = 0; i < 8; i++) {
+        ppu->oam[i * 4 + 0] = 49;        // Y=49 → scanline 50
+        ppu->oam[i * 4 + 1] = 0;         // tile
+        ppu->oam[i * 4 + 2] = 0;         // attr
+        ppu->oam[i * 4 + 3] = (uint8_t)(i * 8); // X
+    }
+
+    // Sprite 8 (i=8, m=0): Y=0 → off scanline 50
+    ppu->oam[8 * 4 + 0] = 0;   // Y=0 → off scanline 50 (m=0 reads this)
+    ppu->oam[8 * 4 + 1] = 0;   // tile
+    ppu->oam[8 * 4 + 2] = 0;   // attr
+    ppu->oam[8 * 4 + 3] = 0;   // X
+    // After the miss at i=8, m becomes 1.
+
+    // Sprite 9 (i=9, m=1): diagonal reads byte 1 (tile index).
+    // Set tile=49 → diagonal interprets it as Y=49 → top=50, bot=58 → IN window
+    // The real Y of this sprite is 255 (off-screen) — not a genuine hit.
+    ppu->oam[9 * 4 + 0] = 255; // actual Y=255 → off scanline 50
+    ppu->oam[9 * 4 + 1] = 49;  // tile=49; diagonal reads this as "Y" → top=50 ∈ [50,58)
+    ppu->oam[9 * 4 + 2] = 0;   // attr
+    ppu->oam[9 * 4 + 3] = 0;   // X
+
+    // Run and sample overflow at VBlank
+    uint8_t overflow_at_vblank = 0;
+    for (int i = 0; i < 89342 * 2; i++) {
+        ppu->clock();
+        if (ppu->frame_complete) {
+            overflow_at_vblank = ppu->ppustatus.sprite_overflow;
+            break;
+        }
+    }
+    // Diagonal scan should hit sprite 9's tile byte (49) as a false Y match
+    ASSERT(overflow_at_vblank == 1,
+           "diagonal scan false positive: non-Y byte in window triggers overflow");
+}
+
+// ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
 
@@ -896,6 +1102,9 @@ int main(void) {
     test_sprite_zero_hit();
     test_open_bus_write_only_registers();
     test_open_bus_ppustatus_lower_bits();
+    test_sprite_overflow_normal();
+    test_sprite_overflow_diagonal_false_negative();
+    test_sprite_overflow_diagonal_false_positive();
 
     printf("\n=== Results: %d passed, %d failed ===\n", test_pass, test_fail);
     return test_fail ? 1 : 0;
