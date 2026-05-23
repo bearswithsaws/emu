@@ -2,6 +2,8 @@
 
 # emu
 
+![emu logo](assets/icon.png)
+
 A cycle-accurate NES emulator written in C with an SDL2/Dear ImGui frontend.
 
 ## Features
