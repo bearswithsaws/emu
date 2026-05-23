@@ -121,14 +121,24 @@ int main(int argc, char *argv[]) {
     cpu->reset();
     apu_reset(bus->apu);  /* simulate power-on $4017=$00 write (3-cycle delay) */
 
-    int result      = -1;
-    int frame       = 0;
-    int reset_delay = 0; /* frames remaining after a $81 reset request */
+    int result           = -1;
+    int frame            = 0;
+    int reset_delay      = 0; /* frames counting toward $81 reset trigger */
+    int post_reset_grace = 0; /* frames to ignore $81 after we performed a reset */
 
     for (frame = 0; frame < TIMEOUT_FRAMES; frame++) {
         ppu->frame_complete = 0;
         while (!ppu->frame_complete)
             emu_tick();
+
+        /* Tick down the post-reset grace period before sampling $6000.
+         * After we reset, the ROM spends many frames in its own delay
+         * measurement before it can update $6000 away from $81; without
+         * the grace period we would immediately trigger another reset. */
+        if (post_reset_grace > 0) {
+            post_reset_grace--;
+            continue;
+        }
 
         result = check_result();
         if (result < 0)
@@ -140,10 +150,11 @@ int main(int argc, char *argv[]) {
             if (reset_delay >= RESET_DELAY_FRAMES) {
                 cpu->reset();
                 apu_reset(bus->apu); /* APU resets with the CPU on real hardware */
-                reset_delay = 0;
-                result = -1; /* wait for the test to run again after reset */
+                reset_delay      = 0;
+                post_reset_grace = 30; /* wait 30 frames before sampling again */
+                result = -1;
             } else {
-                result = -1; /* still counting down */
+                result = -1;
             }
             continue;
         }

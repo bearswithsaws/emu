@@ -135,6 +135,8 @@ struct apu2a03 {
 
     uint64_t cycle; /* total CPU cycles clocked; used for $4017 write jitter */
 
+    uint8_t last_4017; /* last value written to $4017; re-applied on soft reset */
+
     /* CPU memory read callback (for DMC) */
     uint8_t (*cpu_read)(uint16_t addr);
 };

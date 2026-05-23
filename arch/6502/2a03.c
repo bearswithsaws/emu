@@ -2,6 +2,8 @@
 
 #include "2a03.h"
 
+#include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
 #ifdef _MSC_VER
@@ -269,12 +271,18 @@ void apu_reset(struct apu2a03 *apu) {
     apu->irq_pending           = false;
     apu->sample_cycles         = 0.0f;
     apu_ring_reset(apu);
-    /* Frame counter restarts as if $4017=$00 was written — mode 0, no inhibit,
-     * with the same 3-4 cycle jitter delay as a real $4017 write at reset. */
-    apu->frame.mode        = false;
-    apu->frame.irq_inhibit = false;
-    apu->frame.cycles      = 0;
-    apu->frame.reload_delay = (apu->cycle & 1) ? 4 : 3;
+    /* Frame counter restarts as if last_4017 was re-written 9-12 cycles before
+     * the CPU begins executing from the reset vector.  At power-on last_4017=0
+     * (zeroed by apu_init memset), matching the hardware's implicit $00 write.
+     * On soft reset the last value written to $4017 is re-applied (Blargg
+     * 4017_written test).  We pre-advance frame.cycles to 9 to simulate the
+     * ~9-12 cycle gap between the $4017 write and CPU start (4017_timing). */
+    apu->frame.mode         = (apu->last_4017 >> 7) & 0x01;
+    apu->frame.irq_inhibit  = (apu->last_4017 >> 6) & 0x01;
+    if (apu->frame.irq_inhibit)
+        apu->frame.irq_pending = false;
+    apu->frame.cycles       = 9;
+    apu->frame.reload_delay = 0; /* counter already running; no startup delay */
     /* Noise LFSR state is preserved across reset (per hardware). */
 }
 
@@ -336,42 +344,55 @@ void apu_clock(struct apu2a03 *apu) {
         }
     }
 
-    /* Frame counter */
+    /* Frame counter — apu_clock() is called once per CPU cycle.
+     * Step values are in CPU cycles (NES NTSC: ~1.789773 MHz). */
     if (apu->frame.reload_delay > 0) {
         apu->frame.reload_delay--;
         if (apu->frame.reload_delay == 0) {
             apu->frame.cycles = 0;
             if (apu->frame.mode) {
-                /* 5-step: immediately fire all units */
+                /* 5-step: immediately fire all units on reset */
                 clock_quarter_frame(apu);
                 clock_half_frame(apu);
             }
         }
+        /* Counter does not advance while reload is pending */
+    } else {
+        apu->frame.cycles++;
     }
 
-    apu->frame.cycles++;
-
     if (!apu->frame.mode) {
-        /* 4-step mode */
+        /* 4-step mode — CPU cycle values (apu_clock called every CPU cycle):
+         *   7458 CPU  (quarter-frame 1)
+         *  14913 CPU  (half-frame 1 = quarter-frame 2)
+         *  22371 CPU  (quarter-frame 3)
+         *  29828 CPU  (IRQ set, first)
+         *  29829 CPU  (half-frame 2 = quarter-frame 4)
+         *  29830 CPU  (IRQ set again + counter reset) */
         switch (apu->frame.cycles) {
-        case 3729:
+        case 7457:
             clock_quarter_frame(apu);
             break;
-        case 7457:
+        case 14913:
             clock_quarter_frame(apu);
             clock_half_frame(apu);
             break;
-        case 11186:
+        case 22371:
             clock_quarter_frame(apu);
             break;
-        case 14914:
+        case 29828:
             if (!apu->frame.irq_inhibit) {
                 apu->frame.irq_pending = true;
             }
             break;
-        case 14915:
+        case 29829:
             clock_quarter_frame(apu);
             clock_half_frame(apu);
+            if (!apu->frame.irq_inhibit) {
+                apu->frame.irq_pending = true;
+            }
+            break;
+        case 29830:
             if (!apu->frame.irq_inhibit) {
                 apu->frame.irq_pending = true;
             }
@@ -379,21 +400,29 @@ void apu_clock(struct apu2a03 *apu) {
             break;
         }
     } else {
-        /* 5-step mode */
+        /* 5-step mode — CPU cycle values (apu_clock called every CPU cycle):
+         *   7457 CPU  (quarter-frame 1)
+         *  14913 CPU  (half-frame 1 = quarter-frame 2)
+         *  22371 CPU  (quarter-frame 3)
+         *  29829 CPU  (quarter-frame 4, no half-frame)
+         *  37281 CPU  (half-frame 2 = quarter-frame 5 + reset) */
         switch (apu->frame.cycles) {
-        case 3729:
-            clock_quarter_frame(apu);
-            break;
         case 7457:
             clock_quarter_frame(apu);
-            clock_half_frame(apu);
             break;
-        case 11186:
-            clock_quarter_frame(apu);
-            break;
-        case 18641:
+        case 14913:
             clock_quarter_frame(apu);
             clock_half_frame(apu);
+            break;
+        case 22371:
+            clock_quarter_frame(apu);
+            break;
+        /* step 4 (at ~29829) does nothing in 5-step mode */
+        case 37281:
+            clock_quarter_frame(apu);
+            clock_half_frame(apu);
+            break;
+        case 37282:
             apu->frame.cycles = 0;
             break;
         }
@@ -574,12 +603,14 @@ void apu_write(struct apu2a03 *apu, uint16_t addr, uint8_t data) {
             apu->dmc.enabled = true;
             if (apu->dmc.bytes_remaining == 0) {
                 dmc_restart(&apu->dmc);
-                /* Immediately pre-fill the sample buffer so the first output
-                 * byte is ready before the timer expires. */
-                dmc_fill_buffer(apu);
-                /* Start the timer from the full period so the first output
-                 * fires exactly timer_period CPU cycles after enable. */
-                apu->dmc.timer = apu->dmc.timer_period;
+                /* Set timer=0 so the first output fires in the same APU tick
+                 * as this write.  The timer is NOT reset to timer_period here
+                 * because on real hardware the DMC timer runs continuously;
+                 * sync_dmc_fast relies on this to phase-align measurements.
+                 * The lazy dmc_fill_buffer() in apu_clock() handles the first
+                 * sample byte fetch on the next timer fire (if sample_buf is
+                 * empty) or defers it to the first shift-register reload. */
+                apu->dmc.timer = 0;
             }
         }
         break;
@@ -587,6 +618,7 @@ void apu_write(struct apu2a03 *apu, uint16_t addr, uint8_t data) {
 
     /* Frame counter */
     case 0x4017:
+        apu->last_4017         = data; /* remember for soft reset re-application */
         apu->frame.mode        = (data >> 7) & 0x01;
         apu->frame.irq_inhibit = (data >> 6) & 0x01;
         if (apu->frame.irq_inhibit) {

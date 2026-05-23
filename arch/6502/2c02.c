@@ -150,9 +150,12 @@ static void cpu_write(uint16_t addr, uint8_t data) {
         ppu.ppuctrl.reg = data;
         // Nametable select goes into t bits 11-10
         ppu.t = (ppu.t & 0xF3FF) | ((uint16_t)(data & 0x03) << 10);
-        // NMI enable rising edge while VBL is active → trigger NMI immediately
+        // NMI enable rising edge while VBL is active → defer NMI by 1 instruction.
+        // The PPUCTRL write happens mid-instruction (during execute()), so the CPU
+        // is already committed to the current instruction.  Hardware fires the NMI
+        // after the *next* instruction completes, not the current one.
         if (!old_nmi && ppu.ppuctrl.nmi && ppu.ppustatus.vblank_started) {
-            ppu.nmi_triggered = 1;
+            ppu.nmi_deferred = 1;
         }
         // NMI enable falling edge → deassert NMI line (suppress pending NMI)
         if (!ppu.ppuctrl.nmi) {
@@ -627,13 +630,15 @@ static void clock(void) {
         if (ppu.scanline > 260) {
             ppu.scanline = -1;
             ppu.odd_frame ^= 1;
-            // NTSC: dot 0 of the pre-render scanline is skipped on odd frames
-            // when background (or sprite) rendering is enabled, making the frame
-            // 89,341 dots instead of 89,342.
-            if (ppu.odd_frame && rendering_enabled()) {
-                ppu.dot = 1;
-            }
         }
+    }
+
+    // NTSC even/odd frame dot-skip: dot 0 of the pre-render scanline is
+    // skipped on odd frames when BG rendering is enabled.  Evaluated HERE
+    // (at the moment dot 0 would be processed) so that CPU writes to PPUMASK
+    // in the same emu_tick as the scanline wrap are reflected correctly.
+    if (ppu.scanline == -1 && ppu.dot == 0 && ppu.odd_frame && rendering_enabled()) {
+        ppu.dot = 1;
     }
 }
 
