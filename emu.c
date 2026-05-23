@@ -374,11 +374,20 @@ int main(int argc, char *argv[]) {
                     ui_cbs.on_screenshot(ui_cbs.userdata);
             }
 
+            /* Push fast-forward/rewind state to overlay regardless of pause.
+             * Both are false while paused so the indicators clear immediately. */
+            int is_paused = display_is_paused(display);
+            ui_set_fast_forward_active(ui, !is_paused &&
+                                           (effective_speed < 0.0f ||
+                                            effective_speed > 1.0f));
+
             /* --- Rewind or normal frame emulation (only when running) --- */
             if (!display_is_paused(display)) {
                 /* Gamepad L-shoulder or UI key triggers rewind. */
                 int rewinding = ui_get_rewind_held(ui) ||
                                 !!(gp_actions & GAMEPAD_ACTION_REWIND);
+                ui_set_rewind_active(ui, rewinding);
+                if (rewinding) ui_set_fast_forward_active(ui, 0);
 
                 if (rewinding) {
                     /* Mute audio while rewinding to avoid noise. */

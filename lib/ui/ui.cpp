@@ -105,8 +105,11 @@ struct ui_context {
     int                  dbg_bp_count;
     int                  dbg_rw_bp_hit;  /* set by nesbus hook, consumed by main loop */
 
-    /* Rewind: true while Backspace is held */
+    /* Rewind: true while Backspace is held (keyboard); also set from emu.c
+     * when gamepad rewind is active so the overlay reflects both sources. */
     bool rewind_held;
+    bool rewind_active;
+    bool fast_forward_active;
 
     /* TAS state (set by emu.c each frame) */
     int      tas_mode;   /* tas_mode_t cast to int */
@@ -1501,11 +1504,11 @@ void ui_render_frame(struct ui_context *ui, struct display_context *display) {
                 else if (ui->tas_mode == (int)TAS_PLAYING)
                     snprintf(buf, sizeof(buf), "%.1f FPS [PLAY %u]",
                              ui->fps, ui->tas_frame);
-                else if (ui->rewind_held)
-                    snprintf(buf, sizeof(buf), "%.1f FPS [RWD]", ui->fps);
-                else if (ui->speed_multiplier < 0.0f)
-                    snprintf(buf, sizeof(buf), "%.1f FPS [>>]", ui->fps);
-                else if (ui->speed_multiplier != 1.0f)
+                else if (ui->rewind_active)
+                    snprintf(buf, sizeof(buf), "%.1f FPS [<<<]", ui->fps);
+                else if (ui->fast_forward_active)
+                    snprintf(buf, sizeof(buf), "%.1f FPS [>>>]", ui->fps);
+                else if (ui->speed_multiplier != 1.0f && ui->speed_multiplier > 0.0f)
                     snprintf(buf, sizeof(buf), "%.1f FPS [%.0f%%]",
                              ui->fps, ui->speed_multiplier * 100.0f);
                 else
@@ -1723,6 +1726,14 @@ int ui_debugger_consume_rw_bp_hit(struct ui_context *ui) {
 
 int ui_get_rewind_held(const struct ui_context *ui) {
     return ui ? (ui->rewind_held ? 1 : 0) : 0;
+}
+
+void ui_set_rewind_active(struct ui_context *ui, int active) {
+    if (ui) ui->rewind_active = active != 0;
+}
+
+void ui_set_fast_forward_active(struct ui_context *ui, int active) {
+    if (ui) ui->fast_forward_active = active != 0;
 }
 
 void ui_set_tas_state(struct ui_context *ui, int mode, uint32_t frame) {
