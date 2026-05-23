@@ -194,7 +194,7 @@ Opcode: aaabbbcc
 - ✅ OAM DMA ($4014) — synchronous copy + cycle-accurate CPU halt (513 even / 514 odd cycles)
 
 **Partially Implemented:**
-- ⚠️ Sprite overflow flag — hardware has a diagonal-scan bug; we set the flag correctly for the simple case but do not replicate the hardware's incorrect scan behaviour
+- ✅ Sprite overflow flag — hardware-accurate diagonal scan bug implemented (issue #135)
 
 **Fully Implemented (recent additions):**
 - ✅ Open bus behavior (issue #134) — `ppu_open_bus` field; every cpu_write updates it; write-only register reads return it; $2002 lower 5 bits come from it; $2004/$2007 reads update it
@@ -654,7 +654,7 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
   - ✅ Full pixel rendering (priority, palette, transparency compositing)
   - ✅ Sprite 0 hit detection (dot 255 off-by-one bug fixed 2026-05-17)
   - ✅ OAM DMA CPU halt (cycle-accurate 513/514-cycle stall based on CPU cycle parity — fixed 2026-05-21)
-  - ⚠️ Sprite overflow flag — correct for common case; hardware diagonal-scan bug not replicated
+  - ✅ Sprite overflow flag — hardware-accurate diagonal scan bug implemented (issue #135)
 
 - **GUI/Display Integration** (~98% complete)
   - ✅ SDL2 window creation and rendering (lib/display/)
@@ -802,6 +802,8 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
 **File format (`.tasr`):**
 - Binary: 16-byte header (`"TASR"` magic + uint32 version=1 + 8 reserved bytes) followed by 6-byte per-frame records (`uint32_t frame` + `uint8_t p1` + `uint8_t p2`). All frames written (no delta encoding).
 
+**Architecture:**
+- `arch/6502/tas.c/.h` — `struct tas_context` with `tas_mode_t` (IDLE/RECORDING/PLAYING); `tas_init()`, `tas_free()`, `tas_start_record()`, `tas_stop()`, `tas_start_play()`, `tas_tick()` (writes/reads one frame record per call), `tas_get_buttons()` (returns current playback inputs), `tas_get_mode()`, `tas_get_frame()`
 **Architecture (`arch/6502/tas.c/.h`):**
 - `struct tas_context` with `tas_mode_t` (IDLE/RECORDING/PLAYING); `tas_init()`, `tas_free()`, `tas_start_record()`, `tas_stop()`, `tas_start_play()`, `tas_tick()` (writes/reads one frame record per call), `tas_get_buttons()` (returns current playback inputs), `tas_get_mode()`, `tas_get_frame()`
 - `tas_start_play()` pre-reads the first frame record so button state is valid on frame 0
@@ -816,6 +818,16 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
 
 **UI (`lib/ui/ui.cpp`, `lib/ui/ui.h`):**
 - `ui_callbacks` gains `on_tas_record`, `on_tas_stop`, `on_tas_play` function pointers
+- `ui_context` gains `tas_mode`, `tas_frame`, `tas_record_dialog_requested`, `tas_play_dialog_requested`
+- Emulation menu additions (after Speed submenu, with separator): "Record Input…" (NFD save dialog, `*.tasr`), "Stop Recording" (enabled only while recording), "Play Input…" (NFD open dialog, `*.tasr`)
+- FPS overlay: `[REC]` when recording, `[PLAY N]` (with frame number) when playing — checked before rewind/speed tags
+- Controls Reference popup updated: "TAS Record  Emulation → Record Input"
+- `ui_set_tas_state(ui, mode, frame)` public function
+
+**Files modified:** `emu.c`, `lib/ui/ui.h`, `lib/ui/ui.cpp`, `arch/6502/CMakeLists.txt`
+
+**New files:** `arch/6502/tas.c`, `arch/6502/tas.h`
+
 - `ui_context` gains `tas_mode`, `tas_frame`, dialog-request fields
 - Emulation menu additions (after Speed submenu, with separator): "Record Input…" (NFD save dialog, `*.tasr`), "Stop Recording" (enabled only while recording), "Play Input…" (NFD open dialog, `*.tasr`)
 - FPS overlay shows `[REC]` when recording, `[PLAY N]` (with frame number) when playing
@@ -1438,7 +1450,7 @@ All illegal NOP opcodes that consume operand bytes ($04, $0C, $14, $1C, $34, $3C
 - [X] ~~APU power-on `$4017=$00` write simulation (issue #120 remainder)~~ ✅ PR #124 — `apu_reset()` called alongside initial `cpu->reset()` in test runner and emu.c boot path
 - [X] ~~DMC buffer pre-fill and rate accuracy~~ ✅ PR #125 (issue #119) — immediate pre-fill on enable + decrement-then-check timer for exact period
 - [X] ~~PPU open bus behavior~~ ✅ Complete (issue #134) — `ppu_open_bus` field; write-only register reads return it; $2002 lower 5 bits; $2004/$2007 reads update it; 2 new unit tests
-- [ ] Sprite overflow flag accuracy
+- [X] ~~Sprite overflow flag accuracy~~ ✅ Complete (issue #135) — hardware-accurate diagonal scan bug
 - [X] ~~Add Mappers 019, 069, 071~~ ✅ Complete (2026-05-22) — Namco 163, Sunsoft FME-7, Camerica implemented and unit-tested
 - [ ] More mappers (5 MMC5, etc.)
 - [ ] Improve Blargg test pass rate (was 6/24 before PRs #121–#125; expected higher after all fixes merge)
