@@ -143,6 +143,19 @@ int ui_debugger_consume_rw_bp_hit(struct ui_context *ui);
 int ui_get_rewind_held(const struct ui_context *ui);
 
 /**
+ * Notify the UI that rewind is active this frame (keyboard or gamepad).
+ * The FPS overlay shows [<<<] while active. Call once per frame.
+ */
+void ui_set_rewind_active(struct ui_context *ui, int active);
+
+/**
+ * Notify the UI that fast-forward is active this frame (Tab key, gamepad, or
+ * Uncapped menu setting). The FPS overlay shows [>>>] while active.
+ * Call once per frame.
+ */
+void ui_set_fast_forward_active(struct ui_context *ui, int active);
+
+/**
  * Update the TAS mode and frame counter displayed in the FPS overlay.
  * Call once per frame from the main loop.
  */

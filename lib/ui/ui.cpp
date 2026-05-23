@@ -105,8 +105,11 @@ struct ui_context {
     int                  dbg_bp_count;
     int                  dbg_rw_bp_hit;  /* set by nesbus hook, consumed by main loop */
 
-    /* Rewind: true while Backspace is held */
+    /* Rewind: true while Backspace is held (keyboard); also set from emu.c
+     * when gamepad rewind is active so the overlay reflects both sources. */
     bool rewind_held;
+    bool rewind_active;
+    bool fast_forward_active;
 
     /* TAS state (set by emu.c each frame) */
     int      tas_mode;   /* tas_mode_t cast to int */
@@ -373,17 +376,21 @@ static void render_controls_popup() {
     if (ImGui::BeginPopupModal("Controls Reference##modal", nullptr,
                                ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::SeparatorText("Player 1 Controller");
-        ImGui::Text("D-Pad       Arrow Keys");
-        ImGui::Text("A           Z");
-        ImGui::Text("B           X");
-        ImGui::Text("Start       Enter");
-        ImGui::Text("Select      Right Shift");
+        ImGui::Text("D-Pad       Arrow Keys  /  Left Stick or D-Pad (gamepad)");
+        ImGui::Text("A           Z           /  A or Y button (gamepad)");
+        ImGui::Text("B           X           /  B or X button (gamepad)");
+        ImGui::Text("Start       Enter       /  Start button (gamepad)");
+        ImGui::Text("Select      Right Shift /  Back/Select button (gamepad)");
         ImGui::SeparatorText("Player 2 Controller");
-        ImGui::Text("D-Pad       W / A / S / D");
-        ImGui::Text("A           N");
-        ImGui::Text("B           M");
-        ImGui::Text("Start       Y");
-        ImGui::Text("Select      H");
+        ImGui::Text("D-Pad       W / A / S / D  /  Left Stick or D-Pad (2nd gamepad)");
+        ImGui::Text("A           N              /  A or Y button (2nd gamepad)");
+        ImGui::Text("B           M              /  B or X button (2nd gamepad)");
+        ImGui::Text("Start       Y              /  Start button (2nd gamepad)");
+        ImGui::Text("Select      H              /  Back/Select button (2nd gamepad)");
+        ImGui::SeparatorText("Gamepad");
+        ImGui::Text("Hot-plug    Connect/disconnect at any time");
+        ImGui::Text("P1          First connected USB/Bluetooth controller");
+        ImGui::Text("P2          Second connected controller (if present)");
         ImGui::SeparatorText("Emulator");
         ImGui::Text("Pause       Space");
         ImGui::Text("Reset       R");
@@ -1497,11 +1504,11 @@ void ui_render_frame(struct ui_context *ui, struct display_context *display) {
                 else if (ui->tas_mode == (int)TAS_PLAYING)
                     snprintf(buf, sizeof(buf), "%.1f FPS [PLAY %u]",
                              ui->fps, ui->tas_frame);
-                else if (ui->rewind_held)
-                    snprintf(buf, sizeof(buf), "%.1f FPS [RWD]", ui->fps);
-                else if (ui->speed_multiplier < 0.0f)
-                    snprintf(buf, sizeof(buf), "%.1f FPS [>>]", ui->fps);
-                else if (ui->speed_multiplier != 1.0f)
+                else if (ui->rewind_active)
+                    snprintf(buf, sizeof(buf), "%.1f FPS [<<<]", ui->fps);
+                else if (ui->fast_forward_active)
+                    snprintf(buf, sizeof(buf), "%.1f FPS [>>>]", ui->fps);
+                else if (ui->speed_multiplier != 1.0f && ui->speed_multiplier > 0.0f)
                     snprintf(buf, sizeof(buf), "%.1f FPS [%.0f%%]",
                              ui->fps, ui->speed_multiplier * 100.0f);
                 else
@@ -1719,6 +1726,14 @@ int ui_debugger_consume_rw_bp_hit(struct ui_context *ui) {
 
 int ui_get_rewind_held(const struct ui_context *ui) {
     return ui ? (ui->rewind_held ? 1 : 0) : 0;
+}
+
+void ui_set_rewind_active(struct ui_context *ui, int active) {
+    if (ui) ui->rewind_active = active != 0;
+}
+
+void ui_set_fast_forward_active(struct ui_context *ui, int active) {
+    if (ui) ui->fast_forward_active = active != 0;
 }
 
 void ui_set_tas_state(struct ui_context *ui, int mode, uint32_t frame) {
