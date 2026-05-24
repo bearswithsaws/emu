@@ -2,7 +2,7 @@
 
 # emu
 
-![emu logo](assets/icon.png)
+<p align="center"><img src="assets/logo.png" alt="emu logo" /></p>
 
 A cycle-accurate NES emulator written in C with an SDL2/Dear ImGui frontend.
 

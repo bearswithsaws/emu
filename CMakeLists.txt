@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.10)
 
 # set the project name
-project(emu VERSION 1.0.0 LANGUAGES C CXX)
+project(emu VERSION 1.0.1 LANGUAGES C CXX)
 
 # Require C11 globally — needed for stdatomic.h (_Atomic) on all platforms
 set(CMAKE_C_STANDARD 11)
