@@ -28,8 +28,8 @@ extern "C" {
 /* C emulator headers — included outside extern "C" because they are guarded
  * with their own __cplusplus checks inside (e.g. _Atomic compat). */
 #include "6502.h"
-#include "2c02.h"
-#include "nesbus.h"
+#include "ppu.h"
+#include "bus.h"
 #include "disasm.h"
 
 #define MAX_RECENT_ROMS 5

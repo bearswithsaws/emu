@@ -29,11 +29,14 @@ target_include_directories(libui PUBLIC
 
 target_include_directories(libui PRIVATE
     ${PROJECT_SOURCE_DIR}/lib/display
-    ${PROJECT_SOURCE_DIR}/arch/6502
+    ${PROJECT_SOURCE_DIR}/consoles/nes
+    ${PROJECT_SOURCE_DIR}/consoles/nes/mappers
+    ${PROJECT_SOURCE_DIR}/cpu/6502
+    ${PROJECT_SOURCE_DIR}/lib/input
     ${PROJECT_BINARY_DIR}
 )
 
-target_link_libraries(libui PRIVATE lib6502)
+target_link_libraries(libui PRIVATE lib_nes libinput)
 
 target_link_libraries(libui PUBLIC libdisplay ${SDL2_LIBRARIES} nfd)
 

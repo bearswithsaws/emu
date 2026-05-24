@@ -32,7 +32,7 @@
 #include <string.h>
 
 #include "6502.h"
-#include "nesbus.h"
+#include "bus.h"
 
 /* -------------------------------------------------------------------------
  * Flat 64 KB test address space

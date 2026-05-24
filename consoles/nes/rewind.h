@@ -17,7 +17,7 @@
 #define REWIND_H
 
 #include <stddef.h>
-#include "nesbus.h"
+#include "bus.h"
 
 #ifdef __cplusplus
 extern "C" {

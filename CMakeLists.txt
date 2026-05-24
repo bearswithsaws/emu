@@ -33,13 +33,16 @@ if(NES_DEBUG)
     add_compile_definitions(NES_DEBUG)
 endif()
 
-add_definitions( -DINVALID_AS_NOP )
+add_definitions(-DINVALID_AS_NOP)
 
-# Add shared libraries
+# Shared platform libraries
 add_subdirectory(lib)
 
-# Add the architecures
-add_subdirectory(arch)
+# CPU cores
+add_subdirectory(cpu)
+
+# Console machines
+add_subdirectory(consoles)
 
 # Tests
 enable_testing()
@@ -54,7 +57,6 @@ if(NOT MSVC)
     set(CMAKE_CXX_FLAGS_DEBUG "-g3 -O0 -Wall -Wextra -fno-omit-frame-pointer")
 endif()
 
-
 # add the executable
 # On Windows, include the .rc file so CMake compiles it with rc.exe (MSVC)
 # or windres (MinGW) and links the icon resource into the binary.
@@ -64,14 +66,17 @@ else()
     add_executable(emu emu.c)
 endif()
 
-target_link_libraries(emu PUBLIC lib6502 libdisplay libui ${SDL2_LIBRARIES})
+target_link_libraries(emu PUBLIC lib_nes libdisplay libinput libui ${SDL2_LIBRARIES})
 
 target_include_directories(emu PUBLIC
-                           "${PROJECT_BINARY_DIR}"
-                           "${PROJECT_SOURCE_DIR}/arch/6502"
-                           "${PROJECT_SOURCE_DIR}/lib/display"
-                           "${PROJECT_SOURCE_DIR}/lib/ui"
-                           )
+    "${PROJECT_BINARY_DIR}"
+    "${PROJECT_SOURCE_DIR}/consoles/nes"
+    "${PROJECT_SOURCE_DIR}/consoles/nes/mappers"
+    "${PROJECT_SOURCE_DIR}/cpu/6502"
+    "${PROJECT_SOURCE_DIR}/lib/input"
+    "${PROJECT_SOURCE_DIR}/lib/display"
+    "${PROJECT_SOURCE_DIR}/lib/ui"
+)
 
 # Install targets (used by AppImage and Linux packaging)
 install(TARGETS emu DESTINATION bin)

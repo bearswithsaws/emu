@@ -15,7 +15,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "2c02.h"
+#include "ppu.h"
 #include "cartridge.h"
 #include "palette.h"
 
