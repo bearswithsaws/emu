@@ -620,6 +620,15 @@ static void render_cpu_debugger(ui_context *ui, display_context *display) {
     /* ---- Registers ---- */
     ImGui::SeparatorText("Registers");
 
+    /* Editing registers while the emulator is running would be stomped on the
+     * very next CPU tick.  Disable the inputs and show a tooltip instead. */
+    bool paused_for_regs = display_is_paused(display) != 0;
+    if (!paused_for_regs) {
+        ImGui::BeginDisabled();
+        ImGui::TextDisabled("(pause to edit)");
+        ImGui::SameLine(0, 8);
+    }
+
     ImGui::PushItemWidth(60.0f);
 
     char buf[8];
@@ -632,6 +641,8 @@ static void render_cpu_debugger(ui_context *ui, display_context *display) {
         cpu->PC = (uint16_t)strtoul(buf, nullptr, 16);
         ui->dbg_scroll_needs_sync = true;
     }
+    if (!paused_for_regs && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip("Pause emulation to edit registers");
     ImGui::SameLine(0, 8);
 
     /* A */
@@ -671,27 +682,54 @@ static void render_cpu_debugger(ui_context *ui, display_context *display) {
 
     ImGui::PopItemWidth();
 
-    /* Status flags — coloured indicators: green=set, dark=clear */
+    /* Status flags — small toggle buttons; click to flip individual bits.
+     * Bit order in flags.reg (LSB→MSB): C Z I D B U V N
+     * "-" (U, bit 5) is display-only per 6502 convention.                 */
     ImGui::Spacing();
-    const char *flag_names[] = {"N","V","-","B","D","I","Z","C"};
-    const uint8_t flag_bits[] = {
-        cpu->flags.N, cpu->flags.V, cpu->flags.U,
-        cpu->flags.B, cpu->flags.D, cpu->flags.I,
-        cpu->flags.Z, cpu->flags.C
+    /* name, bit-mask within flags.reg, readonly */
+    struct { const char *name; uint8_t mask; bool readonly; } flags[] = {
+        { "N", 0x80, false },
+        { "V", 0x40, false },
+        { "-", 0x20, true  },
+        { "B", 0x10, false },
+        { "D", 0x08, false },
+        { "I", 0x04, false },
+        { "Z", 0x02, false },
+        { "C", 0x01, false },
     };
     ImVec4 col_set   = ImVec4(0.2f, 0.8f, 0.2f, 1.0f);
     ImVec4 col_clear = ImVec4(0.35f, 0.35f, 0.35f, 1.0f);
+    ImVec4 col_ro    = ImVec4(0.50f, 0.50f, 0.50f, 1.0f);
     for (int i = 0; i < 8; i++) {
         if (i > 0) ImGui::SameLine(0, 4);
-        ImGui::TextColored(flag_bits[i] ? col_set : col_clear, "%s", flag_names[i]);
+        bool set = (cpu->flags.reg & flags[i].mask) != 0;
+        if (flags[i].readonly) {
+            ImGui::TextColored(col_ro, "%s", flags[i].name);
+        } else {
+            /* Flat-look button: transparent background, coloured text */
+            ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0,0,0,0));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1,1,1,0.08f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(1,1,1,0.15f));
+            ImGui::PushStyleColor(ImGuiCol_Text, set ? col_set : col_clear);
+            char btn_id[8];
+            snprintf(btn_id, sizeof(btn_id), "%s##f%d", flags[i].name, i);
+            if (ImGui::SmallButton(btn_id))
+                cpu->flags.reg ^= flags[i].mask;   /* toggle on click */
+            ImGui::PopStyleColor(4);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Flag %s = %d  (click to toggle)", flags[i].name, set ? 1 : 0);
+        }
     }
+
+    if (!paused_for_regs)
+        ImGui::EndDisabled();
 
     /* ---- Disassembly ---- */
     ImGui::Spacing();
     ImGui::SeparatorText("Disassembly");
 
     /* Sync scroll to PC when paused or on step. */
-    bool paused = display_is_paused(display) != 0;
+    bool paused = paused_for_regs;
     if (ui->dbg_scroll_needs_sync || paused) {
         /* Aim to show PC with ~5 lines of context above it. */
         ui->dbg_scroll_addr = disasm_addr_before(bus, cpu->PC, 5);
@@ -752,12 +790,14 @@ static void render_cpu_debugger(ui_context *ui, display_context *display) {
                      a, raw[0], raw[1], raw[2], dasm_texts[i]);
 
         /* Prefix for current PC. */
-        char label[96];
-        snprintf(label, sizeof(label), "%c %s##dasm%d",
-                 is_pc ? '>' : ' ', line, i);
+        char display[96];
+        snprintf(display, sizeof(display), "%c %s",
+                 is_pc ? '>' : ' ', line);
 
         ImVec4 color = is_pc ? col_pc : (is_bp ? col_bp : col_norm);
-        ImGui::TextColored(color, "%s", label);
+        ImGui::PushID(i);
+        ImGui::TextColored(color, "%s", display);
+        ImGui::PopID();
 
         /* Click to toggle EXEC breakpoint. */
         if (ImGui::IsItemClicked()) {
@@ -1061,6 +1101,8 @@ static void render_memory_viewer(ui_context *ui, display_context *display) {
     struct ppu2c02 *ppu = ui->dbg_ppu;
     struct nesbus  *bus = ui->dbg_bus;
 
+    bool mem_paused = display_is_paused(display) != 0;
+
     /* One persistent MemoryEditor per segment so scroll/cursor survive tab switches. */
     static MemoryEditor mem_cpu, mem_oam, mem_vram, mem_palette;
     static bool mem_init = false;
@@ -1070,7 +1112,17 @@ static void render_memory_viewer(ui_context *ui, display_context *display) {
         mem_cpu.BgColorFn = memview_cpu_bg;
         mem_init = true;
     }
-    mem_cpu.UserData = bus;   /* refresh each frame in case bus pointer changes */
+    mem_cpu.UserData  = bus;   /* refresh each frame in case bus pointer changes */
+    /* Allow writes only while paused — writing to live RAM mid-frame is unsafe */
+    mem_cpu.ReadOnly  = !mem_paused;
+    mem_oam.ReadOnly  = !mem_paused;
+    mem_vram.ReadOnly = !mem_paused;
+    mem_palette.ReadOnly = !mem_paused;
+
+    if (!mem_paused) {
+        ImGui::SameLine(0, 0);  /* no-op spacer; banner goes above tab bar */
+        ImGui::TextDisabled("  (pause to edit)");
+    }
 
     /* Segment tab bar */
     static int seg = 0;
