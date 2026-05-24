@@ -486,15 +486,7 @@ static uint8_t get_sprite_pixel(uint8_t x, uint8_t scanline,
 
 static uint32_t composite_pixel(uint8_t bg_pixel, uint8_t bg_palette,
                                 uint8_t sp_pixel, uint8_t sp_palette,
-                                uint8_t sp_priority, uint8_t sp_is_zero) {
-    // Sprite 0 hit: both pixels opaque, dot not 255, not in clipped left column.
-    if (sp_is_zero && bg_pixel != 0 && sp_pixel != 0 &&
-        ppu.ppumask.bg_render_enable && ppu.ppumask.sprite_render_enable &&
-        ppu.dot != 256 &&  /* x=255 (dot 256) cannot trigger sprite 0 hit */
-        !(ppu.dot <= 8 && (!ppu.ppumask.bg_enable || !ppu.ppumask.sprite_enable))) {
-        ppu.ppustatus.sprite_0_hit = 1;
-    }
-
+                                uint8_t sp_priority) {
     uint8_t color_idx;
 
     if (bg_pixel == 0 && sp_pixel == 0) {
@@ -632,11 +624,23 @@ static void clock(void) {
             sp_pixel = get_sprite_pixel(ppu.dot - 1, ppu.scanline,
                                         &sp_palette, &sp_priority, &sp_is_zero);
 
+            // Sprite 0 hit: checked unconditionally (not gated by frame_buffer)
+            // so it works in headless mode (e.g. Blargg test runner).
+            // Conditions: both pixels opaque, both render enables set,
+            // not at x=255 (dot 256), not in left-column clip when clipping is on.
+            if (sp_is_zero && bg_pixel != 0 && sp_pixel != 0 &&
+                ppu.ppumask.bg_render_enable && ppu.ppumask.sprite_render_enable &&
+                ppu.dot != 256 &&
+                !(ppu.dot <= 8 &&
+                  (!ppu.ppumask.bg_enable || !ppu.ppumask.sprite_enable))) {
+                ppu.ppustatus.sprite_0_hit = 1;
+            }
+
             if (ppu.frame_buffer) {
                 int idx = ppu.scanline * 256 + (ppu.dot - 1);
                 ppu.frame_buffer[idx] = composite_pixel(bg_pixel, bg_palette,
                                                         sp_pixel, sp_palette,
-                                                        sp_priority, sp_is_zero);
+                                                        sp_priority);
             }
         }
     }
