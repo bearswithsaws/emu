@@ -1081,6 +1081,357 @@ static void test_sprite_overflow_diagonal_false_positive(void) {
 }
 
 // ---------------------------------------------------------------------------
+// Sprite 0 hit edge-case tests (covers blargg sprite_hit_tests_2005.10.05)
+// ---------------------------------------------------------------------------
+
+/*
+ * Helper: initialise a fresh PPU (NO frame buffer — verifies the hit flag
+ * works in headless mode after the composite_pixel() refactor), write one BG
+ * tile to the nametable, place sprite 0, run one full frame, and return the
+ * sprite_0_hit flag sampled at VBlank start.
+ *
+ * Tile IDs expected in fake_chr before calling:
+ *   tile 1  = solid (all pixels opaque, color index 1)
+ *   tile 2  = upper-left single pixel  (row 0, bit 7 only)
+ *   tile 3  = upper-right single pixel (row 0, bit 0 only)
+ *   tile 4  = lower-right single pixel (row 7, bit 0 only)
+ */
+static uint8_t sprite0_scenario(
+        uint8_t ppuctrl,   /* $2000 */
+        uint8_t ppumask,   /* $2001 */
+        uint16_t bg_nt_addr, uint8_t bg_tile,
+        uint8_t sx, uint8_t sy,       /* sprite OAM x, OAM y */
+        uint8_t sp_tile, uint8_t sp_attr)
+{
+    struct ppu2c02 *ppu = ppu2c02_init();
+    /* Intentionally no frame buffer — tests that sprite_0_hit fires even
+     * without one (regression for the frame_buffer-guard bug). */
+    ppu->connect_cartridge(&fake_cart);
+    ppu->reset();
+
+    /* Write BG tile into nametable */
+    ppu->cpu_write(0x2006, (uint8_t)(bg_nt_addr >> 8));
+    ppu->cpu_write(0x2006, (uint8_t)(bg_nt_addr & 0xFF));
+    ppu->cpu_write(0x2007, bg_tile);
+
+    /* BG palette 0 color 1 → non-zero NES index so bg_pixel reads as opaque */
+    ppu->cpu_write(0x2006, 0x3F); ppu->cpu_write(0x2006, 0x01);
+    ppu->cpu_write(0x2007, 0x16);
+    /* Sprite palette 0 color 1 */
+    ppu->cpu_write(0x2006, 0x3F); ppu->cpu_write(0x2006, 0x11);
+    ppu->cpu_write(0x2007, 0x25);
+
+    /* Sprite 0: OAM bytes 0-3 */
+    ppu->oam[0] = sy;
+    ppu->oam[1] = sp_tile;
+    ppu->oam[2] = sp_attr;
+    ppu->oam[3] = sx;
+
+    ppu->cpu_write(0x2000, ppuctrl);
+    ppu->cpu_write(0x2001, ppumask);
+    ppu->cpu_write(0x2005, 0x00);   /* scroll X=0 */
+    ppu->cpu_write(0x2005, 0x00);   /* scroll Y=0 */
+
+    uint8_t hit = 0;
+    for (int i = 0; i < 89342 * 2; i++) {
+        ppu->clock();
+        if (ppu->frame_complete) { hit = ppu->ppustatus.sprite_0_hit; break; }
+    }
+    return hit;
+}
+
+/*
+ * test_sprite_zero_hit_rendering_disabled
+ *
+ * Mirrors blargg 01.basics tests 4-6 and 7.
+ *   4) Miss when background rendering is off
+ *   5) Miss when sprite rendering is off
+ *   6) Miss when all rendering is off
+ *   7) All-transparent sprite must miss
+ *  10) Miss when BG is all transparent
+ */
+static void test_sprite_zero_hit_rendering_disabled(void) {
+    printf("\n[test_sprite_zero_hit_rendering_disabled]\n");
+
+    memset(fake_chr, 0, sizeof(fake_chr));
+    /* tile 1: solid (lo-plane all ones, hi-plane 0 → color idx 1 everywhere) */
+    uint8_t solid[8] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
+    write_tile(1, solid);
+
+    /* BG tile at nametable col 16, row 15 → screen x=128, y=120; sprite at same */
+    uint16_t nt = 0x2000 + 15 * 32 + 16; /* col 16, row 15 */
+    uint8_t sx = 128, sy = 119; /* OAM y=119 → sprite top at scanline 120 */
+
+    /* Baseline: both enables on → must hit */
+    uint8_t h = sprite0_scenario(0x00, 0x1E, nt, 1, sx, sy, 1, 0);
+    ASSERT(h == 1, "baseline both-enables-on: sprite_0_hit set");
+
+    /* BG rendering off ($2001 bit 3 = 0) → miss */
+    h = sprite0_scenario(0x00, 0x16, nt, 1, sx, sy, 1, 0);
+    ASSERT(h == 0, "BG rendering disabled: sprite_0_hit clear");
+
+    /* Sprite rendering off ($2001 bit 4 = 0) → miss */
+    h = sprite0_scenario(0x00, 0x0E, nt, 1, sx, sy, 1, 0);
+    ASSERT(h == 0, "sprite rendering disabled: sprite_0_hit clear");
+
+    /* All rendering off → miss */
+    h = sprite0_scenario(0x00, 0x00, nt, 1, sx, sy, 1, 0);
+    ASSERT(h == 0, "all rendering disabled: sprite_0_hit clear");
+
+    /* Transparent sprite (tile 0 = all zeros) → miss */
+    h = sprite0_scenario(0x00, 0x1E, nt, 1, sx, sy, 0, 0);
+    ASSERT(h == 0, "transparent sprite: sprite_0_hit clear");
+
+    /* Transparent BG (tile 0 in nametable) → miss */
+    h = sprite0_scenario(0x00, 0x1E, nt, 0, sx, sy, 1, 0);
+    ASSERT(h == 0, "transparent BG: sprite_0_hit clear");
+}
+
+/*
+ * test_sprite_zero_hit_headless
+ *
+ * Regression: sprite_0_hit was only set inside the frame_buffer guard.
+ * Verify the fix: hit is detected even with no frame buffer attached.
+ * (The sprite0_scenario() helper never attaches a frame buffer.)
+ */
+static void test_sprite_zero_hit_headless(void) {
+    printf("\n[test_sprite_zero_hit_headless]\n");
+
+    memset(fake_chr, 0, sizeof(fake_chr));
+    uint8_t solid[8] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
+    write_tile(1, solid);
+
+    uint16_t nt = 0x2000 + 15 * 32 + 16;
+    uint8_t h = sprite0_scenario(0x00, 0x1E, nt, 1, 128, 119, 1, 0);
+    ASSERT(h == 1,
+           "sprite_0_hit set in headless mode (no frame buffer attached)");
+}
+
+/*
+ * test_sprite_zero_hit_left_clip
+ *
+ * Mirrors blargg 05.left_clip:
+ *   2) Miss when sprite entirely in left-edge clip (X=0, clip on)
+ *   3) Clip fires when only bg or only sprite left-col bit is 0
+ *   4) No clip when $2001 = $1E (both left-col bits set)
+ *   5) Clip blocks hits only when X=0 (X=1 exposes x=8, which can hit)
+ *   6) Miss: opaque pixel under clip (upper-left tile at X=7, dot=8)
+ *   7) Hit:  opaque pixel outside clip (upper-left tile at X=8, dot=9)
+ *   8) Hit:  upper-right tile at X=1 places opaque pixel at x=8
+ */
+static void test_sprite_zero_hit_left_clip(void) {
+    printf("\n[test_sprite_zero_hit_left_clip]\n");
+
+    memset(fake_chr, 0, sizeof(fake_chr));
+    uint8_t solid[8]   = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
+    uint8_t ul_pix[8]  = {0x80,0,0,0,0,0,0,0}; /* upper-left pixel only */
+    uint8_t ur_pix[8]  = {0x01,0,0,0,0,0,0,0}; /* upper-right pixel only */
+    write_tile(1, solid);
+    write_tile(2, ul_pix);
+    write_tile(3, ur_pix);
+
+    /* Fill the entire first row of nametable with solid tiles so all X positions
+     * have an opaque background regardless of sprite X. */
+    for (int col = 0; col < 32; col++) {
+        uint16_t addr = 0x2000 + col;
+        /* We write via PPUADDR/PPUDATA each time — use a fresh mini PPU inline. */
+        (void)addr; /* written in the scenario via bg_nt_addr */
+    }
+    /* Use row 15 for BG (screen y=120); solid tile fills one nametable cell.
+     * For left-clip tests the sprite is at y=119 (screen y=120). */
+    uint8_t sy = 119;
+
+    /* --- test 2: solid sprite at X=0, clip on ($2001=$18) → miss --- */
+    /* We need BG at columns 0-3 (x=0-7). Write BG tile at col 0 row 15. */
+    uint8_t h = sprite0_scenario(0x00, 0x18, 0x2000+15*32+0, 1, 0, sy, 1, 0);
+    ASSERT(h == 0, "left_clip test2: solid sprite at X=0, clip on -> miss");
+
+    /* --- test 3a: clip fires when sprite left-col bit is 0 ($2001=$1A) → miss */
+    /* $1A = 0001 1010: bg_left_col=1, spr_left_col=0 */
+    h = sprite0_scenario(0x00, 0x1A, 0x2000+15*32+0, 1, 0, sy, 1, 0);
+    ASSERT(h == 0, "left_clip test3a: $2001=$1A (spr_left_col=0) -> miss");
+
+    /* --- test 3b: clip fires when bg left-col bit is 0 ($2001=$1C) → miss */
+    /* $1C = 0001 1100: bg_left_col=0, spr_left_col=1 */
+    h = sprite0_scenario(0x00, 0x1C, 0x2000+15*32+0, 1, 0, sy, 1, 0);
+    ASSERT(h == 0, "left_clip test3b: $2001=$1C (bg_left_col=0) -> miss");
+
+    /* --- test 4: no clip when $2001=$1E → hit at X=0 --- */
+    h = sprite0_scenario(0x00, 0x1E, 0x2000+15*32+0, 1, 0, sy, 1, 0);
+    ASSERT(h == 1, "left_clip test4: $2001=$1E (no clip) at X=0 -> hit");
+
+    /* --- test 5: X=1 with clip on ($2001=$18): pixel at x=8 outside clip → hit */
+    /* Need BG at col 0 (x=0-7) AND col 1 (x=8-15) */
+    h = sprite0_scenario(0x00, 0x18, 0x2000+15*32+1, 1, 1, sy, 1, 0);
+    ASSERT(h == 1, "left_clip test5: X=1, clip on -> hit at x=8");
+
+    /* --- test 6: upper-left pixel tile at X=7 → pixel at x=7 (dot=8) → miss */
+    /* BG at col 0 (x=0-7) */
+    h = sprite0_scenario(0x00, 0x18, 0x2000+15*32+0, 1, 7, sy, 2, 0);
+    ASSERT(h == 0, "left_clip test6: upper-left tile at X=7, pixel at dot=8 -> miss");
+
+    /* --- test 7: upper-left pixel tile at X=8 → pixel at x=8 (dot=9) → hit */
+    /* BG at col 1 (x=8-15) */
+    h = sprite0_scenario(0x00, 0x18, 0x2000+15*32+1, 1, 8, sy, 2, 0);
+    ASSERT(h == 1, "left_clip test7: upper-left tile at X=8, pixel at dot=9 -> hit");
+
+    /* --- test 8: upper-right pixel tile at X=1 → pixel at x=8 (dot=9) → hit */
+    h = sprite0_scenario(0x00, 0x18, 0x2000+15*32+1, 1, 1, sy, 3, 0);
+    ASSERT(h == 1, "left_clip test8: upper-right tile at X=1, pixel at dot=9 -> hit");
+}
+
+/*
+ * test_sprite_zero_hit_right_edge
+ *
+ * Mirrors blargg 06.right_edge:
+ *   2) Miss when X=255 (all sprite pixels are at or beyond x=255)
+ *   3) Hit when X=254 (sprite has pixels at x=254, which is < 255)
+ *   4) Miss: upper-right tile at X=248 → opaque pixel at x=255 → excluded
+ *   5) Hit:  upper-right tile at X=247 → opaque pixel at x=254 → allowed
+ *   6) Hit:  upper-left tile at X=254 → opaque pixel at x=254
+ */
+static void test_sprite_zero_hit_right_edge(void) {
+    printf("\n[test_sprite_zero_hit_right_edge]\n");
+
+    memset(fake_chr, 0, sizeof(fake_chr));
+    uint8_t solid[8]  = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
+    uint8_t ul_pix[8] = {0x80,0,0,0,0,0,0,0};
+    uint8_t ur_pix[8] = {0x01,0,0,0,0,0,0,0};
+    write_tile(1, solid);
+    write_tile(2, ul_pix);
+    write_tile(3, ur_pix);
+
+    uint8_t sy = 119; /* sprite top at scanline 120 */
+    /* BG fills columns 30-31 (x=240-255) and some nearby — use last 2 nametable cols */
+    /* column 30 → x=240-247, column 31 → x=248-255 */
+    uint16_t col30_nt = 0x2000 + 15*32 + 30;
+    uint16_t col31_nt = 0x2000 + 15*32 + 31;
+
+    /* test 2: solid sprite at X=255 → miss */
+    uint8_t h = sprite0_scenario(0x00, 0x1E, col31_nt, 1, 255, sy, 1, 0);
+    ASSERT(h == 0, "right_edge test2: solid sprite at X=255 -> miss");
+
+    /* test 3: solid sprite at X=254 → pixels at x=254,255; x=254 hits */
+    h = sprite0_scenario(0x00, 0x1E, col31_nt, 1, 254, sy, 1, 0);
+    ASSERT(h == 1, "right_edge test3: solid sprite at X=254 -> hit at x=254");
+
+    /* test 4: upper-right tile at X=248 → opaque pixel at x=255 → miss */
+    h = sprite0_scenario(0x00, 0x1E, col31_nt, 1, 248, sy, 3, 0);
+    ASSERT(h == 0, "right_edge test4: upper-right tile at X=248, pixel at x=255 -> miss");
+
+    /* test 5: upper-right tile at X=247 → opaque pixel at x=254 → hit */
+    h = sprite0_scenario(0x00, 0x1E, col30_nt, 1, 247, sy, 3, 0);
+    ASSERT(h == 1, "right_edge test5: upper-right tile at X=247, pixel at x=254 -> hit");
+
+    /* test 6: upper-left tile at X=254 → opaque pixel at x=254 → hit */
+    h = sprite0_scenario(0x00, 0x1E, col31_nt, 1, 254, sy, 2, 0);
+    ASSERT(h == 1, "right_edge test6: upper-left tile at X=254, pixel at x=254 -> hit");
+}
+
+/*
+ * test_sprite_zero_hit_screen_bottom
+ *
+ * Mirrors blargg 07.screen_bottom:
+ *   2) Miss when OAM Y=239 (sprite appears at scanline 240, post-render)
+ *   3) Hit  when OAM Y=238 (sprite appears at scanline 239, last visible)
+ *   4) Miss when OAM Y=255 (top+1=256, never in range 0-239)
+ *   5) Hit: lower-right tile at OAM Y=231 → opaque pixel at y=238 (scanline 239 with sy+1+7)
+ *   6) Miss: lower-right tile at OAM Y=232 → opaque pixel at y=239 (scanline 240, not visible)
+ */
+static void test_sprite_zero_hit_screen_bottom(void) {
+    printf("\n[test_sprite_zero_hit_screen_bottom]\n");
+
+    memset(fake_chr, 0, sizeof(fake_chr));
+    uint8_t solid[8] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
+    uint8_t lr_pix[8]= {0,0,0,0,0,0,0,0x01}; /* lower-right pixel only */
+    write_tile(1, solid);
+    write_tile(4, lr_pix);
+
+    /* BG: we need a solid tile at the rows where sprites will appear.
+     * Use column 16 (x=128) and place BG tiles at matching rows.
+     * For a sprite at OAM Y=N, the sprite appears at scanlines N+1..N+8.
+     * The nametable row for scanline S is S/8 (each tile is 8 rows tall).
+     * Scanline 239 → row 29 → nt offset = 29*32+16 = 0x2000+29*32+16 */
+    uint16_t nt_row29 = 0x2000 + 29*32 + 16; /* scanline 232-239 */
+    uint8_t sx = 128;
+
+    /* test 2: OAM Y=239 → sprite at scanlines 240-247 → not visible → miss */
+    uint8_t h = sprite0_scenario(0x00, 0x1E, nt_row29, 1, sx, 239, 1, 0);
+    ASSERT(h == 0, "screen_bottom test2: OAM Y=239 -> miss (scanline 240 invisible)");
+
+    /* test 3: OAM Y=238 → sprite at scanlines 239-246 → scanline 239 visible → hit */
+    h = sprite0_scenario(0x00, 0x1E, nt_row29, 1, sx, 238, 1, 0);
+    ASSERT(h == 1, "screen_bottom test3: OAM Y=238 -> hit (scanline 239 visible)");
+
+    /* test 4: OAM Y=255 → top=256, never in visible range → miss */
+    h = sprite0_scenario(0x00, 0x1E, nt_row29, 1, sx, 255, 1, 0);
+    ASSERT(h == 0, "screen_bottom test4: OAM Y=255 -> miss");
+
+    /* test 5: lower-right tile at OAM Y=231 → opaque pixel at scanline 231+1+7=239 → hit */
+    h = sprite0_scenario(0x00, 0x1E, nt_row29, 1, sx, 231, 4, 0);
+    ASSERT(h == 1, "screen_bottom test5: lower-right tile OAM Y=231 -> hit at scanline 239");
+
+    /* test 6: lower-right tile at OAM Y=232 → opaque pixel at scanline 232+1+7=240 → miss */
+    h = sprite0_scenario(0x00, 0x1E, nt_row29, 1, sx, 232, 4, 0);
+    ASSERT(h == 0, "screen_bottom test6: lower-right tile OAM Y=232 -> miss at scanline 240");
+}
+
+/*
+ * test_sprite_zero_hit_double_height
+ *
+ * Mirrors blargg 08.double_height.
+ * In 8×16 mode: tile bit 0 selects the pattern table; top half uses tile N&$FE,
+ * bottom half uses tile (N&$FE)+1.  Sprite OAM Y=N means top of sprite appears
+ * at scanline N+1; bottom 8 rows appear at scanlines N+9..N+16.
+ *
+ *   2) Miss: lower-half opaque pixel that would appear BELOW the BG tile → miss
+ *   3) Hit:  lower-half opaque pixel overlaps BG tile in its row
+ */
+static void test_sprite_zero_hit_double_height(void) {
+    printf("\n[test_sprite_zero_hit_double_height]\n");
+
+    memset(fake_chr, 0, sizeof(fake_chr));
+
+    /* 8×16 sprite: tile byte = 0 → pattern table 0, top-half tile = $00, bottom = $01.
+     * Make bottom half solid (tile 1 at offset $10 in CHR). */
+    uint8_t top_blank[8]  = {0,0,0,0,0,0,0,0};
+    uint8_t bot_solid[8]  = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
+    write_tile(0, top_blank); /* tile $00: top half, all transparent */
+    write_tile(1, bot_solid); /* tile $01: bottom half, all solid    */
+
+    /* BG solid tile at col 16 row 15 (screen x=128, y=120-127) */
+    uint16_t nt = 0x2000 + 15*32 + 16;
+    uint8_t sx = 128;
+
+    /* PPUCTRL bit 5 = 1 → 8×16 sprite mode. Pattern table for 8×16 is
+     * selected by sprite tile bit 0, not by PPUCTRL bit 3. */
+    uint8_t ppuctrl_8x16 = 0x20;
+
+    /* Sprite at OAM Y=112: top half at scanlines 113-120, bottom at 121-128.
+     * BG is at rows 120-127 (nametable row 15).
+     * Top half is transparent → no hit at 113-120.
+     * Bottom half is solid → overlap with BG at scanlines 121-127 → hit. */
+    uint8_t h = sprite0_scenario(ppuctrl_8x16, 0x1E, nt, 1, sx, 112, 0, 0);
+    ASSERT(h == 1, "double_height: bottom half solid tile overlaps BG -> hit");
+
+    /* Sprite at OAM Y=104: top at 105-112, bottom at 113-120.
+     * BG row 15 covers scanlines 120-127.
+     * Bottom half ends at scanline 120; BG starts at 120 → both opaque at 120 → hit. */
+    h = sprite0_scenario(ppuctrl_8x16, 0x1E, nt, 1, sx, 104, 0, 0);
+    ASSERT(h == 1, "double_height: bottom half last row (scanline 120) overlaps BG -> hit");
+
+    /* Sprite at OAM Y=113: top at 114-121, bottom at 122-129.
+     * Bottom half ends at scanline 129, starts at 122.
+     * BG at 120-127: overlap at 122-127 → hit. */
+    h = sprite0_scenario(ppuctrl_8x16, 0x1E, nt, 1, sx, 113, 0, 0);
+    ASSERT(h == 1, "double_height: bottom half overlaps BG rows -> hit");
+
+    /* Sprite at OAM Y=128: top at 129-136 → completely below BG (120-127) → miss. */
+    h = sprite0_scenario(ppuctrl_8x16, 0x1E, nt, 1, sx, 128, 0, 0);
+    ASSERT(h == 0, "double_height: sprite entirely below BG -> miss");
+}
+
+// ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
 
@@ -1105,6 +1456,12 @@ int main(void) {
     test_sprite_overflow_normal();
     test_sprite_overflow_diagonal_false_negative();
     test_sprite_overflow_diagonal_false_positive();
+    test_sprite_zero_hit_headless();
+    test_sprite_zero_hit_rendering_disabled();
+    test_sprite_zero_hit_left_clip();
+    test_sprite_zero_hit_right_edge();
+    test_sprite_zero_hit_screen_bottom();
+    test_sprite_zero_hit_double_height();
 
     printf("\n=== Results: %d passed, %d failed ===\n", test_pass, test_fail);
     return test_fail ? 1 : 0;
