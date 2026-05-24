@@ -40,6 +40,89 @@ static struct rewind_buffer *rewind_buf = NULL;
 static struct tas_context   *tas_global = NULL;
 static struct gamepad_context *gamepad_global = NULL;
 
+/* SDL2 audio callback — lives in the host (emu.c), not in lib_nes.
+ * Drains APU ring buffer samples into the SDL audio stream each callback. */
+static void sdl_audio_callback(void *userdata, uint8_t *stream, int len) {
+    struct apu2a03 *apu = (struct apu2a03 *)userdata;
+    float *out = (float *)(void *)stream;
+    int n = len / (int)sizeof(float);
+    int got = apu_drain_samples(apu, out, n);
+    /* Fill any underrun with silence. */
+    for (int i = got; i < n; i++) out[i] = 0.0f;
+}
+
+/* ---------------------------------------------------------------------------
+ * SDL2 keyboard → NES button bitmask helpers (host-layer, not lib_nes).
+ *
+ * The NES core only sees uint8_t bitmasks via nes_set_buttons().  All SDL2
+ * keyboard/gamepad knowledge lives here in the host.
+ * ---------------------------------------------------------------------------
+ */
+
+/* Key-event callback wired into display_poll_events().
+ * Handles KEYDOWN/KEYUP events for individual button transitions.
+ * userdata is the struct nesbus*. */
+static void sdl_key_handler(int sdl_keycode, int is_pressed, void *userdata) {
+    struct nesbus *nb = (struct nesbus *)userdata;
+    if (!nb) return;
+
+    struct controller *ctrl = NULL;
+    uint8_t bit = 0;
+
+    switch (sdl_keycode) {
+    /* Player 1: arrow keys + Z/X/Enter/RShift */
+    case SDLK_UP:     ctrl = nb->controller1; bit = NES_BTN_UP;     break;
+    case SDLK_DOWN:   ctrl = nb->controller1; bit = NES_BTN_DOWN;   break;
+    case SDLK_LEFT:   ctrl = nb->controller1; bit = NES_BTN_LEFT;   break;
+    case SDLK_RIGHT:  ctrl = nb->controller1; bit = NES_BTN_RIGHT;  break;
+    case SDLK_z:      ctrl = nb->controller1; bit = NES_BTN_A;      break;
+    case SDLK_x:      ctrl = nb->controller1; bit = NES_BTN_B;      break;
+    case SDLK_RETURN: ctrl = nb->controller1; bit = NES_BTN_START;  break;
+    case SDLK_RSHIFT: ctrl = nb->controller1; bit = NES_BTN_SELECT; break;
+    /* Player 2: WASD + N/M/Y/H */
+    case SDLK_w:  ctrl = nb->controller2; bit = NES_BTN_UP;     break;
+    case SDLK_s:  ctrl = nb->controller2; bit = NES_BTN_DOWN;   break;
+    case SDLK_a:  ctrl = nb->controller2; bit = NES_BTN_LEFT;   break;
+    case SDLK_d:  ctrl = nb->controller2; bit = NES_BTN_RIGHT;  break;
+    case SDLK_n:  ctrl = nb->controller2; bit = NES_BTN_A;      break;
+    case SDLK_m:  ctrl = nb->controller2; bit = NES_BTN_B;      break;
+    case SDLK_y:  ctrl = nb->controller2; bit = NES_BTN_START;  break;
+    case SDLK_h:  ctrl = nb->controller2; bit = NES_BTN_SELECT; break;
+    default: return;
+    }
+
+    if (ctrl) {
+        if (is_pressed) ctrl->buttons |=  bit;
+        else            ctrl->buttons &= ~bit;
+    }
+}
+
+/* Build a full P1 bitmask from the SDL keyboard snapshot (used at frame
+ * start to resync after savestates / rewind where events may be missed). */
+static uint8_t sdl_keyboard_p1(const uint8_t *k) {
+    return (uint8_t)(
+        ((k[SDL_SCANCODE_UP])     ? NES_BTN_UP     : 0) |
+        ((k[SDL_SCANCODE_DOWN])   ? NES_BTN_DOWN   : 0) |
+        ((k[SDL_SCANCODE_LEFT])   ? NES_BTN_LEFT   : 0) |
+        ((k[SDL_SCANCODE_RIGHT])  ? NES_BTN_RIGHT  : 0) |
+        ((k[SDL_SCANCODE_Z])      ? NES_BTN_A      : 0) |
+        ((k[SDL_SCANCODE_X])      ? NES_BTN_B      : 0) |
+        ((k[SDL_SCANCODE_RETURN]) ? NES_BTN_START  : 0) |
+        ((k[SDL_SCANCODE_RSHIFT]) ? NES_BTN_SELECT : 0));
+}
+
+static uint8_t sdl_keyboard_p2(const uint8_t *k) {
+    return (uint8_t)(
+        ((k[SDL_SCANCODE_W]) ? NES_BTN_UP     : 0) |
+        ((k[SDL_SCANCODE_S]) ? NES_BTN_DOWN   : 0) |
+        ((k[SDL_SCANCODE_A]) ? NES_BTN_LEFT   : 0) |
+        ((k[SDL_SCANCODE_D]) ? NES_BTN_RIGHT  : 0) |
+        ((k[SDL_SCANCODE_N]) ? NES_BTN_A      : 0) |
+        ((k[SDL_SCANCODE_M]) ? NES_BTN_B      : 0) |
+        ((k[SDL_SCANCODE_Y]) ? NES_BTN_START  : 0) |
+        ((k[SDL_SCANCODE_H]) ? NES_BTN_SELECT : 0));
+}
+
 /* Run one NES clock tick: 3 PPU cycles + 1 CPU cycle + 1 APU cycle. */
 static void emu_tick(void) {
     ppu->clock();
@@ -238,7 +321,6 @@ int main(int argc, char *argv[]) {
     cpu = cpu6502_init();
     ppu = ppu2c02_init();
     bus = nesbus_init(cpu, ppu);
-    nes_input_init(bus->controller1, bus->controller2);
     rewind_buf = rewind_init();
     tas_global = tas_init();
     gamepad_global = gamepad_init();
@@ -267,7 +349,7 @@ int main(int argc, char *argv[]) {
         want.format   = AUDIO_F32SYS;
         want.channels = 1;
         want.samples  = 512;
-        want.callback = apu_audio_callback;
+        want.callback = sdl_audio_callback;
         want.userdata = bus->apu;
         audio_dev = SDL_OpenAudioDevice(NULL, 0, &want, &have,
                                         SDL_AUDIO_ALLOW_FREQUENCY_CHANGE);
@@ -329,7 +411,7 @@ int main(int argc, char *argv[]) {
     printf("  Arrow Keys=D-Pad, Z=A, X=B, Enter=Start, RShift=Select\n");
 
     while (display_is_running(display)) {
-        if (display_poll_events(display, nes_get_input_handler(), NULL)) {
+        if (display_poll_events(display, sdl_key_handler, bus)) {
             break;
         }
 
@@ -400,9 +482,13 @@ int main(int argc, char *argv[]) {
                     /* Resync controller state: overwrite from keyboard scan then
                      * OR gamepad bits. Using |= alone would leave stale bits set
                      * when buttons are released. */
-                    nes_input_refresh();
-                    bus->controller1->buttons |= gamepad_get_buttons(gamepad_global, 0);
-                    bus->controller2->buttons |= gamepad_get_buttons(gamepad_global, 1);
+                    {
+                        const uint8_t *k = SDL_GetKeyboardState(NULL);
+                        nes_set_buttons(bus, 1,
+                            sdl_keyboard_p1(k) | gamepad_get_buttons(gamepad_global, 0));
+                        nes_set_buttons(bus, 2,
+                            sdl_keyboard_p2(k) | gamepad_get_buttons(gamepad_global, 1));
+                    }
 
                     /* Render one PPU frame so the display reflects the
                      * restored state — without this the screen freezes. */
@@ -441,9 +527,11 @@ int main(int argc, char *argv[]) {
                                 bus->controller1->buttons = tas_p1;
                                 bus->controller2->buttons = tas_p2;
                             } else {
-                                nes_input_refresh();
-                                bus->controller1->buttons |= gamepad_get_buttons(gamepad_global, 0);
-                                bus->controller2->buttons |= gamepad_get_buttons(gamepad_global, 1);
+                                const uint8_t *k = SDL_GetKeyboardState(NULL);
+                                nes_set_buttons(bus, 1,
+                                    sdl_keyboard_p1(k) | gamepad_get_buttons(gamepad_global, 0));
+                                nes_set_buttons(bus, 2,
+                                    sdl_keyboard_p2(k) | gamepad_get_buttons(gamepad_global, 1));
                             }
                         }
 

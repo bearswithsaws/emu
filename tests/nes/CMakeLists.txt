@@ -120,3 +120,14 @@ if(DEFINED BLARGG_TEST_ROMS_PATH AND EXISTS "${BLARGG_TEST_ROMS_PATH}")
 else()
     message(STATUS "Blargg tests disabled — set -DBLARGG_TEST_ROMS_PATH=<dir> to enable")
 endif()
+
+# ---- Headless host smoke-test (issue #158) -----------------------------------
+# Verifies lib_nes has no SDL2 dependency: this target links ONLY lib_nes.
+# If any SDL2 symbol leaks through lib_nes the linker will fail on a machine
+# without SDL2 — that is the intended detection mechanism.
+add_executable(test_headless_host test_headless_host.c)
+target_link_libraries(test_headless_host PRIVATE lib_nes)   # NO SDL2 here
+target_include_directories(test_headless_host PRIVATE ${_NES_INCLUDES})
+target_compile_definitions(test_headless_host PRIVATE
+    NESTEST_ROM_PATH="${CMAKE_CURRENT_SOURCE_DIR}/roms/nestest.nes")
+add_test(NAME headless_host COMMAND test_headless_host)

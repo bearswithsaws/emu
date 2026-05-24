@@ -148,11 +148,10 @@ void    apu_write(struct apu2a03 *apu, uint16_t addr, uint8_t data);
 uint8_t apu_read(struct apu2a03 *apu, uint16_t addr);
 bool    apu_irq_pending(struct apu2a03 *apu);
 
-/* SDL audio callback — pass as want.callback to SDL_OpenAudioDevice */
-void apu_audio_callback(void *userdata, uint8_t *stream, int len);
-
 /* Drain up to max samples from the ring into buf; returns count drained.
- * For testing and non-callback use only — not thread-safe with the callback. */
+ * Thread-safe with the SDL audio callback when used as described in
+ * consoles/nes/EMBEDDING.md — the host owns the SDL audio device and
+ * callback; the APU only writes to the ring. */
 int  apu_drain_samples(struct apu2a03 *apu, float *buf, int max);
 
 /* Number of samples currently in the ring (safe to call from main thread). */

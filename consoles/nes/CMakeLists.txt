@@ -41,7 +41,10 @@ target_include_directories(lib_nes PUBLIC
 
 target_link_libraries(lib_nes PUBLIC lib_cpu_6502)
 
+# lib_nes is SDL2-free.  All SDL2 usage lives in the host layer (emu.c,
+# libdisplay, libinput).  The only platform-specific dependency allowed
+# here is the C standard library.
 if(MSVC)
-    target_link_libraries(lib_nes PRIVATE SDL2::SDL2-static)
+    # Suppress MSVC deprecation warnings for fopen/sprintf/etc.
     target_compile_definitions(lib_nes PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
