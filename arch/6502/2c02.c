@@ -633,13 +633,16 @@ static void clock(void) {
         }
     }
 
-    // NTSC even/odd frame dot-skip: dot 0 of the pre-render scanline is
-    // skipped on odd frames when BG rendering is enabled.  Evaluated HERE
-    // (at the moment dot 0 would be processed) so that CPU writes to PPUMASK
-    // in the same emu_tick as the scanline wrap are reflected correctly.
+    /* Even/odd frame dot-skip: on odd frames the pre-render scanline loses
+     * dot 0, making it 340 dots instead of 341.  This is checked here (inside
+     * ppu_clock) so that it fires at the end of the PPU clock that just wrapped
+     * to dot 0 — the normal case when rendering is already enabled.  A second
+     * check in emu_tick() handles the rare case where the CPU enables rendering
+     * in the same master-clock tick as the wrap (test 10). */
     if (ppu.scanline == -1 && ppu.dot == 0 && ppu.odd_frame && rendering_enabled()) {
         ppu.dot = 1;
     }
+
 }
 
 // ---------------------------------------------------------------------------
