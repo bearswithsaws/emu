@@ -56,7 +56,13 @@ endif()
 
 
 # add the executable
-add_executable(emu emu.c)
+# On Windows, include the .rc file so CMake compiles it with rc.exe (MSVC)
+# or windres (MinGW) and links the icon resource into the binary.
+if(WIN32)
+    add_executable(emu emu.c emu.rc)
+else()
+    add_executable(emu emu.c)
+endif()
 
 target_link_libraries(emu PUBLIC lib6502 libdisplay libui ${SDL2_LIBRARIES})
 

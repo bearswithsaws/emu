@@ -1,0 +1,8 @@
+// emu.rc — Windows application resources
+// Embeds the application icon into emu.exe so it shows in Explorer,
+// the taskbar button, the title bar, and the Alt+Tab switcher.
+
+#include <windows.h>
+
+// Primary application icon (all sizes baked into the .ico file).
+IDI_ICON1   ICON    "assets/icon.ico"
