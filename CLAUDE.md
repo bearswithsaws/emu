@@ -796,6 +796,55 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
 
 ## Recent Work
 
+### 2026-05-23 Session: Blargg Accuracy — Deferred NMI + APU Reset Fixes
+
+**Blargg pass rate improved from 14/24 to 18/24 (75%).**
+
+**APU reset improvements (carried over from prior session):**
+- `last_4017` field added to `struct apu2a03`; written on every `$4017` write; re-applied in `apu_reset()` to restore mode and irq_inhibit — fixes `apu_reset_4017_written`
+- `apu_reset()` changed from `reload_delay=3/4` to `frame.cycles=9, reload_delay=0` to simulate the ~9-12 cycle pre-CPU $4017 write on real hardware — fixes `apu_reset_4017_timing`
+- 30-frame post-reset grace period added to `test_blargg_runner.c` to prevent the runner from re-triggering resets when $6000 still contains stale `$81` — fixes infinite reset loop
+
+**PPU deferred NMI for PPUCTRL writes (`arch/6502/2c02.h`, `arch/6502/2c02.c`, `arch/6502/6502.c`):**
+- When PPUCTRL NMI bit transitions 0→1 while VBL is active, the NMI was firing before the instruction AFTER the `sta $2000` completed, causing Blargg test 04 sub-test #11 to fail
+- Added `nmi_deferred` field to `struct ppu2c02`; PPUCTRL 0→1 write during VBL sets `nmi_deferred=1` instead of `nmi_triggered=1`
+- In `cpu6502.c clock()`: at `cycles==0`, check `nmi_triggered` first (fire), then promote `nmi_deferred` → `nmi_triggered` (fires one instruction later)
+- Fixes `ppu_vbl_nmi_04-nmi_control` test #11: "Immediate occurrence should be after NEXT instruction"
+
+**Remaining failures (6/24):** `ppu_vbl_nmi` tests 02, 05, 06, 07, 08, 10 all require sub-CPU-cycle PPU-CPU interleaving. The current 3:1 batch (3 PPU dots per CPU clock) cannot represent exact PPU dot timing relative to instruction midpoints. Requires architectural change to interleave per-dot.
+
+**Files modified:** `arch/6502/2a03.h`, `arch/6502/2a03.c`, `arch/6502/2c02.h`, `arch/6502/2c02.c`, `arch/6502/6502.c`, `tests/test_blargg_runner.c`
+
+**All 15 non-Blargg test suites pass — no regressions.**
+
+---
+
+### 2026-05-23 Session: Blargg Audit — Even/Odd Skip Cleanup (Issue #138)
+
+**Blargg score unchanged at 18/24 (75%).**
+
+**Even/odd pre-render dot-skip fix (revert of regression + cleanup):**
+- A prior experimental branch had removed the PPU skip check from `ppu_clock()` and placed it only in `emu_tick()`, breaking test 09 ("Pattern -B--B").
+- Restored the skip check to the END of `ppu_clock()` (after advancing dot past 340 → wrap to sl -1): if `scanline==-1 && dot==0 && odd_frame && rendering_enabled()` then advance `dot` to 1.
+- Removed the now-redundant (and incorrect) post-CPU check from `emu_tick()` in both `emu.c` and `test_blargg_runner.c`. The post-CPU fallback was incorrect: it applied the skip after the CPU write to $2001 (enabling BG) in the same tick as the wrap, but on real hardware the skip decision is made at the PPU dot BEFORE the CPU write takes effect.
+
+**Exhaustive analysis of remaining 6 failures:**
+All 6 failures (`ppu_vbl_nmi` 02, 05, 06, 07, 08, 10) were analyzed from ROM source code in `/mnt/c/work/test/roms/nes-test-roms/ppu_vbl_nmi/source/`. The root cause for each:
+- **02 vbl_set_time**: VBL suppression window at `scanline=241, dot=0`. In our 3:1 batch the CPU reads $2002 at dot 2 (VBL already set), so `nmi_suppressed` never fires. Requires per-dot interleaving.
+- **05 nmi_timing**: NMI fires 2 instruction too early vs expected (batch-level CPU-PPU phase error of ±3 PPU dots).
+- **06 suppression**: Same as 02 — suppression fires 1 PPU clock early relative to expected window.
+- **07 nmi_on_timing**: NMI window off by 1 PPU clock.
+- **08 nmi_off_timing**: NMI window off by 2 PPU clocks.
+- **10 even_odd_timing**: Skip fires before CPU can enable BG. The `adjust=2359` constant positions the BG enable window just before the pre-render, but our 3:1 batch model evaluates the skip 3 PPU dots too early. Confirmed that the expected result (X=8) can only be achieved with per-PPU-dot CPU-PPU interleaving.
+
+**Conclusion:** 18/24 is the maximum achievable with the current 3:1 batch architecture. All remaining failures require per-PPU-dot (1:3) CPU-PPU interleaving — a major architectural change to the emulator's main loop.
+
+**Files modified:** `arch/6502/2c02.c` (skip check restored), `emu.c` (post-CPU check removed), `tests/test_blargg_runner.c` (post-CPU check removed)
+
+**All 15 non-Blargg test suites pass — no regressions.**
+
+---
+
 ### 2026-05-22 Session: Gamepad/Joystick Support (Issue #146)
 
 **USB/Bluetooth gamepad support added. Retrolink SNES USB controller and any SDL2-recognized gamepad now works out of the box.**
@@ -1483,7 +1532,7 @@ All illegal NOP opcodes that consume operand bytes ($04, $0C, $14, $1C, $34, $3C
 - [X] ~~Sprite overflow flag accuracy~~ ✅ Complete (issue #135) — hardware-accurate diagonal scan bug
 - [X] ~~Add Mappers 019, 069, 071~~ ✅ Complete (2026-05-22) — Namco 163, Sunsoft FME-7, Camerica implemented and unit-tested
 - [ ] More mappers (5 MMC5, etc.)
-- [ ] Improve Blargg test pass rate (was 6/24 before PRs #121–#125; expected higher after all fixes merge)
+- [X] ~~Improve Blargg test pass rate~~ 18/24 passing (2026-05-23) — ppu_vbl_nmi: 4/10; apu_test: 8/8; apu_reset: 6/6. Remaining 6 ppu_vbl_nmi failures (02, 05, 06, 07, 08, 10) require sub-CPU-cycle PPU-CPU interleaving accuracy.
 
 ---
 
@@ -1518,5 +1567,5 @@ TODO: Add contribution guidelines
 
 ---
 
-**Last Updated:** 2026-05-22 (Gamepad #146; TAS #133; Rewind #132; Sprite overflow #135; Mappers 019/069/071; PPU open bus #134; 15 test suites)
+**Last Updated:** 2026-05-23 (Blargg audit issue #138: 18/24 max with 3:1 batch; even/odd skip restored; per-dot analysis; Deferred NMI fix; APU reset fixes; Gamepad #146; TAS #133; Rewind #132; 15 test suites)
 **Emulator Version:** 0.1.0 (pre-alpha)

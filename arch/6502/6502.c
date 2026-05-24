@@ -1642,13 +1642,24 @@ static void clock() {
     }
 
     if (cpu.cycles == 0) {
-        // Check for NMI before fetching next instruction
-        // NMI is edge-triggered and can't be disabled
+        // Check for NMI before fetching next instruction.
+        // NMI is edge-triggered and can't be disabled.
         if (cpu.bus && cpu.bus->ppu && cpu.bus->ppu->nmi_triggered) {
             cpu.bus->ppu->nmi_triggered = 0;
             cpu.nmi();
             cpu.cycles = 7;
             return;
+        }
+
+        // Convert a deferred NMI (from a PPUCTRL 0→1 write that happened
+        // mid-instruction) into a triggered NMI.  The promotion happens AFTER
+        // the nmi_triggered check so the NMI fires at the start of the
+        // instruction *after* this one — matching hardware behaviour where the
+        // NMI caused by a PPUCTRL write is delayed until after the next
+        // instruction completes.
+        if (cpu.bus && cpu.bus->ppu && cpu.bus->ppu->nmi_deferred) {
+            cpu.bus->ppu->nmi_triggered = 1;
+            cpu.bus->ppu->nmi_deferred  = 0;
         }
 
         // Check for mapper IRQ (level-triggered: stays asserted until mapper

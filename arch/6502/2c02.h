@@ -137,6 +137,7 @@ struct ppu2c02 {
 
     // NMI signal (set by PPU, read by CPU via nesbus)
     uint8_t nmi_triggered;   // 1 when NMI should fire, cleared when CPU reads it
+    uint8_t nmi_deferred;    // 1 when NMI should fire after the NEXT instruction
     uint8_t nmi_suppressed;  // set when $2002 is read 1 PPU clock before VBL fires
 
     // Even/odd frame tracking for the pre-render scanline clock skip

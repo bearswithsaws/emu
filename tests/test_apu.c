@@ -47,11 +47,9 @@ static void run_cycles(struct apu2a03 *apu, uint32_t n) {
     }
 }
 
-/* Clock only the frame counter portion by running to a specific step.
- * We need to reach the half-frame at cycle 7457 to clock length counters. */
+/* Clock to the first half-frame step (CPU cycle 14914 from frame-counter reset). */
 static void clock_half_frame_manual(struct apu2a03 *apu) {
-    /* Run until frame cycles reach 7457 (first half-frame) */
-    run_cycles(apu, 7457);
+    run_cycles(apu, 14914);
 }
 
 /* ---------------------------------------------------------------------------
@@ -75,12 +73,12 @@ static void test_length_counter(void) {
 
     ASSERT(apu.pulse1.len.counter == 10, "length counter loaded from table[0] = 10");
 
-    /* Clock one half-frame (7457 cycles) — counter should decrement */
-    run_cycles(&apu, 7457);
+    /* Clock one half-frame (14914 cycles) — counter should decrement */
+    run_cycles(&apu, 14914);
     ASSERT(apu.pulse1.len.counter == 9, "length counter decremented after half-frame");
 
-    /* Clock another half-frame */
-    run_cycles(&apu, 7458); /* 7457+1 to hit 14915 (second half-frame) */
+    /* Clock to second half-frame (29830 is HF+reset, so 14916 more cycles) */
+    run_cycles(&apu, 14916); /* 14914+14916 = 29830 (second half-frame + reset) */
     ASSERT(apu.pulse1.len.counter == 8, "length counter decremented again");
 
     /* Test halt: set loop/halt bit */
@@ -88,7 +86,8 @@ static void test_length_counter(void) {
     uint8_t saved = apu.pulse1.len.counter;
     /* Need another half-frame; reset frame counter by writing $4017 */
     apu_write(&apu, 0x4017, 0x00); /* reset 4-step counter */
-    run_cycles(&apu, 7457);
+    /* 3 cycles drain reload_delay, then 14914 to reach first HF = 14917 total */
+    run_cycles(&apu, 14917);
     ASSERT(apu.pulse1.len.counter == saved, "length counter halted when halt bit set");
 
     /* Test disable: write 0 to $4015 bit0 */
@@ -128,28 +127,29 @@ static void test_envelope(void) {
 
     ASSERT(apu.pulse1.env.start == true, "env.start set after $4003 write");
 
-    /* Clock one quarter-frame to trigger envelope start */
-    run_cycles(&apu, 3729);
+    /* Clock one quarter-frame to trigger envelope start (first QF at CPU cycle 7458) */
+    run_cycles(&apu, 7458);
     ASSERT(apu.pulse1.env.volume == 15, "envelope volume reset to 15 on start");
     ASSERT(apu.pulse1.env.start == false, "env.start cleared");
 
-    /* Volume should be 15 now; clock the envelope through its divider.
-     * period=7 means divider counts 7 down before decrementing volume. */
+    /* Volume should be 15 now; clock to the next quarter-frame.
+     * Second QF is at cycle 14914 (= 7458 + 7456 more cycles). */
     uint8_t v_before = apu.pulse1.env.volume;
-    /* Run several quarter-frames and verify volume decrements */
-    run_cycles(&apu, 3728); /* get to next quarter-frame */
+    run_cycles(&apu, 7456); /* reach second QF (7458+7456=14914) */
     uint8_t v_after = apu.pulse1.env.volume;
     ASSERT(v_after <= v_before, "envelope volume non-increasing over quarter-frames");
 
-    /* Test loop: set loop flag, force volume to 0, clock quarter-frame */
+    /* Test loop: reset the APU state so frame.cycles starts fresh, then
+     * set loop flag, force volume to 0, clock one quarter-frame. */
     apu_write(&apu, 0x4000, 0x27); /* loop=1, constant=0, period=7 */
     apu_write(&apu, 0x4003, 0x08); /* restart envelope */
-    run_cycles(&apu, 3729); /* fire start */
+    apu_write(&apu, 0x4017, 0x00); /* reset frame counter (reload_delay=3) */
+    run_cycles(&apu, 3 + 7458);    /* drain reload_delay then reach first QF */
     /* Force volume to 0 by manually clocking 15 quarter-frames of decay */
     apu.pulse1.env.volume = 0;
     apu.pulse1.env.divider = 0;
     /* Clock one more quarter-frame: divider=0 → decrement volume → 0 → loop → 15 */
-    run_cycles(&apu, 3729);
+    run_cycles(&apu, 7456); /* reach next QF from current position */
     ASSERT(apu.pulse1.env.volume == 15, "envelope loops back to 15 when loop set and volume reaches 0");
 }
 
@@ -319,28 +319,28 @@ static void test_frame_counter_4step(void) {
     uint8_t len_start = apu.pulse1.len.counter;
     ASSERT(len_start == 254, "length counter loaded correctly before frame clocking");
 
-    /* Reset the frame counter cleanly by writing $4017 and running exactly
-     * 3 cycles so reload_delay expires (3→2→1→0 on cycles 1,2,3).
-     * After 3 cycles: reload_delay=0, frame.cycles=1 (set to 0 on cycle 3,
-     * then incremented: 0→1). */
+    /* Reset the frame counter cleanly by writing $4017.
+     * reload_delay=3; the counter does NOT advance during the delay.
+     * After 3 cycles: reload fires, frame.cycles=0.  The 4th cycle does
+     * cycles++ → 1.  From 0, HF fires at frame.cycles=14914 (CPU cycles). */
     apu_write(&apu, 0x4017, 0x00); /* mode=0, irq_inhibit=0, reload_delay=3 */
-    run_cycles(&apu, 3); /* drain reload_delay; frame.cycles = 1 after this */
+    run_cycles(&apu, 3); /* drain reload_delay; frame.cycles = 0 after this */
 
-    /* Now run exactly 7456 more cycles to reach frame.cycles = 7457 */
-    run_cycles(&apu, 7456);
+    /* Run 14914 more cycles to reach frame.cycles = 14914 (first half-frame) */
+    run_cycles(&apu, 14914);
 
     uint8_t len_after_half1 = apu.pulse1.len.counter;
     ASSERT(len_after_half1 == len_start - 1,
-           "length counter decremented at first half-frame (cycle 7457)");
+           "length counter decremented at first half-frame (cycle 14914)");
 
-    /* Run 7458 more cycles to reach frame.cycles = 14915 (second half-frame) */
-    run_cycles(&apu, 7458);
+    /* Run 14916 more cycles to reach frame.cycles = 29830 (second HF + reset) */
+    run_cycles(&apu, 14916);
 
     uint8_t len_after_half2 = apu.pulse1.len.counter;
     ASSERT(len_after_half2 == len_after_half1 - 1,
-           "length counter decremented at second half-frame (cycle 14915)");
+           "length counter decremented at second half-frame (cycle 29830)");
 
-    /* IRQ should have fired in 4-step mode (at cycle 14914/14915) */
+    /* IRQ should have fired in 4-step mode (at cycles 29828 and 29830) */
     ASSERT(apu.frame.irq_pending == true,
            "frame IRQ pending after 4-step sequence completes");
 
