@@ -9,15 +9,15 @@
 
 #include <SDL2/SDL.h>
 
-#include "2c02.h"
+#include "ppu.h"
 #include "6502.h"
-#include "2a03.h"
+#include "apu.h"
 #include "cartridge.h"
 #include "display.h"
 #include "ui.h"
 #include "emu_config.h"
-#include "nes_input.h"
-#include "nesbus.h"
+#include "input.h"
+#include "bus.h"
 
 #include "debug.h"
 #include "savestate.h"

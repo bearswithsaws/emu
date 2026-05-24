@@ -29,11 +29,11 @@
 #endif
 
 #include "6502.h"
-#include "2c02.h"
-#include "2a03.h"
+#include "ppu.h"
+#include "apu.h"
 #include "cartridge.h"
 #include "mapper.h"
-#include "nesbus.h"
+#include "bus.h"
 
 /* -------------------------------------------------------------------------
  * File format constants

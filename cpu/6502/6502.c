@@ -5,6 +5,7 @@
 #include <stdlib.h>
 
 #include "6502.h"
+#include "bus.h"
 
 #include "debug.h"
 

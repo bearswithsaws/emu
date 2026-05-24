@@ -1,4 +1,4 @@
-#include "2c02.h"
+#include "ppu.h"
 
 #include "debug.h"
 #include "palette.h"

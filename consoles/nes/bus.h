@@ -3,9 +3,9 @@
 
 #include <stdint.h>
 
-#include "2c02.h"
+#include "ppu.h"
 #include "6502.h"
-#include "2a03.h"
+#include "apu.h"
 #include "cartridge.h"
 #include "controller.h"
 

@@ -27,11 +27,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "2a03.h"
-#include "2c02.h"
+#include "apu.h"
+#include "ppu.h"
 #include "6502.h"
 #include "cartridge.h"
-#include "nesbus.h"
+#include "bus.h"
 
 /* Timeout: 600 frames ≈ 10 seconds of NES time at 60.1 fps. Most Blargg
  * tests complete in under 5 seconds; the slowest APU timing tests need ~8. */

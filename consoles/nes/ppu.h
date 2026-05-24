@@ -2,7 +2,7 @@
 #define __2C02_H__
 
 #include "cartridge.h"
-#include "nesbus.h"
+#include "bus.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>

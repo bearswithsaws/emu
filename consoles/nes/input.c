@@ -1,4 +1,4 @@
-#include "nes_input.h"
+#include "input.h"
 #include "debug.h"
 #include <SDL2/SDL.h>
 

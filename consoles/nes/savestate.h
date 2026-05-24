@@ -3,7 +3,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
-#include "nesbus.h"
+#include "bus.h"
 
 /*
  * Save/load the full emulator state to a numbered slot file.

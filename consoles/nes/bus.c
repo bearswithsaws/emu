@@ -5,8 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "nesbus.h"
-#include "2a03.h"
+#include "bus.h"
+#include "apu.h"
 #include "debug.h"
 
 static struct nesbus bus = {0};

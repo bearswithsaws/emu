@@ -1,10 +1,10 @@
 #ifndef __6502_H__
 #define __6502_H__
 
-#include "nesbus.h"
 #include <stdint.h>
 
 struct cpu6502;
+struct nesbus;  /* forward declaration — defined in consoles/nes/bus.h */
 
 typedef void (*fp_nmi)(void);
 typedef void (*fp_irq)(void);
