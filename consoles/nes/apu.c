@@ -660,23 +660,6 @@ bool apu_irq_pending(struct apu2a03 *apu) {
     return pending;
 }
 
-void apu_audio_callback(void *userdata, uint8_t *stream, int len) {
-    struct apu2a03 *apu = (struct apu2a03 *)userdata;
-    float *out = (float *)(void *)stream;
-    int n = len / (int)sizeof(float);
-    for (int i = 0; i < n; i++) {
-        int r = atomic_load_explicit(&apu->ring_read, memory_order_relaxed);
-        int w = atomic_load_explicit(&apu->ring_write, memory_order_acquire);
-        if (r != w) {
-            out[i] = apu->ring_buf[r];
-            atomic_store_explicit(&apu->ring_read, (r + 1) & (APU_RING_SIZE - 1),
-                                  memory_order_release);
-        } else {
-            out[i] = 0.0f; /* underrun: output silence */
-        }
-    }
-}
-
 int apu_drain_samples(struct apu2a03 *apu, float *buf, int max) {
     int count = 0;
     while (count < max) {

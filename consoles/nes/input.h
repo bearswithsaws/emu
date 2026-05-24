@@ -1,53 +1,49 @@
 #ifndef __NES_INPUT_H__
 #define __NES_INPUT_H__
 
-#include "controller.h"
+#include <stdint.h>
+
+/* Forward declarations — no SDL2, no controller.h needed here. */
+struct nesbus;
 
 /**
- * NES Input Handler
+ * NES Controller Button Bitmask
  *
- * Provides NES-specific keyboard → controller mapping for use with the
- * generic display library.
+ * Standard NES button layout.  Build a bitmask from these constants
+ * and pass it to nes_set_buttons() once per frame.
  *
- * Player 1 (controller 1):
- * - Arrow keys → D-pad
- * - Z → A, X → B
- * - Enter → Start, Right Shift → Select
- *
- * Player 2 (controller 2):
- * - WASD → D-pad
- * - N → A, M → B
- * - Y → Start, H → Select
+ * Bit  Constant            NES pad button
+ * ---  ------------------  --------------
+ *  0   NES_BTN_A           A
+ *  1   NES_BTN_B           B
+ *  2   NES_BTN_SELECT      Select
+ *  3   NES_BTN_START       Start
+ *  4   NES_BTN_UP          D-pad Up
+ *  5   NES_BTN_DOWN        D-pad Down
+ *  6   NES_BTN_LEFT        D-pad Left
+ *  7   NES_BTN_RIGHT       D-pad Right
  */
+#define NES_BTN_A      0x01u
+#define NES_BTN_B      0x02u
+#define NES_BTN_SELECT 0x04u
+#define NES_BTN_START  0x08u
+#define NES_BTN_UP     0x10u
+#define NES_BTN_DOWN   0x20u
+#define NES_BTN_LEFT   0x40u
+#define NES_BTN_RIGHT  0x80u
 
 /**
- * Initialize NES input system
+ * Set all held buttons for one controller.
  *
- * @param ctrl1 - Pointer to player 1 controller structure
- * @param ctrl2 - Pointer to player 2 controller structure
+ * The host calls this once per frame (before emu_tick() starts the frame)
+ * with the OR of all currently-pressed NES_BTN_* flags.  The emulator reads
+ * the bitmask out of the controller shift register each time $4016/$4017 is
+ * polled by the game.
+ *
+ * @param bus     - NES bus (owns controller1 / controller2)
+ * @param player  - 1 or 2
+ * @param buttons - bitmask of NES_BTN_* flags for all held buttons
  */
-void nes_input_init(struct controller *ctrl1, struct controller *ctrl2);
-
-/**
- * Get the NES input callback
- *
- * Returns the callback function that maps SDL keys to NES controller buttons.
- * Pass this to display_poll_events().
- *
- * @return Input callback function pointer
- */
-typedef void (*input_callback_t)(int sdl_keycode, int is_pressed,
-                                 void *userdata);
-input_callback_t nes_get_input_handler(void);
-
-/**
- * Refresh both controllers from the current SDL keyboard snapshot.
- *
- * The event-driven input handler only updates buttons on KEYDOWN/KEYUP.
- * After a savestate restore (e.g. rewind), previously-set bits can get
- * stuck because SDL never generates a KEYUP for keys it didn't see pressed.
- * Call this once after restoring state to resync with physical key state.
- */
-void nes_input_refresh(void);
+void nes_set_buttons(struct nesbus *bus, int player, uint8_t buttons);
 
 #endif /* __NES_INPUT_H__ */
