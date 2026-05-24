@@ -39,6 +39,13 @@ target_include_directories(test_mapper_003 PRIVATE
 )
 
 add_executable(test_mapper_004 test_mapper_004.c)
+
+add_executable(test_mapper_005 test_mapper_005.c)
+target_link_libraries(test_mapper_005 PRIVATE lib6502)
+target_include_directories(test_mapper_005 PRIVATE
+    "${PROJECT_SOURCE_DIR}/arch/6502"
+    "${PROJECT_BINARY_DIR}"
+)
 target_link_libraries(test_mapper_004 PRIVATE lib6502)
 target_include_directories(test_mapper_004 PRIVATE
     "${PROJECT_SOURCE_DIR}/arch/6502"
@@ -133,6 +140,7 @@ add_test(NAME mapper_001   COMMAND test_mapper_001)
 add_test(NAME mapper_002   COMMAND test_mapper_002)
 add_test(NAME mapper_003   COMMAND test_mapper_003)
 add_test(NAME mapper_004   COMMAND test_mapper_004)
+add_test(NAME mapper_005   COMMAND test_mapper_005)
 add_test(NAME mapper_007   COMMAND test_mapper_007)
 add_test(NAME mapper_009   COMMAND test_mapper_009)
 add_test(NAME mapper_011   COMMAND test_mapper_011)

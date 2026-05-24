@@ -26,7 +26,7 @@ This is a Nintendo Entertainment System (NES) emulator written in C using SDL2 f
 ### Design Goals
 - Cycle-accurate CPU emulation
 - Scanline-accurate PPU rendering
-- Support for common mappers (0, 1, 2, 3, 4, 7, 9, 11, 66 implemented)
+- Support for common mappers (0, 1, 2, 3, 4, 5, 7, 9, 11, 19, 66, 69, 71 implemented)
 - Cross-platform support (Linux and Windows)
 - Maintainable, well-documented code
 
@@ -412,6 +412,42 @@ Offset  Size  Description
 
 **Compatible Games:** Punch-Out!!, Mike Tyson's Punch-Out!!
 
+#### Mapper 005 - MMC5 / ExROM ([arch/6502/mapper_005.c](arch/6502/mapper_005.c))
+
+**Status:** ✅ Complete (2026-05-23) — 17 unit tests, 46 assertions passing
+
+**Implemented:**
+- ✅ PRG mode 0: single 32 KB window ($5117 selects bank)
+- ✅ PRG mode 1: two 16 KB windows ($5115 / $5117)
+- ✅ PRG mode 2: 16 KB + 8 KB + 8 KB ($5115 / $5116 / $5117)
+- ✅ PRG mode 3 (default): four 8 KB windows ($5114-$5117)
+- ✅ PRG-RAM: 64 KB (8 × 8 KB banks) at $6000-$7FFF via $5113; write-protect via $5102/$5103
+- ✅ CHR mode 0: 8 KB window (set A register $5127)
+- ✅ CHR mode 1: two 4 KB windows (set A $5123 / $5127)
+- ✅ CHR mode 2: four 2 KB windows (set A odd registers)
+- ✅ CHR mode 3 (default): eight 1 KB windows (set A $5120-$5127)
+- ✅ CHR bank-set B ($5128-$512B): selected for BG tile fetches when `ppu_sprite_fetch == 0` and bank B was last written
+- ✅ ExRAM ($5C00-$5FFF, 1 KB): R/W in mode 2; R/O in mode 3; nametable-backed in modes 0/1
+- ✅ Nametable mapping ($5105): each of 4 NT slots independently routed to CIRAM bank 0, CIRAM bank 1, ExRAM, or fill-mode
+- ✅ Fill-mode: tile ($5106) and attribute ($5107) fill registers; attr replicated to all 4 fields of attribute byte
+- ✅ Scanline IRQ: counter incremented via PPU scanline callback; fires when count == $5203 latch with IRQ enable ($5204 bit 7); $5204 read clears pending
+- ✅ 8×8 unsigned multiply unit: write operands to $5205/$5206; read $5205/$5206 for 16-bit product
+- ✅ `nt_read` / `nt_write` PPU hooks wired (mapper.h + 2c02.c); `ppu_sprite_fetch` flag on struct mapper set by PPU during sprite tile reads; `ciram` pointer set by PPU during connect_cartridge
+- ✅ 17 unit tests — all passing
+
+**Not implemented (audio):**
+- MMC5 pulse channels 3/4 ($5000-$5007) and PCM channel ($5011) stubbed to silence
+- Vertical split screen ($5200) not implemented
+
+**Specifications:**
+- PRG-ROM: up to 1 MB (four independent 8 KB windows; 16/32 KB coarser modes)
+- PRG-RAM: up to 64 KB (8 × 8 KB banks)
+- CHR-ROM: up to 1 MB (eight independent 1 KB windows + sprite/BG bank split)
+- ExRAM: 1 KB on-chip RAM usable as nametable, attribute extension, or general RAM
+- Nametable: each of 4 NT slots independently routed (CIRAM 0/1, ExRAM, fill-mode)
+
+**Compatible Games:** ~25 games including Castlevania III: Dracula's Curse, Just Breed, Metal Slader Glory
+
 #### Mapper 019 - Namco 163 ([arch/6502/mapper_019.c](arch/6502/mapper_019.c))
 
 **Status:** ✅ Complete (2026-05-22) — 10 unit tests, 35 assertions passing
@@ -726,7 +762,7 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
   - PPU_RENDERING_PIPELINE.md
   - PPU_IMPLEMENTATION_COMPARISON.md
   - BUGFIXES_APPLIED.md
-- ✅ Unit tests: PPU clock (13 tests, 65 assertions), Mapper 001 (11 tests, 23 assertions), Mapper 002 (6 tests, 10 assertions), Mapper 003 (6 tests, 11 assertions), Mapper 004 (10 tests, 19 assertions), Mapper 007 (7 tests, 13 assertions), Mapper 009 (10 tests, 24 assertions), Mapper 011 (6 tests, 12 assertions), Mapper 019 (10 tests, 35 assertions), Mapper 066 (6 tests, 11 assertions), Mapper 069 (10 tests, 24 assertions), Mapper 071 (9 tests, 20 assertions), APU (8 tests, 72 assertions), CPU nestest integration test, Disassembler (16 groups, 126 assertions) — **15 test suites, all passing**
+- ✅ Unit tests: PPU clock (13 tests, 65 assertions), Mapper 001 (11 tests, 23 assertions), Mapper 002 (6 tests, 10 assertions), Mapper 003 (6 tests, 11 assertions), Mapper 004 (10 tests, 19 assertions), Mapper 005 (17 tests, 46 assertions), Mapper 007 (7 tests, 13 assertions), Mapper 009 (10 tests, 24 assertions), Mapper 011 (6 tests, 12 assertions), Mapper 019 (10 tests, 35 assertions), Mapper 066 (6 tests, 11 assertions), Mapper 069 (10 tests, 24 assertions), Mapper 071 (9 tests, 20 assertions), APU (8 tests, 72 assertions), CPU nestest integration test, Disassembler (16 groups, 126 assertions) — **16 test suites, all passing**
 - ✅ **Blargg headless test runner** (`tests/test_blargg_runner.c`) — full NES stack (CPU+PPU+APU+cartridge) without SDL2; implements $6000 protocol; 24 CTest entries across 3 suites (ppu_vbl_nmi, apu_test, apu_reset); started 6/24; all 6 root-cause issues fixed by PRs #121–#125; optional via `-DBLARGG_TEST_ROMS_PATH=<dir>`
 - ✅ Documentation (CLAUDE.md updated 2026-05-21)
 
@@ -795,6 +831,35 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
 ---
 
 ## Recent Work
+
+### 2026-05-23 Session: Mapper 005 (MMC5 / ExROM) — closes issue #136, epic #140
+
+**MMC5 fully implemented. Closes the last sub-issue of the Phase 6 Accuracy & Compatibility epic (#140).**
+
+**New infrastructure (mapper.h, 2c02.c):**
+- `nt_read` / `nt_write` function pointers added to `struct mapper`; when non-NULL the PPU calls them instead of the built-in CIRAM mirroring path — enables per-mapper custom nametable routing
+- `ppu_sprite_fetch` flag added to `struct mapper`; set to 1 by the PPU immediately before sprite-tile `ppu_read` calls (in `get_sprite_pixel`), cleared afterward — allows MMC5 to select CHR bank-set A (sprites) vs B (background, 8×16 mode)
+- `ciram` pointer added to `struct mapper`; set by the PPU during `connect_cartridge` to point to `ppu.nametable[0..0x7FF]` so mappers with custom NT routing (MMC5) can read/write CIRAM banks 0 and 1
+- `nametable_read()` / `nametable_write()` internal helpers in `2c02.c` wrap all four nametable access sites; fall through to existing logic when hooks are NULL — zero behavioral change for existing mappers
+
+**MMC5 implementation (`arch/6502/mapper_005.c/.h`):**
+- PRG modes 0/1/2/3 (32/16+16/16+8+8/4×8 KB windows); $5113-$5117 bank registers; bit 7 = ROM/RAM; $5117 always forced to ROM
+- 64 KB PRG-RAM (8 × 8 KB banks); write-protect via $5102/$5103 (both must be set correctly)
+- CHR modes 0/1/2/3 (8/4+4/2×4/1×8 KB); bank-set A ($5120-$5127) and bank-set B ($5128-$512B); `ppu_sprite_fetch` flag selects between sets
+- Nametable mapping ($5105): each of 4 NT slots independently → CIRAM bank 0, CIRAM bank 1, ExRAM, or fill-mode
+- Fill-mode: $5106 tile, $5107 attr (replicated to all 4 attribute fields)
+- ExRAM 1 KB at $5C00-$5FFF: R/W in mode 2; R/O in mode 3; NT-backed in modes 0/1
+- Scanline IRQ: `mapper_005_scanline()` (PPU dot-260 callback); counter vs $5203 latch; $5204 enable/status
+- 8×8 multiply unit: $5205 (factor A) × $5206 (factor B) = 16-bit result (read back $5205/$5206)
+- Audio stubs: MMC5 pulse/PCM channels return silence; no regressions on existing APU tests
+
+**Files created:** `arch/6502/mapper_005.c`, `arch/6502/mapper_005.h`, `tests/test_mapper_005.c`
+
+**Files modified:** `arch/6502/mapper.h`, `arch/6502/2c02.c`, `arch/6502/mapper.c`, `arch/6502/CMakeLists.txt`, `tests/CMakeLists.txt`, `CLAUDE.md`
+
+**Test results:** 17 tests, 46 assertions — all passing. All 16 non-Blargg test suites pass (no regressions).
+
+---
 
 ### 2026-05-23 Session: Blargg Accuracy — Deferred NMI + APU Reset Fixes
 
@@ -1531,7 +1596,7 @@ All illegal NOP opcodes that consume operand bytes ($04, $0C, $14, $1C, $34, $3C
 - [X] ~~PPU open bus behavior~~ ✅ Complete (issue #134) — `ppu_open_bus` field; write-only register reads return it; $2002 lower 5 bits; $2004/$2007 reads update it; 2 new unit tests
 - [X] ~~Sprite overflow flag accuracy~~ ✅ Complete (issue #135) — hardware-accurate diagonal scan bug
 - [X] ~~Add Mappers 019, 069, 071~~ ✅ Complete (2026-05-22) — Namco 163, Sunsoft FME-7, Camerica implemented and unit-tested
-- [ ] More mappers (5 MMC5, etc.)
+- [X] ~~Mapper 5 (MMC5)~~ ✅ Complete (2026-05-23, issue #136) — all PRG/CHR modes, ExRAM, fill-mode nametables, scanline IRQ, multiply unit; 17 unit tests, 46 assertions
 - [X] ~~Improve Blargg test pass rate~~ 18/24 passing (2026-05-23) — ppu_vbl_nmi: 4/10; apu_test: 8/8; apu_reset: 6/6. Remaining 6 ppu_vbl_nmi failures (02, 05, 06, 07, 08, 10) require sub-CPU-cycle PPU-CPU interleaving accuracy.
 
 ---
@@ -1567,5 +1632,5 @@ TODO: Add contribution guidelines
 
 ---
 
-**Last Updated:** 2026-05-23 (Blargg audit issue #138: 18/24 max with 3:1 batch; even/odd skip restored; per-dot analysis; Deferred NMI fix; APU reset fixes; Gamepad #146; TAS #133; Rewind #132; 15 test suites)
+**Last Updated:** 2026-05-23 (MMC5 mapper #136: all PRG/CHR modes, ExRAM, fill-mode NT, scanline IRQ, multiply; PPU nt_read/nt_write/ppu_sprite_fetch/ciram hooks; 16 test suites; closes Phase 6 epic #140)
 **Emulator Version:** 0.1.0 (pre-alpha)

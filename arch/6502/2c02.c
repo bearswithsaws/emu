@@ -11,6 +11,11 @@ static struct ppu2c02 ppu = {0};
 
 static void connect_cartridge(struct nes_cartridge *cartridge) {
     ppu.cart = cartridge;
+    // Give the mapper a direct pointer to our CIRAM so that mappers with
+    // custom nametable routing (e.g. MMC5) can access CIRAM bank 0 / 1
+    // from inside their nt_read / nt_write callbacks.
+    if (cartridge && cartridge->map)
+        cartridge->map->ciram = ppu.nametable;
 }
 
 static uint16_t nametable_mirror(uint16_t addr) {
@@ -47,6 +52,27 @@ static uint16_t nametable_mirror(uint16_t addr) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Nametable access helpers
+// When the active mapper provides nt_read / nt_write hooks (e.g. MMC5), those
+// are called instead of the default CIRAM path.  All existing mappers leave
+// these function pointers NULL so they fall through to nametable_mirror().
+// ---------------------------------------------------------------------------
+
+static uint8_t nametable_read(uint16_t addr) {
+    if (ppu.cart && ppu.cart->map && ppu.cart->map->nt_read)
+        return ppu.cart->map->nt_read(ppu.cart->map, addr);
+    return ppu.nametable[nametable_mirror(addr)];
+}
+
+static void nametable_write(uint16_t addr, uint8_t data) {
+    if (ppu.cart && ppu.cart->map && ppu.cart->map->nt_write) {
+        ppu.cart->map->nt_write(ppu.cart->map, addr, data);
+        return;
+    }
+    ppu.nametable[nametable_mirror(addr)] = data;
+}
+
 static uint8_t ppu_read(uint16_t addr) {
     uint8_t data = 0;
 
@@ -55,7 +81,7 @@ static uint8_t ppu_read(uint16_t addr) {
             data = ppu.cart->ppu_read(ppu.cart, addr);
         }
     } else if (addr <= 0x3EFF) {
-        data = ppu.nametable[nametable_mirror(addr)];
+        data = nametable_read(addr);
     } else if (addr <= 0x3FFF) {
         // Palette mirrors: $3F10/$3F14/$3F18/$3F1C mirror $3F00/$3F04/$3F08/$3F0C
         uint8_t pal_addr = addr & 0x1F;
@@ -76,7 +102,7 @@ static void ppu_write(uint16_t addr, uint8_t data) {
             ppu.cart->ppu_write(ppu.cart, addr, data);
         }
     } else if (addr <= 0x3EFF) {
-        ppu.nametable[nametable_mirror(addr)] = data;
+        nametable_write(addr, data);
     } else if (addr <= 0x3FFF) {
         uint8_t pal_addr = addr & 0x1F;
         if (pal_addr == 0x10 || pal_addr == 0x14 || pal_addr == 0x18 || pal_addr == 0x1C) {
@@ -224,7 +250,7 @@ static int rendering_enabled(void) {
 
 static void fetch_nametable_byte(void) {
     uint16_t addr = 0x2000 | (ppu.v & 0x0FFF);
-    ppu.bg_next_tile_id = ppu.nametable[nametable_mirror(addr)];
+    ppu.bg_next_tile_id = nametable_read(addr);
 }
 
 static void fetch_attribute_byte(void) {
@@ -232,7 +258,7 @@ static void fetch_attribute_byte(void) {
                   | (ppu.v & 0x0C00)
                   | ((ppu.v >> 4) & 0x38)
                   | ((ppu.v >> 2) & 0x07);
-    uint8_t attr = ppu.nametable[nametable_mirror(addr)];
+    uint8_t attr = nametable_read(addr);
     uint8_t shift = ((ppu.v >> 4) & 0x04) | (ppu.v & 0x02);
     ppu.bg_next_tile_attr = (attr >> shift) & 0x03;
 }
@@ -432,8 +458,12 @@ static uint8_t get_sprite_pixel(uint8_t x, uint8_t scanline,
 
         uint8_t lo = 0, hi = 0;
         if (ppu.cart && ppu.cart->ppu_read) {
+            // Signal to the mapper that these reads are for sprite tiles.
+            // MMC5 uses this to select CHR bank-set A (sprites) vs B (BG).
+            if (ppu.cart->map) ppu.cart->map->ppu_sprite_fetch = 1;
             lo = ppu.cart->ppu_read(ppu.cart, tile_addr);
             hi = ppu.cart->ppu_read(ppu.cart, tile_addr + 8);
+            if (ppu.cart->map) ppu.cart->map->ppu_sprite_fetch = 0;
         }
 
         uint8_t color = (((hi >> (7 - pixel_x)) & 1) << 1) |
