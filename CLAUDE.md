@@ -426,7 +426,9 @@ Offset  Size  Description
 - ✅ CHR mode 1: two 4 KB windows (set A $5123 / $5127)
 - ✅ CHR mode 2: four 2 KB windows (set A odd registers)
 - ✅ CHR mode 3 (default): eight 1 KB windows (set A $5120-$5127)
-- ✅ CHR bank-set B ($5128-$512B): selected for BG tile fetches when `ppu_sprite_fetch == 0` and bank B was last written
+- ✅ CHR bank-set B ($5128-$512B): selected for BG tile fetches in 8×16 mode (`ppu_sprite_16=1`); in 8×8 mode all fetches use the last-written set (`last_chr_set`)
+- ✅ `ppu_sprite_16` field on `struct mapper` kept current by PPU on every PPUCTRL write; used by `resolve_chr()` to select the correct bank-set (fixes Castlevania III flicker — issue #160)
+- ✅ ExRAM mode 1 (nametable + attribute extension): `exram_latch` updated on tile reads; attribute reads synthesize palette-encoded byte from ExRAM; BG CHR fetches extend bank number with `exram_latch` bits 7-6 (10-bit bank, up to 1 MB CHR-ROM); extension applies to ALL BG fetches regardless of which bank-set is active (not just set B) — issue #160
 - ✅ ExRAM ($5C00-$5FFF, 1 KB): R/W in mode 2; R/O in mode 3; nametable-backed in modes 0/1
 - ✅ Nametable mapping ($5105): each of 4 NT slots independently routed to CIRAM bank 0, CIRAM bank 1, ExRAM, or fill-mode
 - ✅ Fill-mode: tile ($5106) and attribute ($5107) fill registers; attr replicated to all 4 fields of attribute byte
@@ -762,7 +764,7 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
   - PPU_RENDERING_PIPELINE.md
   - PPU_IMPLEMENTATION_COMPARISON.md
   - BUGFIXES_APPLIED.md
-- ✅ Unit tests: PPU clock (18 tests, 109 assertions), Mapper 001 (11 tests, 23 assertions), Mapper 002 (6 tests, 10 assertions), Mapper 003 (6 tests, 11 assertions), Mapper 004 (10 tests, 19 assertions), Mapper 005 (17 tests, 46 assertions), Mapper 007 (7 tests, 13 assertions), Mapper 009 (10 tests, 24 assertions), Mapper 011 (6 tests, 12 assertions), Mapper 019 (10 tests, 35 assertions), Mapper 066 (6 tests, 11 assertions), Mapper 069 (10 tests, 24 assertions), Mapper 071 (9 tests, 20 assertions), APU (8 tests, 72 assertions), CPU nestest integration test, Disassembler (16 groups, 126 assertions) — **16 test suites, all passing**
+- ✅ Unit tests: PPU clock (18 tests, 109 assertions), Mapper 001 (11 tests, 23 assertions), Mapper 002 (6 tests, 10 assertions), Mapper 003 (6 tests, 11 assertions), Mapper 004 (10 tests, 19 assertions), Mapper 005 (22 tests, 62 assertions), Mapper 007 (7 tests, 13 assertions), Mapper 009 (10 tests, 24 assertions), Mapper 011 (6 tests, 12 assertions), Mapper 019 (10 tests, 35 assertions), Mapper 066 (6 tests, 11 assertions), Mapper 069 (10 tests, 24 assertions), Mapper 071 (9 tests, 20 assertions), APU (8 tests, 72 assertions), CPU nestest integration test, Disassembler (16 groups, 126 assertions) — **16 test suites, all passing**
 - ✅ **Blargg headless test runner** (`tests/test_blargg_runner.c`) — full NES stack (CPU+PPU+APU+cartridge) without SDL2; implements $6000 protocol; 24 CTest entries across 3 suites (ppu_vbl_nmi, apu_test, apu_reset); started 6/24; all 6 root-cause issues fixed by PRs #121–#125; optional via `-DBLARGG_TEST_ROMS_PATH=<dir>`
 - ✅ Documentation (CLAUDE.md updated 2026-05-21)
 
@@ -831,6 +833,36 @@ clang-format -i *.c *.h arch/6502/*.c arch/6502/*.h
 ---
 
 ## Recent Work
+
+### 2026-05-25 Session: MMC5 CHR bank-set fix + ExRAM mode 1 — closes issue #160
+
+**Three bugs in Mapper 5 (MMC5) fixed that caused Castlevania III background flicker.**
+
+**Bug 1 — CHR bank-set A/B selection in 8×16 sprite mode (`mapper_005.c`):**
+- `resolve_chr()` previously used `last_chr_set` to decide whether BG fetches used set A or set B. Any write to a set-A bank register during 8×16 mode would flip `last_chr_set=0`, causing BG fetches to use sprite CHR data.
+- Fix: added `ppu_sprite_16` to `struct mapper`; PPU updates it on every PPUCTRL write; strict A/B split in 8×16 mode.
+
+**Bug 2 — ExRAM extended-attribute mode 1 not implemented (`mapper_005.c`):**
+- CVIII uses ExRAM mode 1 for per-tile palette and CHR bank extension.
+- `exram_latch` field added to `struct mmc5_ctx`; updated by `nt_read()` on tile reads; consumed by `resolve_chr()` for BG CHR bank extension (10-bit bank).
+- `nt_read()` in mode 1 for attribute reads: returns ExRAM-synthesized attribute byte via `exram_attr_byte()` helper.
+
+**Bug 3 — ExRAM bank extension blocked when bank-set A is last-written (PR #163 commit 2):**
+- Root cause of the actual flicker: the ExRAM bank extension in `resolve_chr()` was gated on `!use_A`. In 8×8 mode, when the game last wrote bank-set A (for sprite setup), `use_A=1` and the extension was skipped — all BG tiles used the same base bank (wrong image). CVIII writes both A and B within each frame, so `last_chr_set` toggled frame-to-frame, alternating between correct (set B last → extension applied) and wrong (set A last → extension skipped) images. This produced the visible "flipping between correct and completely wrong nametable images."
+- Fix: changed `!use_A && exram_mode==1` to `exram_mode==1 && !map->ppu_sprite_fetch`. The PPU sets `ppu_sprite_fetch=1` before sprite tile reads and clears it afterward, cleanly identifying BG vs sprite fetches. ExRAM extension now applies to all BG fetches regardless of which bank-set is active.
+
+**New unit tests (`tests/nes/test_mapper_005.c` — 5 new test groups, 16 new assertions):**
+- `test_chr_bankset_8x8_mode` — 8×8 mode uses last-written set
+- `test_chr_bankset_8x16_mode` — regression: BG uses set B, sprite uses set A, regardless of `last_chr_set`
+- `test_exram_mode1_attr_synthesis` — synthesized attribute bytes from ExRAM
+- `test_exram_mode1_chr_bank_extension` — `exram_latch`; 10-bit bank extension; sprite fetches unaffected
+- `test_exram_mode1_chr_ext_setA` — **regression** for Bug 3: extension now applies with set A active in 8×8 mode
+
+**Files modified:** `consoles/nes/mappers/mapper.h`, `consoles/nes/mappers/mapper_005.c`, `consoles/nes/ppu.c`, `tests/nes/test_mapper_005.c`
+
+**Test results:** 22 tests, 62 assertions, all passing. All 41 CTest entries pass (6 known Blargg ppu_vbl_nmi failures unchanged).
+
+---
 
 ### 2026-05-24 Session: Sprite 0 Hit Accuracy — closes issue #83, epic #84
 
