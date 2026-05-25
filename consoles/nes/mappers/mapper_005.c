@@ -85,16 +85,14 @@
 
 struct mmc5_ctx {
     // ── Control registers ──────────────────────────────────────────────────
-    uint8_t prg_mode; // $5100 bits 1-0  (0-3)
-    uint8_t chr_mode; // $5101 bits 1-0  (0-3)
-    uint8_t
-        wram_protect1; // $5102 bits 1-0  (must be 0b10 together with protect2)
-    uint8_t
-        wram_protect2;  // $5103 bits 1-0  (must be 0b01 together with protect1)
-    uint8_t exram_mode; // $5104 bits 1-0  (0=NT, 1=NT+attr, 2=R/W, 3=R/O)
-    uint8_t nt_mapping; // $5105 — 2 bits per nametable, 4 nametables
-    uint8_t fill_tile;  // $5106
-    uint8_t fill_attr;  // $5107 bits 1-0
+    uint8_t prg_mode;      // $5100 bits 1-0  (0-3)
+    uint8_t chr_mode;      // $5101 bits 1-0  (0-3)
+    uint8_t wram_protect1; // $5102 bits 1-0  (must be 0b10 together with protect2)
+    uint8_t wram_protect2; // $5103 bits 1-0  (must be 0b01 together with protect1)
+    uint8_t exram_mode;    // $5104 bits 1-0  (0=NT, 1=NT+attr, 2=R/W, 3=R/O)
+    uint8_t nt_mapping;    // $5105 — 2 bits per nametable, 4 nametables
+    uint8_t fill_tile;     // $5106
+    uint8_t fill_attr;     // $5107 bits 1-0
 
     // ── PRG bank registers ─────────────────────────────────────────────────
     // prg_bank[0] = $5113  ($6000-$7FFF, RAM only)
@@ -151,10 +149,9 @@ void mapper_005_init(struct mapper *map) {
     ctx->chr_mode = 3;      // 1 KB × 8 windows
     ctx->nt_mapping = 0xFF; // all nametables → fill-mode (safe default)
     // $5117 always maps to the last PRG-ROM bank; bit 7 = ROM
-    uint8_t last_rom =
-        (map->num_prg_rom > 0)
-            ? (uint8_t)(((uint16_t)map->num_prg_rom * 2 - 1) | 0x80)
-            : 0xFF;
+    uint8_t last_rom = (map->num_prg_rom > 0)
+                           ? (uint8_t)(((uint16_t)map->num_prg_rom * 2 - 1) | 0x80)
+                           : 0xFF;
     ctx->prg_bank[4] = last_rom; // $5117: last 8 KB ROM bank
     ctx->prg_bank[3] = last_rom; // $5116 default (mode 2: last ROM)
     ctx->prg_bank[2] = last_rom; // $5115 default
@@ -173,16 +170,14 @@ void mapper_005_init(struct mapper *map) {
 // Returns true when the PRG-RAM write-protect combination is unlocked.
 // Hardware requires $5102 bits 1-0 == 0b10 AND $5103 bits 1-0 == 0b01.
 static int prg_ram_writable(struct mmc5_ctx *ctx) {
-    return (ctx->wram_protect1 & 0x03) == 0x02 &&
-           (ctx->wram_protect2 & 0x03) == 0x01;
+    return (ctx->wram_protect1 & 0x03) == 0x02 && (ctx->wram_protect2 & 0x03) == 0x01;
 }
 
 // Resolve a PRG address in $8000-$FFFF to an offset into prg_rom[].
 // Returns 0 on error.  Sets *is_ram if the bank register selects PRG-RAM,
 // and *ram_offset to the byte offset within prg_ram[].
-static uint32_t resolve_prg(struct mmc5_ctx *ctx, uint16_t addr,
-                            uint16_t num_8kb, int *is_ram,
-                            uint32_t *ram_offset) {
+static uint32_t resolve_prg(struct mmc5_ctx *ctx, uint16_t addr, uint16_t num_8kb,
+                            int *is_ram, uint32_t *ram_offset) {
     *is_ram = 0;
     *ram_offset = 0;
 
@@ -221,8 +216,7 @@ static uint32_t resolve_prg(struct mmc5_ctx *ctx, uint16_t addr,
         } else { // RAM
             *is_ram = 1;
             uint16_t b16 = (bank_reg & 0x0E) >> 1;
-            *ram_offset =
-                ((uint32_t)b16 * 0x4000 + win_off) % MMC5_PRG_RAM_SIZE;
+            *ram_offset = ((uint32_t)b16 * 0x4000 + win_off) % MMC5_PRG_RAM_SIZE;
             return 0;
         }
 
@@ -240,8 +234,7 @@ static uint32_t resolve_prg(struct mmc5_ctx *ctx, uint16_t addr,
             } else {
                 *is_ram = 1;
                 uint16_t b16 = (bank_reg & 0x0E) >> 1;
-                *ram_offset =
-                    ((uint32_t)b16 * 0x4000 + win_off) % MMC5_PRG_RAM_SIZE;
+                *ram_offset = ((uint32_t)b16 * 0x4000 + win_off) % MMC5_PRG_RAM_SIZE;
                 return 0;
             }
         } else if (addr < 0xE000) {
@@ -300,8 +293,7 @@ resolve_8kb:
 // for the "last" register, which is correct when banks are configured
 // sequentially from $5120 upward.
 
-static uint8_t resolve_chr(struct mmc5_ctx *ctx, struct mapper *map,
-                           uint16_t addr) {
+static uint8_t resolve_chr(struct mmc5_ctx *ctx, struct mapper *map, uint16_t addr) {
     // Determine which bank-set to use.
     //
     // In 8×8 sprite mode (ppu_sprite_16 == 0): all fetches use the last-written
@@ -337,9 +329,8 @@ static uint8_t resolve_chr(struct mmc5_ctx *ctx, struct mapper *map,
         uint8_t raw = use_A ? ctx->chr_bankA[7] : ctx->chr_bankB[3];
         // Bits 7-0 form the 1 KB bank; the 8 KB window uses the low 3 bits
         // of the address for fine offset, upper bits select which 8 KB block.
-        uint16_t b8 = (raw & 0xFF) >> 3; // 8 KB bank index
-        uint16_t off =
-            (uint16_t)b8 * 8 + ((addr >> 10) & 0x07); // 1 KB sub-bank
+        uint16_t b8 = (raw & 0xFF) >> 3;                         // 8 KB bank index
+        uint16_t off = (uint16_t)b8 * 8 + ((addr >> 10) & 0x07); // 1 KB sub-bank
         bank = off % num_1kb;
         break;
     }
@@ -378,8 +369,7 @@ static uint8_t resolve_chr(struct mmc5_ctx *ctx, struct mapper *map,
         if (use_A) {
             raw = ctx->chr_bankA[slot]; // $5120-$5127
         } else {
-            raw = ctx->chr_bankB[slot &
-                                 0x03]; // $5128-$512B (mirror for slots 4-7)
+            raw = ctx->chr_bankB[slot & 0x03]; // $5128-$512B (mirror for slots 4-7)
         }
         bank = (uint16_t)raw % num_1kb;
         break;
@@ -388,10 +378,12 @@ static uint8_t resolve_chr(struct mmc5_ctx *ctx, struct mapper *map,
 
     // ExRAM extended-attribute mode 1: bits 7-6 of the per-tile ExRAM byte
     // extend the CHR bank number from 8 bits to 10 bits, allowing up to 1 MB
-    // of CHR-ROM.  Only applies to background (BG) tile fetches (!use_A).
+    // of CHR-ROM.  Applies to ALL background tile fetches, regardless of which
+    // bank-set (A or B) provides the base bank.  Sprite fetches are excluded —
+    // the PPU sets ppu_sprite_fetch=1 before calling ppu_read for sprite tiles.
     // The exram_latch was updated by nt_read when the tile byte was fetched,
     // so it already holds the correct extended attribute for this tile.
-    if (!use_A && ctx->exram_mode == 1) {
+    if (ctx->exram_mode == 1 && !map->ppu_sprite_fetch) {
         uint16_t high = (uint16_t)(ctx->exram_latch >> 6) << 8;
         uint16_t extended = high | (bank & 0xFF);
         if (num_1kb > 0)
@@ -421,7 +413,7 @@ static uint8_t resolve_chr(struct mmc5_ctx *ctx, struct mapper *map,
 // region.
 static uint8_t exram_attr_byte(const uint8_t *exram, uint16_t at_byte) {
     // Attribute column/row in 4-tile units
-    uint16_t at_col = at_byte & 0x07; // 0..7 (each covers 4 tile columns)
+    uint16_t at_col = at_byte & 0x07;        // 0..7 (each covers 4 tile columns)
     uint16_t at_row = (at_byte >> 3) & 0x07; // 0..7 (each covers 4 tile rows)
 
     // Tile column/row of the top-left tile of this attribute region
@@ -429,11 +421,9 @@ static uint8_t exram_attr_byte(const uint8_t *exram, uint16_t at_byte) {
     uint16_t base_row = at_row * 4;
 
     // Clamp to nametable dimensions (32 × 30) to avoid out-of-bounds
-    uint16_t tl_idx =
-        (base_row < 30 && base_col < 32) ? (base_row * 32 + base_col) : 0;
-    uint16_t tr_idx = (base_row < 30 && base_col + 2 < 32)
-                          ? (base_row * 32 + base_col + 2)
-                          : tl_idx;
+    uint16_t tl_idx = (base_row < 30 && base_col < 32) ? (base_row * 32 + base_col) : 0;
+    uint16_t tr_idx =
+        (base_row < 30 && base_col + 2 < 32) ? (base_row * 32 + base_col + 2) : tl_idx;
     uint16_t bl_idx = (base_row + 2 < 30 && base_col < 32)
                           ? ((base_row + 2) * 32 + base_col)
                           : tl_idx;
@@ -469,8 +459,7 @@ uint8_t mapper_005_nt_read(struct mapper *map, uint16_t addr) {
     if (ctx->exram_mode == 1) {
         if (off < 0x3C0) {
             // Tile read: latch the ExRAM byte for this tile position.
-            ctx->exram_latch =
-                ctx->exram[off]; // off is 0..959, within exram[0x400]
+            ctx->exram_latch = ctx->exram[off]; // off is 0..959, within exram[0x400]
         } else {
             // Attribute read: synthesize from ExRAM regardless of $5105
             // routing.
@@ -581,8 +570,8 @@ uint8_t mapper_005_cpu_read(struct mapper *map, uint16_t addr) {
 
         // IRQ status ($5204)
         case 0x5204: {
-            uint8_t v = (ctx->in_frame ? 0x40 : 0x00) |
-                        (ctx->irq_pending ? 0x80 : 0x00);
+            uint8_t v =
+                (ctx->in_frame ? 0x40 : 0x00) | (ctx->irq_pending ? 0x80 : 0x00);
             ctx->irq_pending = 0;
             map->irq_pending = 0;
             return v;

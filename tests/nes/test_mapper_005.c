@@ -35,15 +35,15 @@
 static int test_pass = 0;
 static int test_fail = 0;
 
-#define ASSERT(cond, msg)                                                      \
-    do {                                                                       \
-        if (cond) {                                                            \
-            printf("  PASS: %s\n", msg);                                       \
-            test_pass++;                                                       \
-        } else {                                                               \
-            printf("  FAIL: %s  (line %d)\n", msg, __LINE__);                  \
-            test_fail++;                                                       \
-        }                                                                      \
+#define ASSERT(cond, msg)                                                              \
+    do {                                                                               \
+        if (cond) {                                                                    \
+            printf("  PASS: %s\n", msg);                                               \
+            test_pass++;                                                               \
+        } else {                                                                       \
+            printf("  FAIL: %s  (line %d)\n", msg, __LINE__);                          \
+            test_fail++;                                                               \
+        }                                                                              \
     } while (0)
 
 /* -------------------------------------------------------------------------
@@ -131,14 +131,10 @@ static void test_prg_mode3_banks(void) {
     mapper_005_cpu_write(map, 0x5116, 0x85); // ROM bank 5
     mapper_005_cpu_write(map, 0x5117, 0x87); // ROM bank 7 (forced ROM)
 
-    ASSERT(mapper_005_cpu_read(map, 0x8000) == 0x02,
-           "mode3: $8000 → bank 1 (0x02)");
-    ASSERT(mapper_005_cpu_read(map, 0xA000) == 0x04,
-           "mode3: $A000 → bank 3 (0x04)");
-    ASSERT(mapper_005_cpu_read(map, 0xC000) == 0x06,
-           "mode3: $C000 → bank 5 (0x06)");
-    ASSERT(mapper_005_cpu_read(map, 0xE000) == 0x08,
-           "mode3: $E000 → bank 7 (0x08)");
+    ASSERT(mapper_005_cpu_read(map, 0x8000) == 0x02, "mode3: $8000 → bank 1 (0x02)");
+    ASSERT(mapper_005_cpu_read(map, 0xA000) == 0x04, "mode3: $A000 → bank 3 (0x04)");
+    ASSERT(mapper_005_cpu_read(map, 0xC000) == 0x06, "mode3: $C000 → bank 5 (0x06)");
+    ASSERT(mapper_005_cpu_read(map, 0xE000) == 0x08, "mode3: $E000 → bank 7 (0x08)");
 }
 
 /* =========================================================================
@@ -156,8 +152,8 @@ static void test_prg_mode0_32kb(void) {
     // 32 KB bank 1 → 8 KB banks 4 (0x81 << 2 = 4, so raw = (1 << 2) | 0x80 =
     // 0x84) bits 6-2 select the 32KB bank; raw=0x84 means bits[6:2]=0b00100=4,
     // /4=1 → 32KB bank 1
-    mapper_005_cpu_write(
-        map, 0x5117, 0x84); // bits[6:2]=0b00100 → 32KB bank 1 = 8KB banks 4-7
+    mapper_005_cpu_write(map, 0x5117,
+                         0x84); // bits[6:2]=0b00100 → 32KB bank 1 = 8KB banks 4-7
 
     // $8000 = first 8KB of bank group → 8KB bank 4 (filled 0x05)
     ASSERT(mapper_005_cpu_read(map, 0x8000) == 0x05,
@@ -282,8 +278,8 @@ static void test_chr_mode3_1kb(void) {
         uint8_t expected = (uint8_t)(0x20 + w);
         uint8_t got = mapper_005_ppu_read(map, ppu_addr);
         if (got != expected) {
-            printf("  FAIL: CHR mode3 window %d: expected 0x%02X, got 0x%02X\n",
-                   w, expected, got);
+            printf("  FAIL: CHR mode3 window %d: expected 0x%02X, got 0x%02X\n", w,
+                   expected, got);
             ok = 0;
         }
     }
@@ -332,8 +328,7 @@ static void test_chr_mode1_4kb(void) {
     mapper_005_cpu_write(map, 0x5127, 12);
 
     uint8_t vlo = mapper_005_ppu_read(map, 0x0000); // lower 4KB → bank 4 (0x24)
-    uint8_t vhi =
-        mapper_005_ppu_read(map, 0x1000); // upper 4KB → bank 12 (0x2C)
+    uint8_t vhi = mapper_005_ppu_read(map, 0x1000); // upper 4KB → bank 12 (0x2C)
     ASSERT(vlo == 0x24, "CHR mode1: lower 4KB ($0000) → 1KB bank 4 (0x24)");
     ASSERT(vhi == 0x2C, "CHR mode1: upper 4KB ($1000) → 1KB bank 12 (0x2C)");
 }
@@ -355,7 +350,7 @@ static void test_chr_mode2_2kb(void) {
     // Slot 3: $5127 = 14 → 2KB bank 7 (1KB banks 14-15, filled 0x2E/0x2F)
     mapper_005_cpu_write(map, 0x5127, 14);
 
-    uint8_t v0 = mapper_005_ppu_read(map, 0x0000); // slot 0 → bank 2 (0x22)
+    uint8_t v0 = mapper_005_ppu_read(map, 0x0000);    // slot 0 → bank 2 (0x22)
     uint8_t v1800 = mapper_005_ppu_read(map, 0x1800); // slot 3 → bank 14 (0x2E)
     ASSERT(v0 == 0x22, "CHR mode2: PPU $0000 → slot 0, 1KB bank 2 (0x22)");
     ASSERT(v1800 == 0x2E, "CHR mode2: PPU $1800 → slot 3, 1KB bank 14 (0x2E)");
@@ -485,8 +480,7 @@ static void test_scanline_irq_fires(void) {
     ASSERT(map->irq_pending == 0, "IRQ: not pending after 3rd scanline");
 
     mapper_005_scanline(map); // count = 3 → fires
-    ASSERT(map->irq_pending == 1,
-           "IRQ: pending after 4th scanline (count==latch==3)");
+    ASSERT(map->irq_pending == 1, "IRQ: pending after 4th scanline (count==latch==3)");
 }
 
 /* =========================================================================
@@ -503,8 +497,7 @@ static void test_scanline_irq_disabled(void) {
     for (int i = 0; i < 5; i++)
         mapper_005_scanline(map);
 
-    ASSERT(map->irq_pending == 0,
-           "IRQ: never fires when IRQ enable bit is clear");
+    ASSERT(map->irq_pending == 0, "IRQ: never fires when IRQ enable bit is clear");
 }
 
 /* =========================================================================
@@ -547,8 +540,7 @@ static void test_multiply(void) {
     uint8_t hi = mapper_005_cpu_read(map, 0x5206);
     uint16_t product = (uint16_t)((hi << 8) | lo);
 
-    ASSERT(product == (uint16_t)(0x12 * 0x34),
-           "multiply: 0x12 × 0x34 = 936 (0x03A8)");
+    ASSERT(product == (uint16_t)(0x12 * 0x34), "multiply: 0x12 × 0x34 = 936 (0x03A8)");
     ASSERT(lo == 0xA8, "multiply: low byte = 0xA8");
     ASSERT(hi == 0x03, "multiply: high byte = 0x03");
 }
@@ -637,13 +629,11 @@ static void test_chr_bankset_8x16_mode(void) {
     mapper_005_cpu_write(map, 0x5128, 6); // last_chr_set = 1 now
     map->ppu_sprite_fetch = 1;
     uint8_t sp2 = mapper_005_ppu_read(map, 0x0000);
-    ASSERT(sp2 == 0x22,
-           "CHR 8x16: sprite fetch still uses set-A after set-B write");
+    ASSERT(sp2 == 0x22, "CHR 8x16: sprite fetch still uses set-A after set-B write");
 
     map->ppu_sprite_fetch = 0;
     uint8_t bg2 = mapper_005_ppu_read(map, 0x0000);
-    ASSERT(bg2 == 0x26,
-           "CHR 8x16: BG fetch still uses set-B after set-B write");
+    ASSERT(bg2 == 0x26, "CHR 8x16: BG fetch still uses set-B after set-B write");
 }
 
 /* =========================================================================
@@ -765,17 +755,78 @@ static void test_exram_mode1_chr_bank_extension(void) {
     mapper_005_nt_read(map, 0x2000); // latch = 0x40
     uint8_t v_ext = mapper_005_ppu_read(map, 0x0000);
     // extended = (1<<8)|0 = 256; 256 % 24 = 16; CHR bank 16 → 0x20+16 = 0x30
-    ASSERT(v_ext == 0x30,
-           "ExRAM mode1 CHR ext: latch=0x40 → bank 256%24=16 → 0x30");
+    ASSERT(v_ext == 0x30, "ExRAM mode1 CHR ext: latch=0x40 → bank 256%24=16 → 0x30");
 
     // ── Extension only applies to BG fetches (set B) in 8×16 mode ────────
     // Sprite fetch must still use set A, unaffected by exram_latch.
     mapper_005_cpu_write(map, 0x5120, 0x01); // set A slot 0 → bank 1 → 0x21
     map->ppu_sprite_fetch = 1;
     uint8_t sp = mapper_005_ppu_read(map, 0x0000);
-    ASSERT(
-        sp == 0x21,
-        "ExRAM mode1 CHR ext: sprite fetch unaffected by exram_latch → 0x21");
+    ASSERT(sp == 0x21,
+           "ExRAM mode1 CHR ext: sprite fetch unaffected by exram_latch → 0x21");
+}
+
+/* =========================================================================
+ * test_exram_mode1_chr_ext_setA — ExRAM extension applies even when
+ * bank-set A is the last-written set (8×8 sprite mode).
+ * =========================================================================
+ * Regression test for the bug where "!use_A && exram_mode==1" blocked
+ * the extension whenever last_chr_set=0 (set A was last written).
+ *
+ * In 8×8 mode with set-A as the last write, BG fetches use set A for the
+ * base bank but ExRAM mode 1 MUST still extend the bank.  Only sprite
+ * fetches (ppu_sprite_fetch=1) should be excluded.
+ *
+ * Setup (CHR mode 3, 3 CHR-ROM banks = 24 × 1 KB banks):
+ *   bank j filled with (0x20 + j)
+ *   Set-A slot 0 ($5120) = 0 → base bank 0 → data = 0x20
+ *   ExRAM[0] = 0x40 (bits 7-6 = 01) → extension = 1 → extended bank 256
+ *   256 % 24 = 16 → data = 0x20 + 16 = 0x30
+ *
+ * ppu_sprite_16 = 0  (8×8 mode)
+ * Last-written set = A (last_chr_set = 0)
+ *
+ * BG fetch  (ppu_sprite_fetch=0) → extension applied → 0x30  ← was wrong
+ * Sprite fetch (ppu_sprite_fetch=1) → no extension → base bank 0 → 0x20
+ */
+static void test_exram_mode1_chr_ext_setA(void) {
+    printf("\n[test_exram_mode1_chr_ext_setA]\n");
+    struct mapper *map = make_mapper(2, 3); // 3 CHR banks = 24 × 1 KB banks
+
+    mapper_005_cpu_write(map, 0x5104, 0x01); // ExRAM mode 1
+
+    // Set-A slot 0 = bank 0 (filled 0x20); last_chr_set = 0 (set A)
+    mapper_005_cpu_write(map, 0x5120, 0x00);
+
+    // Write 0x40 into ExRAM[0] (bits 7-6 = 01 → extension = 1).
+    mapper_005_cpu_write(map, 0x5C00 + 0, 0x40);
+    // Trigger the exram_latch update for tile offset 0.
+    mapper_005_nt_read(map, 0x2000); // off=0 → exram_latch = 0x40
+
+    // 8×8 mode, bank-set A is last-written (last_chr_set = 0).
+    map->ppu_sprite_16 = 0;
+
+    // BG fetch: extension MUST apply even though bank-set A is active.
+    // extended bank = (1<<8)|0 = 256; 256 % 24 = 16; CHR[16] = 0x30.
+    map->ppu_sprite_fetch = 0;
+    uint8_t bg = mapper_005_ppu_read(map, 0x0000);
+    ASSERT(bg == 0x30, "ExRAM mode1 setA: BG fetch applies extension (0x30) "
+                       "[regression: was 0x20 because !use_A was false]");
+
+    // Sprite fetch: NO extension — ppu_sprite_fetch=1 excludes it.
+    // Uses bank-set A (last-written), base bank 0 → 0x20.
+    map->ppu_sprite_fetch = 1;
+    uint8_t sp = mapper_005_ppu_read(map, 0x0000);
+    ASSERT(sp == 0x20,
+           "ExRAM mode1 setA: sprite fetch NOT extended → base bank 0 (0x20)");
+
+    // Sanity: with exram_latch=0x00 (no extension), BG returns base bank.
+    mapper_005_cpu_write(map, 0x5C00 + 0, 0x00);
+    mapper_005_nt_read(map, 0x2000); // latch = 0x00
+    map->ppu_sprite_fetch = 0;
+    uint8_t bg_no_ext = mapper_005_ppu_read(map, 0x0000);
+    ASSERT(bg_no_ext == 0x20,
+           "ExRAM mode1 setA: latch=0x00 → no extension → base bank 0 (0x20)");
 }
 
 /* =========================================================================
@@ -806,6 +857,7 @@ int main(void) {
     test_chr_bankset_8x16_mode();
     test_exram_mode1_attr_synthesis();
     test_exram_mode1_chr_bank_extension();
+    test_exram_mode1_chr_ext_setA();
 
     printf("\n=== Results: %d passed, %d failed ===\n", test_pass, test_fail);
     return test_fail ? 1 : 0;
