@@ -29,18 +29,22 @@ static uint16_t nametable_mirror(uint16_t addr) {
 
     // Use the mapper's dynamic mirroring field so bankswitching mappers
     // (e.g. MMC1) can change it at runtime without touching the ROM header.
-    uint8_t mode = ppu.cart->map ? ppu.cart->map->mirroring
-                                 : (ppu.cart->hdr->flags6.mirroring ? MIRROR_VERTICAL
-                                                                     : MIRROR_HORIZONTAL);
+    uint8_t mode = ppu.cart->map
+                       ? ppu.cart->map->mirroring
+                       : (ppu.cart->hdr->flags6.mirroring ? MIRROR_VERTICAL
+                                                          : MIRROR_HORIZONTAL);
     switch (mode) {
     case MIRROR_HORIZONTAL:
-        // $2000=$2400, $2800=$2C00 — NTs 0&1 share physical 0; 2&3 share physical 1
-        // Layout: [A][A] / [B][B] — used by vertically-scrolling games
+        // $2000=$2400, $2800=$2C00 — NTs 0&1 share physical 0; 2&3 share
+        // physical 1 Layout: [A][A] / [B][B] — used by vertically-scrolling
+        // games
         return (nt <= 1) ? (addr & 0x03FF) : (0x0400 | (addr & 0x03FF));
     case MIRROR_VERTICAL:
-        // $2000=$2800, $2400=$2C00 — NTs 0&2 share physical 0; 1&3 share physical 1
-        // Layout: [A][B] / [A][B] — used by horizontally-scrolling games
-        return (nt == 0 || nt == 2) ? (addr & 0x03FF) : (0x0400 | (addr & 0x03FF));
+        // $2000=$2800, $2400=$2C00 — NTs 0&2 share physical 0; 1&3 share
+        // physical 1 Layout: [A][B] / [A][B] — used by horizontally-scrolling
+        // games
+        return (nt == 0 || nt == 2) ? (addr & 0x03FF)
+                                    : (0x0400 | (addr & 0x03FF));
     case MIRROR_SINGLE_LO:
         // All four nametables map to the first 1 KB
         return addr & 0x03FF;
@@ -83,9 +87,11 @@ static uint8_t ppu_read(uint16_t addr) {
     } else if (addr <= 0x3EFF) {
         data = nametable_read(addr);
     } else if (addr <= 0x3FFF) {
-        // Palette mirrors: $3F10/$3F14/$3F18/$3F1C mirror $3F00/$3F04/$3F08/$3F0C
+        // Palette mirrors: $3F10/$3F14/$3F18/$3F1C mirror
+        // $3F00/$3F04/$3F08/$3F0C
         uint8_t pal_addr = addr & 0x1F;
-        if (pal_addr == 0x10 || pal_addr == 0x14 || pal_addr == 0x18 || pal_addr == 0x1C) {
+        if (pal_addr == 0x10 || pal_addr == 0x14 || pal_addr == 0x18 ||
+            pal_addr == 0x1C) {
             pal_addr &= 0x0F;
         }
         data = ppu.palette_table[pal_addr];
@@ -105,7 +111,8 @@ static void ppu_write(uint16_t addr, uint8_t data) {
         nametable_write(addr, data);
     } else if (addr <= 0x3FFF) {
         uint8_t pal_addr = addr & 0x1F;
-        if (pal_addr == 0x10 || pal_addr == 0x14 || pal_addr == 0x18 || pal_addr == 0x1C) {
+        if (pal_addr == 0x10 || pal_addr == 0x14 || pal_addr == 0x18 ||
+            pal_addr == 0x1C) {
             pal_addr &= 0x0F;
         }
         ppu.palette_table[pal_addr] = data;
@@ -145,8 +152,8 @@ static uint8_t cpu_read(uint16_t addr) {
         if (v_addr >= 0x3F00) {
             // Palette: immediate read, buffer gets the nametable "under" it
             uint8_t pal_addr = v_addr & 0x1F;
-            if (pal_addr == 0x10 || pal_addr == 0x14 ||
-                pal_addr == 0x18 || pal_addr == 0x1C) {
+            if (pal_addr == 0x10 || pal_addr == 0x14 || pal_addr == 0x18 ||
+                pal_addr == 0x1C) {
                 pal_addr &= 0x0F;
             }
             data = ppu.palette_table[pal_addr];
@@ -160,7 +167,8 @@ static uint8_t cpu_read(uint16_t addr) {
         break;
     }
 
-    // Write-only registers ($2000, $2001, $2003, $2005, $2006): return open bus unchanged
+    // Write-only registers ($2000, $2001, $2003, $2005, $2006): return open bus
+    // unchanged
     default:
         break;
     }
@@ -176,10 +184,11 @@ static void cpu_write(uint16_t addr, uint8_t data) {
         ppu.ppuctrl.reg = data;
         // Nametable select goes into t bits 11-10
         ppu.t = (ppu.t & 0xF3FF) | ((uint16_t)(data & 0x03) << 10);
-        // NMI enable rising edge while VBL is active → defer NMI by 1 instruction.
-        // The PPUCTRL write happens mid-instruction (during execute()), so the CPU
-        // is already committed to the current instruction.  Hardware fires the NMI
-        // after the *next* instruction completes, not the current one.
+        // NMI enable rising edge while VBL is active → defer NMI by 1
+        // instruction. The PPUCTRL write happens mid-instruction (during
+        // execute()), so the CPU is already committed to the current
+        // instruction.  Hardware fires the NMI after the *next* instruction
+        // completes, not the current one.
         if (!old_nmi && ppu.ppuctrl.nmi && ppu.ppustatus.vblank_started) {
             ppu.nmi_deferred = 1;
         }
@@ -187,6 +196,11 @@ static void cpu_write(uint16_t addr, uint8_t data) {
         if (!ppu.ppuctrl.nmi) {
             ppu.nmi_triggered = 0;
         }
+        // Keep mapper informed of sprite-size mode so CHR bank-set selection
+        // (e.g. MMC5) can distinguish 8×8 vs 8×16 without reading PPUCTRL
+        // directly.
+        if (ppu.cart && ppu.cart->map)
+            ppu.cart->map->ppu_sprite_16 = ppu.ppuctrl.sprite_size;
         break;
     }
 
@@ -254,10 +268,8 @@ static void fetch_nametable_byte(void) {
 }
 
 static void fetch_attribute_byte(void) {
-    uint16_t addr = 0x23C0
-                  | (ppu.v & 0x0C00)
-                  | ((ppu.v >> 4) & 0x38)
-                  | ((ppu.v >> 2) & 0x07);
+    uint16_t addr = 0x23C0 | (ppu.v & 0x0C00) | ((ppu.v >> 4) & 0x38) |
+                    ((ppu.v >> 2) & 0x07);
     uint8_t attr = nametable_read(addr);
     uint8_t shift = ((ppu.v >> 4) & 0x04) | (ppu.v & 0x02);
     ppu.bg_next_tile_attr = (attr >> shift) & 0x03;
@@ -283,8 +295,10 @@ static void fetch_pattern_high_byte(void) {
 
 // Load the just-fetched tile data into the top of the shift registers.
 static void load_background_shifters(void) {
-    ppu.bg_shift_pattern_lo = (ppu.bg_shift_pattern_lo & 0xFF00) | ppu.bg_next_tile_lsb;
-    ppu.bg_shift_pattern_hi = (ppu.bg_shift_pattern_hi & 0xFF00) | ppu.bg_next_tile_msb;
+    ppu.bg_shift_pattern_lo =
+        (ppu.bg_shift_pattern_lo & 0xFF00) | ppu.bg_next_tile_lsb;
+    ppu.bg_shift_pattern_hi =
+        (ppu.bg_shift_pattern_hi & 0xFF00) | ppu.bg_next_tile_msb;
     // Store as 0 or 1 so that update_shifters() shifts in one bit per dot.
     // Storing 0xFF caused (reg << 1) | 0xFF to set all bits immediately,
     // making palette transitions fire fine_x pixels early with non-zero scroll.
@@ -298,8 +312,10 @@ static void update_shifters(void) {
     if (ppu.ppumask.bg_render_enable) {
         ppu.bg_shift_pattern_lo <<= 1;
         ppu.bg_shift_pattern_hi <<= 1;
-        ppu.bg_shift_attr_lo = (ppu.bg_shift_attr_lo << 1) | ppu.bg_attr_latch_lo;
-        ppu.bg_shift_attr_hi = (ppu.bg_shift_attr_hi << 1) | ppu.bg_attr_latch_hi;
+        ppu.bg_shift_attr_lo =
+            (ppu.bg_shift_attr_lo << 1) | ppu.bg_attr_latch_lo;
+        ppu.bg_shift_attr_hi =
+            (ppu.bg_shift_attr_hi << 1) | ppu.bg_attr_latch_hi;
     }
 }
 
@@ -308,7 +324,8 @@ static void update_shifters(void) {
 // ---------------------------------------------------------------------------
 
 static void increment_coarse_x(void) {
-    if (!rendering_enabled()) return;
+    if (!rendering_enabled())
+        return;
     if ((ppu.v & 0x001F) == 31) {
         ppu.v &= ~0x001F;
         ppu.v ^= 0x0400; // flip horizontal nametable bit
@@ -318,7 +335,8 @@ static void increment_coarse_x(void) {
 }
 
 static void increment_fine_y(void) {
-    if (!rendering_enabled()) return;
+    if (!rendering_enabled())
+        return;
     if ((ppu.v & 0x7000) != 0x7000) {
         ppu.v += 0x1000; // increment fine Y
     } else {
@@ -338,14 +356,16 @@ static void increment_fine_y(void) {
 
 // Copy horizontal scroll bits from t into v (dot 257 of each rendered line).
 static void copy_x_from_t(void) {
-    if (!rendering_enabled()) return;
+    if (!rendering_enabled())
+        return;
     // v: ....A.. ...BCDEF = t: ....A.. ...BCDEF
     ppu.v = (ppu.v & 0x7BE0) | (ppu.t & 0x041F);
 }
 
 // Copy vertical scroll bits from t into v (dots 280-304 of pre-render line).
 static void copy_y_from_t(void) {
-    if (!rendering_enabled()) return;
+    if (!rendering_enabled())
+        return;
     // v: .IHGFED CBA..... = t: .IHGFED CBA.....
     ppu.v = (ppu.v & 0x041F) | (ppu.t & 0x7BE0);
 }
@@ -358,16 +378,18 @@ static void copy_y_from_t(void) {
 // to the 2-bit palette select. Both outputs are needed for sprite compositing.
 static uint8_t get_bg_pixel(uint8_t *palette_idx) {
     *palette_idx = 0;
-    if (!ppu.ppumask.bg_render_enable) return 0;
-    if (!ppu.ppumask.bg_enable && ppu.dot <= 8) return 0; // left-column clip
+    if (!ppu.ppumask.bg_render_enable)
+        return 0;
+    if (!ppu.ppumask.bg_enable && ppu.dot <= 8)
+        return 0; // left-column clip
 
     uint8_t bit = 15 - ppu.x;
     uint8_t pixel = (((ppu.bg_shift_pattern_hi >> bit) & 1) << 1) |
-                     ((ppu.bg_shift_pattern_lo >> bit) & 1);
+                    ((ppu.bg_shift_pattern_lo >> bit) & 1);
 
     uint8_t attr_bit = 7 - ppu.x;
     *palette_idx = (((ppu.bg_shift_attr_hi >> attr_bit) & 1) << 1) |
-                    ((ppu.bg_shift_attr_lo >> attr_bit) & 1);
+                   ((ppu.bg_shift_attr_lo >> attr_bit) & 1);
 
     return pixel;
 }
@@ -381,16 +403,17 @@ static void evaluate_sprites_for_scanline(int16_t next_scanline) {
     uint8_t height = ppu.ppuctrl.sprite_size ? 16 : 8;
 
     for (int i = 0; i < 64 && ppu.sprite_count < 8; i++) {
-        uint8_t sy   = ppu.oam[i * 4 + 0];
-        int16_t top  = (int16_t)sy + 1;
-        int16_t bot  = top + height;
+        uint8_t sy = ppu.oam[i * 4 + 0];
+        int16_t top = (int16_t)sy + 1;
+        int16_t bot = top + height;
 
         if (next_scanline >= top && next_scanline < bot) {
-            ppu.secondary_oam[ppu.sprite_count].y             = sy;
-            ppu.secondary_oam[ppu.sprite_count].tile          = ppu.oam[i * 4 + 1];
-            ppu.secondary_oam[ppu.sprite_count].attr          = ppu.oam[i * 4 + 2];
-            ppu.secondary_oam[ppu.sprite_count].x             = ppu.oam[i * 4 + 3];
-            ppu.secondary_oam[ppu.sprite_count].is_sprite_zero = (i == 0) ? 1 : 0;
+            ppu.secondary_oam[ppu.sprite_count].y = sy;
+            ppu.secondary_oam[ppu.sprite_count].tile = ppu.oam[i * 4 + 1];
+            ppu.secondary_oam[ppu.sprite_count].attr = ppu.oam[i * 4 + 2];
+            ppu.secondary_oam[ppu.sprite_count].x = ppu.oam[i * 4 + 3];
+            ppu.secondary_oam[ppu.sprite_count].is_sprite_zero =
+                (i == 0) ? 1 : 0;
             ppu.sprite_count++;
         }
     }
@@ -417,7 +440,8 @@ static void evaluate_sprites_for_scanline(int16_t next_scanline) {
 }
 
 // Returns the sprite pixel color (0 = transparent) and sets out_* fields for
-// compositing. Scans secondary OAM left to right (lower index = higher priority).
+// compositing. Scans secondary OAM left to right (lower index = higher
+// priority).
 static uint8_t get_sprite_pixel(uint8_t x, uint8_t scanline,
                                 uint8_t *out_palette, uint8_t *out_priority,
                                 uint8_t *out_is_sprite_zero) {
@@ -425,34 +449,45 @@ static uint8_t get_sprite_pixel(uint8_t x, uint8_t scanline,
     *out_priority = 0;
     *out_is_sprite_zero = 0;
 
-    if (!ppu.ppumask.sprite_render_enable) return 0;
-    if (!ppu.ppumask.sprite_enable && x < 8) return 0; // left-column clip
+    if (!ppu.ppumask.sprite_render_enable)
+        return 0;
+    if (!ppu.ppumask.sprite_enable && x < 8)
+        return 0; // left-column clip
 
     uint8_t height = ppu.ppuctrl.sprite_size ? 16 : 8;
 
     for (int i = 0; i < ppu.sprite_count; i++) {
         uint8_t sx = ppu.secondary_oam[i].x;
-        if (x < sx || x >= (uint16_t)sx + 8) continue;
+        if (x < sx || x >= (uint16_t)sx + 8)
+            continue;
 
-        uint8_t attr   = ppu.secondary_oam[i].attr;
+        uint8_t attr = ppu.secondary_oam[i].attr;
         uint8_t pixel_x = x - sx;
         uint8_t pixel_y = (uint8_t)(scanline - (ppu.secondary_oam[i].y + 1));
 
-        if (pixel_y >= height) continue;
+        if (pixel_y >= height)
+            continue;
 
-        if (attr & 0x40) pixel_x = 7 - pixel_x;      // horizontal flip
-        if (attr & 0x80) pixel_y = height - 1 - pixel_y; // vertical flip
+        if (attr & 0x40)
+            pixel_x = 7 - pixel_x; // horizontal flip
+        if (attr & 0x80)
+            pixel_y = height - 1 - pixel_y; // vertical flip
 
         uint16_t tile_addr;
         if (!ppu.ppuctrl.sprite_size) {
             // 8x8: PPUCTRL bit 3 selects the pattern table
             uint16_t base = ppu.ppuctrl.sprite_pattern_table ? 0x1000 : 0x0000;
-            tile_addr = base + ((uint16_t)ppu.secondary_oam[i].tile << 4) + pixel_y;
+            tile_addr =
+                base + ((uint16_t)ppu.secondary_oam[i].tile << 4) + pixel_y;
         } else {
             // 8x16: tile bit 0 selects the pattern table; top/bottom half
-            uint16_t base = (ppu.secondary_oam[i].tile & 0x01) ? 0x1000 : 0x0000;
-            uint8_t tile  = ppu.secondary_oam[i].tile & 0xFE;
-            if (pixel_y >= 8) { tile++; pixel_y -= 8; }
+            uint16_t base =
+                (ppu.secondary_oam[i].tile & 0x01) ? 0x1000 : 0x0000;
+            uint8_t tile = ppu.secondary_oam[i].tile & 0xFE;
+            if (pixel_y >= 8) {
+                tile++;
+                pixel_y -= 8;
+            }
             tile_addr = base + ((uint16_t)tile << 4) + pixel_y;
         }
 
@@ -460,19 +495,22 @@ static uint8_t get_sprite_pixel(uint8_t x, uint8_t scanline,
         if (ppu.cart && ppu.cart->ppu_read) {
             // Signal to the mapper that these reads are for sprite tiles.
             // MMC5 uses this to select CHR bank-set A (sprites) vs B (BG).
-            if (ppu.cart->map) ppu.cart->map->ppu_sprite_fetch = 1;
+            if (ppu.cart->map)
+                ppu.cart->map->ppu_sprite_fetch = 1;
             lo = ppu.cart->ppu_read(ppu.cart, tile_addr);
             hi = ppu.cart->ppu_read(ppu.cart, tile_addr + 8);
-            if (ppu.cart->map) ppu.cart->map->ppu_sprite_fetch = 0;
+            if (ppu.cart->map)
+                ppu.cart->map->ppu_sprite_fetch = 0;
         }
 
-        uint8_t color = (((hi >> (7 - pixel_x)) & 1) << 1) |
-                         ((lo >> (7 - pixel_x)) & 1);
+        uint8_t color =
+            (((hi >> (7 - pixel_x)) & 1) << 1) | ((lo >> (7 - pixel_x)) & 1);
 
-        if (color == 0) continue; // transparent
+        if (color == 0)
+            continue; // transparent
 
-        *out_palette       = (attr & 0x03) + 4; // sprite palettes 4-7
-        *out_priority      = (attr & 0x20) ? 1 : 0;
+        *out_palette = (attr & 0x03) + 4; // sprite palettes 4-7
+        *out_priority = (attr & 0x20) ? 1 : 0;
         *out_is_sprite_zero = ppu.secondary_oam[i].is_sprite_zero;
         return color;
     }
@@ -508,7 +546,8 @@ static uint32_t composite_pixel(uint8_t bg_pixel, uint8_t bg_palette,
         }
     }
 
-    if (ppu.ppumask.grayscale) color_idx &= 0x30;
+    if (ppu.ppumask.grayscale)
+        color_idx &= 0x30;
 
     uint32_t color = NES_PALETTE[color_idx & 0x3F];
 
@@ -516,11 +555,14 @@ static uint32_t composite_pixel(uint8_t bg_pixel, uint8_t bg_palette,
     if (ppu.ppumask.intensify_red || ppu.ppumask.intensify_green ||
         ppu.ppumask.intensify_blue) {
         uint8_t r = (color >> 16) & 0xFF;
-        uint8_t g = (color >>  8) & 0xFF;
-        uint8_t b =  color        & 0xFF;
-        if (!ppu.ppumask.intensify_red)   r = (uint8_t)((r * 3) >> 2);
-        if (!ppu.ppumask.intensify_green) g = (uint8_t)((g * 3) >> 2);
-        if (!ppu.ppumask.intensify_blue)  b = (uint8_t)((b * 3) >> 2);
+        uint8_t g = (color >> 8) & 0xFF;
+        uint8_t b = color & 0xFF;
+        if (!ppu.ppumask.intensify_red)
+            r = (uint8_t)((r * 3) >> 2);
+        if (!ppu.ppumask.intensify_green)
+            g = (uint8_t)((g * 3) >> 2);
+        if (!ppu.ppumask.intensify_blue)
+            b = (uint8_t)((b * 3) >> 2);
         color = 0xFF000000u | ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
     }
 
@@ -538,10 +580,10 @@ static void clock(void) {
         // Pre-render scanline: clear status flags at dot 1.
         if (ppu.scanline == -1 && ppu.dot == 1) {
             ppu.ppustatus.vblank_started = 0;
-            ppu.ppustatus.sprite_0_hit   = 0;
+            ppu.ppustatus.sprite_0_hit = 0;
             ppu.ppustatus.sprite_overflow = 0;
             ppu.frame_complete = 0;
-            ppu.nmi_suppressed = 0;  // reset suppression window for next VBL
+            ppu.nmi_suppressed = 0; // reset suppression window for next VBL
         }
 
         // --- Background tile fetch pipeline ---------------------------------
@@ -610,8 +652,8 @@ static void clock(void) {
         // Dot 260: clock the mapper's scanline IRQ counter (if present).
         // Fired after the last visible pixel and before the next scanline's
         // bg-tile prefetch, matching the real hardware's sprite-fetch A12 edge.
-        if (ppu.dot == 260 && rendering_enabled() &&
-            ppu.cart && ppu.cart->map && ppu.cart->map->scanline) {
+        if (ppu.dot == 260 && rendering_enabled() && ppu.cart &&
+            ppu.cart->map && ppu.cart->map->scanline) {
             ppu.cart->map->scanline(ppu.cart->map);
         }
 
@@ -621,16 +663,17 @@ static void clock(void) {
             bg_pixel = get_bg_pixel(&bg_palette);
 
             uint8_t sp_pixel, sp_palette, sp_priority, sp_is_zero;
-            sp_pixel = get_sprite_pixel(ppu.dot - 1, ppu.scanline,
-                                        &sp_palette, &sp_priority, &sp_is_zero);
+            sp_pixel = get_sprite_pixel(ppu.dot - 1, ppu.scanline, &sp_palette,
+                                        &sp_priority, &sp_is_zero);
 
             // Sprite 0 hit: checked unconditionally (not gated by frame_buffer)
             // so it works in headless mode (e.g. Blargg test runner).
             // Conditions: both pixels opaque, both render enables set,
-            // not at x=255 (dot 256), not in left-column clip when clipping is on.
+            // not at x=255 (dot 256), not in left-column clip when clipping is
+            // on.
             if (sp_is_zero && bg_pixel != 0 && sp_pixel != 0 &&
-                ppu.ppumask.bg_render_enable && ppu.ppumask.sprite_render_enable &&
-                ppu.dot != 256 &&
+                ppu.ppumask.bg_render_enable &&
+                ppu.ppumask.sprite_render_enable && ppu.dot != 256 &&
                 !(ppu.dot <= 8 &&
                   (!ppu.ppumask.bg_enable || !ppu.ppumask.sprite_enable))) {
                 ppu.ppustatus.sprite_0_hit = 1;
@@ -638,9 +681,8 @@ static void clock(void) {
 
             if (ppu.frame_buffer) {
                 int idx = ppu.scanline * 256 + (ppu.dot - 1);
-                ppu.frame_buffer[idx] = composite_pixel(bg_pixel, bg_palette,
-                                                        sp_pixel, sp_palette,
-                                                        sp_priority);
+                ppu.frame_buffer[idx] = composite_pixel(
+                    bg_pixel, bg_palette, sp_pixel, sp_palette, sp_priority);
             }
         }
     }
@@ -650,7 +692,8 @@ static void clock(void) {
         ppu.ppustatus.vblank_started = 1;
         ppu.frame_complete = 1;
         // Trigger NMI unless: NMI enable is off, or $2002 was read the previous
-        // PPU clock (dot 0 of scanline 241), which suppresses the NMI for this frame.
+        // PPU clock (dot 0 of scanline 241), which suppresses the NMI for this
+        // frame.
         if (ppu.ppuctrl.nmi && !ppu.nmi_suppressed) {
             ppu.nmi_triggered = 1;
         }
@@ -673,10 +716,10 @@ static void clock(void) {
      * to dot 0 — the normal case when rendering is already enabled.  A second
      * check in emu_tick() handles the rare case where the CPU enables rendering
      * in the same master-clock tick as the wrap (test 10). */
-    if (ppu.scanline == -1 && ppu.dot == 0 && ppu.odd_frame && rendering_enabled()) {
+    if (ppu.scanline == -1 && ppu.dot == 0 && ppu.odd_frame &&
+        rendering_enabled()) {
         ppu.dot = 1;
     }
-
 }
 
 // ---------------------------------------------------------------------------
@@ -701,31 +744,31 @@ static void reset(void) {
     ppu.ppuaddr_latch = 0;
     ppu.bg_shift_pattern_lo = 0;
     ppu.bg_shift_pattern_hi = 0;
-    ppu.bg_shift_attr_lo    = 0;
-    ppu.bg_shift_attr_hi    = 0;
-    ppu.bg_attr_latch_lo    = 0;
-    ppu.bg_attr_latch_hi    = 0;
-    ppu.bg_next_tile_id     = 0;
-    ppu.bg_next_tile_attr   = 0;
-    ppu.bg_next_tile_lsb    = 0;
-    ppu.bg_next_tile_msb    = 0;
+    ppu.bg_shift_attr_lo = 0;
+    ppu.bg_shift_attr_hi = 0;
+    ppu.bg_attr_latch_lo = 0;
+    ppu.bg_attr_latch_hi = 0;
+    ppu.bg_next_tile_id = 0;
+    ppu.bg_next_tile_attr = 0;
+    ppu.bg_next_tile_lsb = 0;
+    ppu.bg_next_tile_msb = 0;
 }
 
 struct ppu2c02 *ppu2c02_init(void) {
-    ppu.cpu_read          = cpu_read;
-    ppu.cpu_write         = cpu_write;
-    ppu.ppu_read          = ppu_read;
-    ppu.ppu_write         = ppu_write;
-    ppu.clock             = clock;
-    ppu.connect_bus       = connect_bus;
-    ppu.reset             = reset;
+    ppu.cpu_read = cpu_read;
+    ppu.cpu_write = cpu_write;
+    ppu.ppu_read = ppu_read;
+    ppu.ppu_write = ppu_write;
+    ppu.clock = clock;
+    ppu.connect_bus = connect_bus;
+    ppu.reset = reset;
     ppu.connect_cartridge = connect_cartridge;
-    ppu.set_framebuffer   = set_framebuffer;
+    ppu.set_framebuffer = set_framebuffer;
     // Power-on timing state: start at pre-render scanline so the first VBL
     // fires at the correct time even without calling set_framebuffer().
-    ppu.scanline      = -1;
-    ppu.dot           = 0;
+    ppu.scanline = -1;
+    ppu.dot = 0;
     ppu.frame_complete = 0;
-    ppu.palette_table[0] = 0x0F;  // black on power-on
+    ppu.palette_table[0] = 0x0F; // black on power-on
     return &ppu;
 }
